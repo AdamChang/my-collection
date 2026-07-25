@@ -110,13 +110,19 @@ public class MongoIndexTests(MongoFixture fixture)
     }
 
     [Fact]
-    public async Task ExternalRef_index_is_unique_and_sparse()
+    public async Task ExternalRef_index_is_unique_and_partial()
     {
         var cursor = await fixture.Context.Items.Indexes.ListAsync();
         var index = (await cursor.ToListAsync()).Single(i => i["name"] == "ux_items_externalRef");
 
         index["unique"].AsBoolean.Should().BeTrue();
-        index["sparse"].AsBoolean.Should().BeTrue("手動品項沒有 externalRef，不應互相衝突");
+
+        // 原本斷言 sparse，但複合索引的 sparse 只在所有索引欄位都缺席時才跳過文件，
+        // 而 ownerId 恆存在——手動品項仍會以 (ownerId, null, null) 進索引並互相衝突。
+        // 要達成「手動品項沒有 externalRef，不應互相衝突」只能用 partialFilterExpression。
+        index.Contains("sparse").Should().BeFalse("sparse 無法排除複合索引中的手動品項");
+        index["partialFilterExpression"].Should().Be(
+            (BsonValue)new BsonDocument("externalRef.provider", new BsonDocument("$exists", true)));
     }
 
     [Fact]

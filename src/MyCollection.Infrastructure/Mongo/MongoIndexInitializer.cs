@@ -55,13 +55,22 @@ public static class MongoIndexInitializer
                     new CreateIndexOptions { Name = "ix_items_tags" }),
 
                 // 同步冪等性的地基：upsert 依賴此唯一索引避免重複品項。
-                // sparse 讓沒有 externalRef 的手動品項不參與唯一性檢查。
+                //
+                // 用 partial 而非 sparse。複合索引的 sparse 只在「所有」索引欄位都缺席時才跳過該文件，
+                // 而 ownerId 恆存在，於是每筆手動品項都會以 (ownerId, null, null) 進入索引——
+                // 同一使用者建立第二筆手動品項就會撞 duplicate key。
+                // partialFilterExpression 才能真正把沒有 externalRef 的文件排除在唯一性檢查外。
                 new CreateIndexModel<Item>(
                     Builders<Item>.IndexKeys
                         .Ascending(x => x.OwnerId)
                         .Ascending("externalRef.provider")
                         .Ascending("externalRef.externalId"),
-                    new CreateIndexOptions { Name = "ux_items_externalRef", Unique = true, Sparse = true }),
+                    new CreateIndexOptions<Item>
+                    {
+                        Name = "ux_items_externalRef",
+                        Unique = true,
+                        PartialFilterExpression = Builders<Item>.Filter.Exists("externalRef.provider")
+                    }),
 
                 // 全文搜尋
                 new CreateIndexModel<Item>(
