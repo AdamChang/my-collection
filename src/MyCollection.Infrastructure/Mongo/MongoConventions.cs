@@ -39,6 +39,10 @@ public static class MongoConventions
             BsonSerializer.TryRegisterSerializer(
                 new NullableSerializer<DateTime>(new UtcOnlyDateTimeSerializer()));
 
+            BsonSerializer.TryRegisterSerializer(new DecimalSerializer(BsonType.Decimal128));
+            BsonSerializer.TryRegisterSerializer(
+                new NullableSerializer<decimal>(new DecimalSerializer(BsonType.Decimal128)));
+
             _registered = true;
         }
     }

@@ -18,4 +18,8 @@ public sealed class MongoContext
     public IMongoDatabase Database { get; }
 
     public IMongoCollection<User> Users => Database.GetCollection<User>("users");
+
+    public IMongoCollection<Category> Categories => Database.GetCollection<Category>("categories");
+
+    public IMongoCollection<Item> Items => Database.GetCollection<Item>("items");
 }
