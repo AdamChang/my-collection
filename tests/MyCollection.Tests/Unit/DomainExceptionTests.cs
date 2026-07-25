@@ -23,4 +23,32 @@ public class DomainExceptionTests
         ex.ProviderKey.Should().Be("steam");
         ex.Message.Should().Be("rate limited");
     }
+
+    [Fact]
+    public void ForbiddenException_has_a_default_message()
+    {
+        new ForbiddenException().Message.Should().Be("Access to the requested resource is denied.");
+    }
+
+    [Fact]
+    public void ForbiddenException_accepts_a_custom_message()
+    {
+        new ForbiddenException("Invalid email or password.").Message.Should().Be("Invalid email or password.");
+    }
+
+    [Fact]
+    public void ConflictException_carries_its_message()
+    {
+        new ConflictException("Email is already registered.").Message.Should().Be("Email is already registered.");
+    }
+
+    [Fact]
+    public void ProviderException_preserves_the_inner_exception()
+    {
+        var inner = new HttpRequestException("timeout");
+
+        var ex = new ProviderException("steam", "Steam request failed", inner);
+
+        ex.InnerException.Should().BeSameAs(inner);
+    }
 }
