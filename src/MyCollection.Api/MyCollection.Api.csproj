@@ -6,6 +6,10 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.10" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
+    <!-- 直接指定以覆寫 AspNetCore.OpenApi 帶入的 2.0.0：該版本有已知高風險弱點 (GHSA-v5pm-xwqc-g5wc)，
+         在 TreatWarningsAsErrors 下會讓 NU1903 直接使還原失敗。 -->
+    <PackageReference Include="Microsoft.OpenApi" Version="2.11.0" />
   </ItemGroup>
 
   <PropertyGroup>
