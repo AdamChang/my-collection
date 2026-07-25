@@ -94,4 +94,37 @@ public class MongoIndexTests(MongoFixture fixture)
         loaded.CreatedAt.Kind.Should().Be(DateTimeKind.Utc);
         loaded.RefreshTokenHash.Should().BeNull();
     }
+
+    [Theory]
+    [InlineData("ix_items_showcase")]
+    [InlineData("ix_items_category")]
+    [InlineData("ix_items_tags")]
+    [InlineData("ux_items_externalRef")]
+    [InlineData("tx_items_text")]
+    public async Task Items_collection_has_expected_index(string name)
+    {
+        var cursor = await fixture.Context.Items.Indexes.ListAsync();
+        var indexes = await cursor.ToListAsync();
+
+        indexes.Should().Contain(i => i["name"] == name);
+    }
+
+    [Fact]
+    public async Task ExternalRef_index_is_unique_and_sparse()
+    {
+        var cursor = await fixture.Context.Items.Indexes.ListAsync();
+        var index = (await cursor.ToListAsync()).Single(i => i["name"] == "ux_items_externalRef");
+
+        index["unique"].AsBoolean.Should().BeTrue();
+        index["sparse"].AsBoolean.Should().BeTrue("手動品項沒有 externalRef，不應互相衝突");
+    }
+
+    [Fact]
+    public async Task Categories_collection_has_owner_index()
+    {
+        var cursor = await fixture.Context.Categories.Indexes.ListAsync();
+        var indexes = await cursor.ToListAsync();
+
+        indexes.Should().Contain(i => i["name"] == "ix_categories_owner");
+    }
 }
