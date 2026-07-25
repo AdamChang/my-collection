@@ -131,6 +131,13 @@ public sealed class UpdateCategoryCommandHandler(ICategoryRepository repository,
 public sealed class DeleteCategoryCommandHandler(ICategoryRepository repository)
     : IRequestHandler<DeleteCategoryCommand>
 {
-    public Task Handle(DeleteCategoryCommand request, CancellationToken cancellationToken) =>
-        repository.DeleteAsync(ObjectId.Parse(request.Id), cancellationToken);
+    public Task Handle(DeleteCategoryCommand request, CancellationToken cancellationToken)
+    {
+        if (!ObjectId.TryParse(request.Id, out var id))
+        {
+            throw new NotFoundException(nameof(Category), request.Id);
+        }
+
+        return repository.DeleteAsync(id, cancellationToken);
+    }
 }

@@ -161,5 +161,21 @@ public class CatalogEndpointsTests(MongoFixture mongo) : IAsyncLifetime
         (await anonymous.GetAsync("/categories")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    [Theory]
+    [InlineData("/items/not-an-objectid")]
+    [InlineData("/items/123")]
+    public async Task Malformed_item_id_returns_404_not_500(string url)
+    {
+        (await _client.GetAsync(url)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _client.DeleteAsync(url)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Malformed_category_id_delete_returns_404_not_500()
+    {
+        (await _client.DeleteAsync("/categories/not-an-objectid")).StatusCode
+            .Should().Be(HttpStatusCode.NotFound);
+    }
+
     private sealed record PagedItemsResponse(ItemDto[] Items, long Total, int Page, int PageSize);
 }

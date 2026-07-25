@@ -180,6 +180,13 @@ public sealed class UpdateItemCommandHandler(
 
 public sealed class DeleteItemCommandHandler(IItemRepository items) : IRequestHandler<DeleteItemCommand>
 {
-    public Task Handle(DeleteItemCommand request, CancellationToken cancellationToken) =>
-        items.DeleteAsync(ObjectId.Parse(request.Id), cancellationToken);
+    public Task Handle(DeleteItemCommand request, CancellationToken cancellationToken)
+    {
+        if (!ObjectId.TryParse(request.Id, out var id))
+        {
+            throw new NotFoundException(nameof(Item), request.Id);
+        }
+
+        return items.DeleteAsync(id, cancellationToken);
+    }
 }

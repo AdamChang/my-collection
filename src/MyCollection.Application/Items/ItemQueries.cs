@@ -61,7 +61,13 @@ public sealed class GetItemQueryHandler(IItemRepository items) : IRequestHandler
 {
     public async Task<ItemDto> Handle(GetItemQuery request, CancellationToken cancellationToken)
     {
-        var item = await items.GetAsync(ObjectId.Parse(request.Id), cancellationToken)
+        // 不合法的 id 是「找不到」而非伺服器錯誤；直接 Parse 會擲 FormatException 變成 500
+        if (!ObjectId.TryParse(request.Id, out var id))
+        {
+            throw new NotFoundException(nameof(Item), request.Id);
+        }
+
+        var item = await items.GetAsync(id, cancellationToken)
                    ?? throw new NotFoundException(nameof(Item), request.Id);
 
         return ItemMapper.ToDto(item);
