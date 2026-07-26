@@ -115,7 +115,7 @@ public sealed class SyncCommandHandler(
             Name = DigitalCategoryName,
             Icon = "game",
             Kind = CategoryKind.Digital,
-            Fields = [],
+            Fields = DigitalCategoryFields(),
             CreatedAt = now,
             UpdatedAt = now
         };
@@ -124,6 +124,19 @@ public sealed class SyncCommandHandler(
 
         return category;
     }
+
+    /// <summary>
+    /// 自動建立的品類必須宣告 provider 會寫入的 attributes key，
+    /// 否則 AttributeValidator 會讓使用者之後任何一次更新都失敗（含「設為精選」）。
+    /// 這些 key 對應 SteamProvider.ToExternalItem 的輸出；iconUrl 不設 Required，
+    /// 因為只有 Steam 回傳 img_icon_url 時才會產生這個欄位。
+    /// </summary>
+    private static List<CategoryField> DigitalCategoryFields() =>
+    [
+        new() { Key = "playtimeForever", Label = "遊玩時數（分鐘）", Type = FieldType.Number, ShowOnCard = true },
+        new() { Key = "headerUrl", Label = "封面圖網址", Type = FieldType.Url },
+        new() { Key = "iconUrl", Label = "圖示網址", Type = FieldType.Url }
+    ];
 
     private static ItemSource ToSource(string providerKey) =>
         Enum.TryParse<ItemSource>(providerKey, ignoreCase: true, out var source) ? source : ItemSource.Manual;

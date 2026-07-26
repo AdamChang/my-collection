@@ -131,6 +131,28 @@ public class AttributeValidatorTests
     }
 
     [Fact]
+    public void Rejects_steam_shaped_attributes_against_an_undeclared_category()
+    {
+        // 重現 SyncCommandHandler.EnsureDigitalCategoryAsync 自動建立品類時 Fields = [] 的情境：
+        // SteamProvider.ToExternalItem 產生的 attributes 全部都不是「已宣告」的欄位。
+        var category = CategoryWith();
+
+        var failures = _sut.Validate(category, Attributes("""
+            {
+              "playtimeForever": 120,
+              "headerUrl": "https://cdn.cloudflare.steamstatic.com/steam/apps/620/header.jpg",
+              "iconUrl": "https://media.steampowered.com/steamcommunity/public/images/apps/620/abc.jpg"
+            }
+            """));
+
+        failures.Should().NotBeEmpty(
+            "品類沒有宣告這些欄位時，同步寫入的 attributes 原樣送回 UpdateItemCommand 就會被拒絕");
+        failures.Select(f => f.PropertyName).Should().Contain([
+            "attributes.playtimeForever", "attributes.headerUrl", "attributes.iconUrl"
+        ]);
+    }
+
+    [Fact]
     public void BsonJson_roundtrips_nested_structures()
     {
         var bson = Attributes("""{ "spec": { "scale": "1/8", "tags": ["a", "b"] }, "count": 3 }""");

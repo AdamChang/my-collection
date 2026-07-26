@@ -112,6 +112,24 @@ public class SyncCommandTests
     }
 
     [Fact]
+    public async Task Auto_created_category_declares_the_fields_steam_produces()
+    {
+        _categories.Setup(r => r.FindByNameAsync("數位遊戲", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Category?)null);
+
+        Category? created = null;
+        _categories.Setup(r => r.InsertAsync(It.IsAny<Category>(), It.IsAny<CancellationToken>()))
+            .Callback<Category, CancellationToken>((c, _) => created = c)
+            .Returns(Task.CompletedTask);
+
+        await CreateSut().Handle(new SyncCommand("steam"), CancellationToken.None);
+
+        created!.Fields.Select(f => f.Key).Should()
+            .Contain(["playtimeForever", "headerUrl", "iconUrl"],
+                "同步寫入的 attributes 必須通過品類 schema 驗證，否則使用者一更新該品項就會 400");
+    }
+
+    [Fact]
     // 帳號查詢發生在建立 SyncJob 之前，所以這條路徑不會留下任何 job 記錄
     public async Task Missing_linked_account_throws_NotFound()
     {
