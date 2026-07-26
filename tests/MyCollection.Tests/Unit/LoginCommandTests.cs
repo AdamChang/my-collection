@@ -79,4 +79,19 @@ public class LoginCommandTests
         (await act.Should().ThrowAsync<ForbiddenException>())
             .Which.Message.Should().Be("Invalid email or password.");
     }
+
+    [Fact]
+    public async Task Unknown_email_still_performs_password_verification()
+    {
+        _users.Setup(r => r.GetByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((User?)null);
+
+        var act = () => CreateSut().Handle(new LoginCommand("nobody@example.com", "x"), CancellationToken.None);
+
+        await act.Should().ThrowAsync<ForbiddenException>();
+
+        // 帳號不存在時若跳過 Verify，回應時間會比密碼錯誤短約一個 PBKDF2 的成本（實測約 20ms），
+        // 攻擊者據此即可列舉已註冊的 email。兩條路徑必須都付出相同成本。
+        _hasher.Verify(h => h.Verify(It.IsAny<string>(), "x"), Times.Once);
+    }
 }
