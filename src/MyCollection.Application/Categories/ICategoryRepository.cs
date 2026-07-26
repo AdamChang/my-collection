@@ -11,6 +11,9 @@ public interface ICategoryRepository
     /// <summary>非自己也非系統內建時回傳 null。</summary>
     Task<Category?> GetAsync(ObjectId id, CancellationToken ct);
 
+    /// <summary>依名稱找自己的品類（不含系統內建）。同步用來定位目標品類。</summary>
+    Task<Category?> FindByNameAsync(string name, CancellationToken ct);
+
     Task InsertAsync(Category category, CancellationToken ct);
 
     /// <summary>找不到擲 NotFoundException；系統內建品類擲 ForbiddenException。</summary>

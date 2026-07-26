@@ -23,6 +23,13 @@ public sealed class MongoCategoryRepository(MongoContext context, IUserContext u
             .Find(Builders<Category>.Filter.And(VisibleFilter, Builders<Category>.Filter.Eq(x => x.Id, id)))
             .FirstOrDefaultAsync(ct)!;
 
+    public Task<Category?> FindByNameAsync(string name, CancellationToken ct) =>
+        Categories
+            .Find(Builders<Category>.Filter.And(
+                Builders<Category>.Filter.Eq(x => x.OwnerId, userContext.UserId),
+                Builders<Category>.Filter.Eq(x => x.Name, name)))
+            .FirstOrDefaultAsync(ct)!;
+
     public Task InsertAsync(Category category, CancellationToken ct)
     {
         category.OwnerId = userContext.UserId;
