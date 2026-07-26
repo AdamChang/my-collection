@@ -49,19 +49,32 @@ public static class DependencyInjection
 
         var steam = configuration.GetSection(SteamOptions.SectionName).Get<SteamOptions>() ?? new SteamOptions();
 
-        // 韌性處理器要等 Task 10 裝 Microsoft.Extensions.Http.Resilience 之後才掛上
         services.AddHttpClient<SteamProvider>(client =>
-        {
-            client.BaseAddress = new Uri(steam.BaseAddress);
-            client.Timeout = TimeSpan.FromSeconds(steam.TimeoutSeconds);
-        });
+            {
+                client.BaseAddress = new Uri(steam.BaseAddress);
+                client.Timeout = TimeSpan.FromSeconds(steam.TimeoutSeconds);
+            })
+            .AddStandardResilienceHandler(options =>
+            {
+                options.Retry.MaxRetryAttempts = 3;
+                options.Retry.BackoffType = Polly.DelayBackoffType.Exponential;
+                options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(steam.TimeoutSeconds);
+                options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(steam.TimeoutSeconds * 4);
+                options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(steam.TimeoutSeconds * 4);
+            });
 
         services.AddHttpClient<OpenGraphProvider>(client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(10);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("MyCollection/1.0 (+metadata-fetch)");
-            client.MaxResponseContentBufferSize = 2 * 1024 * 1024;
-        });
+            {
+                client.Timeout = TimeSpan.FromSeconds(10);
+                client.DefaultRequestHeaders.UserAgent.ParseAdd("MyCollection/1.0 (+metadata-fetch)");
+                client.MaxResponseContentBufferSize = 2 * 1024 * 1024;
+            })
+            .AddStandardResilienceHandler();
+
+        services.AddHttpClient(ShowcaseImageDownloader.HttpClientName, client =>
+            client.Timeout = TimeSpan.FromSeconds(30));
+
+        services.AddHostedService<ShowcaseImageDownloader>();
 
         services.AddScoped<IMetadataProvider>(sp => sp.GetRequiredService<SteamProvider>());
         services.AddScoped<IMetadataProvider>(sp => sp.GetRequiredService<OpenGraphProvider>());
