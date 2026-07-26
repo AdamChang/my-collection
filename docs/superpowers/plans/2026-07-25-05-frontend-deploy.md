@@ -59,11 +59,15 @@ src/MyCollection.Api/Dockerfile
 
 - [ ] **Step 1: 建立專案**
 
-在 `F:\VibeCode\MyCollection` 執行：
+在 **worktree 根目錄**執行（不是 master checkout 的 `F:\VibeCode\MyCollection`）：
 
 ```bash
-npx --yes @angular/cli@20 new web --style=css --ssr=false --routing --skip-git --package-manager=npm
+NG_CLI_ANALYTICS=false npx --yes @angular/cli@20 new web --style=css --ssr=false --routing --skip-git --package-manager=npm --defaults
 ```
+
+`NG_CLI_ANALYTICS=false` 與 `--defaults` 缺一不可：前者擋掉 npx 首次執行時的 analytics 詢問，後者讓 Angular 20 其餘的互動提問（AI 工具設定、zoneless 等）全部取預設值。少了它們，指令會停在提問畫面等 stdin，而自動化執行環境的 stdin 是關閉的，會直接卡死。
+
+實測產出 Angular **20.3**，測試框架是 **Karma + Jasmine**（`@angular/build:karma`），不是 vitest。
 
 - [ ] **Step 2: 建立開發用 proxy**
 
@@ -80,11 +84,15 @@ npx --yes @angular/cli@20 new web --style=css --ssr=false --routing --skip-git -
 }
 ```
 
-`web/angular.json` 的 `projects.web.architect.serve.options` 加入：
+`web/angular.json` 的 `projects.web.architect.serve` 加入：
 
 ```json
-            "proxyConfig": "proxy.conf.json"
+            "options": { "proxyConfig": "proxy.conf.json" }
 ```
+
+注意 `ng new` 產生的 `serve` 底下**只有 `configurations`、沒有 `options` 鍵**，必須整個建出來而非「加入既有的 options」。
+
+`pathRewrite` 是 webpack-dev-server 的語法，而 Angular 17+ 的 dev-server 已改用 Vite——但 `@angular/build/src/utils/load-proxy-config.js` 會把 `pathRewrite` 轉譯成 Vite 的 `rewrite` 函式，所以上面的設定在 Vite base 的 dev-server 上有效，不需要改寫。
 
 - [ ] **Step 3: 固定 API base path**
 
@@ -101,10 +109,10 @@ export const API_BASE = '/api';
 - [ ] **Step 4: 驗證建置與測試**
 
 Run: `cd web && npm run build`
-Expected: `Application bundle generation complete`
+Expected: `Application bundle generation complete`，輸出位置 `web/dist/web`，實際靜態檔在 `web/dist/web/browser`（Task 9 的 Dockerfile 依賴這個路徑）。
 
 Run: `cd web && npm test -- --watch=false --browsers=ChromeHeadless`
-Expected: 預設樣板測試全過。若 `ng new` 產生的是 vitest 設定，改跑 `npm test -- --run`。
+Expected: `TOTAL: 2 SUCCESS`（`ng new` 的樣板測試）。此指令需要本機有 Chrome，Karma 會自行探測。
 
 - [ ] **Step 5: Commit**
 
@@ -3226,7 +3234,13 @@ server {
     client_max_body_size 12m;
 
     # 反代到 API 容器；剝掉 /api 前綴，後端路由是 /items 而非 /api/items
-    location /api/ {
+    #
+    # `^~` 不可省略。nginx 的比對順序是「exact = → ^~ 前綴 → regex → 一般前綴」，
+    # 沒有 ^~ 的話下面那條副檔名 regex 會贏過這條前綴規則：圖片網址是
+    # /api/media/{id}/card.webp（見 MediaEndpoints 的 GET /media/{**path}），
+    # 結尾是 .webp 就被 regex 接走，nginx 改去磁碟找 html/api/media/... 而 404。
+    # 症狀是「網站正常但所有圖片掛掉」，且只在 Docker 部署下出現，ng serve 不會重現。
+    location ^~ /api/ {
         proxy_pass         http://api:8080/;
         proxy_http_version 1.1;
         proxy_set_header   Host $host;
