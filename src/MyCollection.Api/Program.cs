@@ -72,6 +72,7 @@ app.MapCategoryEndpoints();
 app.MapItemEndpoints();
 app.MapMediaEndpoints();
 app.MapShowcaseEndpoints();
+app.MapShareEndpoints();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 
 await using (var scope = app.Services.CreateAsyncScope())
