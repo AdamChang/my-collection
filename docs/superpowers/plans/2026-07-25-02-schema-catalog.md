@@ -75,7 +75,10 @@ public class EntitySerializationTests
                     Options = ["Good Smile", "ALTER"],
                     Required = true, Searchable = true, ShowOnCard = true
                 }
-            ]
+            ],
+            // 必填：未指定的 DateTime 是 MinValue/Unspecified，會被 UtcOnlyDateTimeSerializer 拒絕
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
         };
 
         var doc = category.ToBsonDocument();
@@ -324,13 +327,19 @@ git commit -m "feat(domain): 新增 Category 與 Item 實體"
     }
 
     [Fact]
-    public async Task ExternalRef_index_is_unique_and_sparse()
+    public async Task ExternalRef_index_is_unique_and_partial()
     {
         var cursor = await fixture.Context.Items.Indexes.ListAsync();
         var index = (await cursor.ToListAsync()).Single(i => i["name"] == "ux_items_externalRef");
 
         index["unique"].AsBoolean.Should().BeTrue();
-        index["sparse"].AsBoolean.Should().BeTrue("手動品項沒有 externalRef，不應互相衝突");
+
+        // 複合索引的 sparse 只在所有索引欄位都缺席時才跳過文件，而 ownerId 恆存在——
+        // 手動品項仍會以 (ownerId, null, null) 進索引並互相衝突。
+        // 要達成「手動品項沒有 externalRef，不應互相衝突」只能用 partialFilterExpression。
+        index.Contains("sparse").Should().BeFalse("sparse 無法排除複合索引中的手動品項");
+        index["partialFilterExpression"].Should().Be(
+            (BsonValue)new BsonDocument("externalRef.provider", new BsonDocument("$exists", true)));
     }
 
     [Fact]
@@ -385,13 +394,22 @@ Expected: 7 筆新測試 FAIL（索引不存在）。
                     new CreateIndexOptions { Name = "ix_items_tags" }),
 
                 // 同步冪等性的地基：upsert 依賴此唯一索引避免重複品項。
-                // sparse 讓沒有 externalRef 的手動品項不參與唯一性檢查。
+                //
+                // 用 partial 而非 sparse。複合索引的 sparse 只在「所有」索引欄位都缺席時才跳過該文件，
+                // 而 ownerId 恆存在，於是每筆手動品項都會以 (ownerId, null, null) 進入索引——
+                // 同一使用者建立第二筆手動品項就會撞 duplicate key。
+                // partialFilterExpression 才能真正把沒有 externalRef 的文件排除在唯一性檢查外。
                 new CreateIndexModel<Item>(
                     Builders<Item>.IndexKeys
                         .Ascending(x => x.OwnerId)
                         .Ascending("externalRef.provider")
                         .Ascending("externalRef.externalId"),
-                    new CreateIndexOptions { Name = "ux_items_externalRef", Unique = true, Sparse = true }),
+                    new CreateIndexOptions<Item>
+                    {
+                        Name = "ux_items_externalRef",
+                        Unique = true,
+                        PartialFilterExpression = Builders<Item>.Filter.Exists("externalRef.provider")
+                    }),
 
                 // 全文搜尋
                 new CreateIndexModel<Item>(
@@ -604,8 +622,10 @@ public sealed class MongoCategoryRepository(MongoContext context, IUserContext u
     private IMongoCollection<Category> Categories => context.Categories;
 
     /// <summary>可見範圍：自己的 + 系統內建。所有查詢一律從這裡起頭。</summary>
+    // 集合運算式 [userContext.UserId, null] 在此處型別推斷有歧義（ObjectId 與 null 混用），
+    // 必須寫明 ObjectId?[]。
     private FilterDefinition<Category> VisibleFilter =>
-        Builders<Category>.Filter.In(x => x.OwnerId, [userContext.UserId, null]);
+        Builders<Category>.Filter.In(x => x.OwnerId, new ObjectId?[] { userContext.UserId, null });
 
     public async Task<IReadOnlyList<Category>> ListAsync(CancellationToken ct) =>
         await Categories.Find(VisibleFilter).SortBy(x => x.Name).ToListAsync(ct);
@@ -633,11 +653,20 @@ public sealed class MongoCategoryRepository(MongoContext context, IUserContext u
 
         category.OwnerId = userContext.UserId;
 
-        await Categories.ReplaceOneAsync(
+        // 與 MongoItemRepository 同理：$set 具名欄位，不用 ReplaceOne，
+        // 避免 IgnoreExtraElements 造成文件既有欄位被靜默刪除。
+        var update = Builders<Category>.Update
+            .Set(x => x.Name, category.Name)
+            .Set(x => x.Icon, category.Icon)
+            .Set(x => x.Kind, category.Kind)
+            .Set(x => x.Fields, category.Fields)
+            .Set(x => x.UpdatedAt, category.UpdatedAt);
+
+        await Categories.UpdateOneAsync(
             Builders<Category>.Filter.And(
                 Builders<Category>.Filter.Eq(x => x.Id, category.Id),
                 Builders<Category>.Filter.Eq(x => x.OwnerId, userContext.UserId)),
-            category,
+            update,
             cancellationToken: ct);
     }
 
@@ -998,12 +1027,18 @@ public sealed class UpdateCategoryCommandHandler(ICategoryRepository repository,
 public sealed class DeleteCategoryCommandHandler(ICategoryRepository repository)
     : IRequestHandler<DeleteCategoryCommand>
 {
-    public Task Handle(DeleteCategoryCommand request, CancellationToken cancellationToken) =>
-        repository.DeleteAsync(ObjectId.Parse(request.Id), cancellationToken);
-    }
-```
+    public Task Handle(DeleteCategoryCommand request, CancellationToken cancellationToken)
+    {
+        // DeleteCategoryCommand 無 validator，不合法 id 必須回 404 而非 500
+        if (!ObjectId.TryParse(request.Id, out var id))
+        {
+            throw new NotFoundException(nameof(Category), request.Id);
+        }
 
-（注意最後一個大括號縮排，實際貼上時請對齊。）
+        return repository.DeleteAsync(id, cancellationToken);
+    }
+}
+```
 
 `src/MyCollection.Application/Categories/ListCategoriesQuery.cs`：
 
@@ -1273,6 +1308,82 @@ public static class BsonJson
 }
 ```
 
+- [ ] **Step 3b: 實作 UTC 邊界歸一化**
+
+`src/MyCollection.Application/Common/UtcDate.cs`：
+
+```csharp
+namespace MyCollection.Application.Common;
+
+/// <summary>
+/// API 邊界的 DateTime 歸一化。
+///
+/// 資料層的 UtcOnlyDateTimeSerializer 會拒絕任何 Kind != Utc 的值（避免 UTC+8 機器把
+/// 03:00 靜默存成前一天 19:00）。但 System.Text.Json 反序列化沒帶 'Z' 的字串會得到
+/// Unspecified，前端只要少寫一個 Z 就會讓請求 500。這裡在進入 Handler 前先歸一化：
+/// 沒有時區資訊的輸入一律視為 UTC，帶時區的則換算成 UTC。
+/// </summary>
+public static class UtcDate
+{
+    public static DateTime Normalise(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Utc => value,
+        DateTimeKind.Local => value.ToUniversalTime(),
+        _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+    };
+
+    public static DateTime? Normalise(DateTime? value) => value is null ? null : Normalise(value.Value);
+}
+```
+
+搭配測試 `tests/MyCollection.Tests/Unit/UtcDateTests.cs`：
+
+```csharp
+using FluentAssertions;
+using MyCollection.Application.Common;
+
+namespace MyCollection.Tests.Unit;
+
+public class UtcDateTests
+{
+    [Fact]
+    public void Treats_naive_input_as_utc_without_shifting_the_clock()
+    {
+        var naive = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Unspecified);
+
+        var result = UtcDate.Normalise(naive);
+
+        result.Kind.Should().Be(DateTimeKind.Utc);
+        result.Should().Be(new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public void Converts_local_input_to_utc()
+    {
+        var local = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Local);
+
+        var result = UtcDate.Normalise(local);
+
+        result.Kind.Should().Be(DateTimeKind.Utc);
+        result.Should().Be(local.ToUniversalTime());
+    }
+
+    [Fact]
+    public void Leaves_utc_input_untouched()
+    {
+        var utc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        UtcDate.Normalise(utc).Should().Be(utc);
+    }
+
+    [Fact]
+    public void Passes_null_through()
+    {
+        UtcDate.Normalise((DateTime?)null).Should().BeNull();
+    }
+}
+```
+
 - [ ] **Step 4: 實作 AttributeValidator**
 
 `src/MyCollection.Application/Items/AttributeValidator.cs`：
@@ -1354,12 +1465,25 @@ public sealed class AttributeValidator : IAttributeValidator
         _ => $"'{field.Label}' has an unsupported field type."
     };
 
+    /// <summary>
+    /// 只接受 ISO-8601。用 TryParseExact 而非 TryParse：後者過於寬鬆，
+    /// InvariantCulture 下 "15 January" 會被解析成 2015-01-01，型別驗證形同虛設。
+    /// </summary>
+    private static readonly string[] IsoFormats =
+    [
+        "yyyy-MM-dd",
+        "yyyy-MM-ddTHH:mm:ss",
+        "yyyy-MM-ddTHH:mm:ssK",
+        "yyyy-MM-ddTHH:mm:ss.FFFFFFFK"
+    ];
+
     private static bool IsDate(BsonValue value) =>
         value.IsValidDateTime
-        || (value.IsString && DateTime.TryParse(
+        || (value.IsString && DateTime.TryParseExact(
             value.AsString,
+            IsoFormats,
             CultureInfo.InvariantCulture,
-            DateTimeStyles.RoundtripKind | DateTimeStyles.AdjustToUniversal,
+            DateTimeStyles.RoundtripKind,
             out _));
 
     private static bool IsAbsoluteUrl(BsonValue value) =>
@@ -1374,7 +1498,12 @@ public sealed class AttributeValidator : IAttributeValidator
 Run: `dotnet test --filter AttributeValidatorTests`
 Expected: `Passed: 13`
 
-`Rejects_wrong_type` 中 `Date` 案例 `"15 January"` 在 InvariantCulture + RoundtripKind 下解析失敗，符合預期。
+**實測記錄（此處原本有兩個錯誤，已修正）：**
+
+1. `DateTimeStyles.RoundtripKind | DateTimeStyles.AdjustToUniversal` 是**非法組合**，`DateTime.TryParse` 會擲 `ArgumentException: The DateTimeStyles value RoundtripKind cannot be used with the values AssumeLocal, AssumeUniversal or AdjustToUniversal.`——每一次 Date 欄位驗證都會炸。
+2. 即使只用 `RoundtripKind`，`DateTime.TryParse("15 January", InvariantCulture, ...)` 也會**成功**解析成 `2015-01-01`。用 `TryParse` 做型別驗證等於沒驗。
+
+正解是 `TryParseExact` + 明確的 ISO-8601 格式清單（見上）。實測該清單接受 `2026-01-15`、`2026-01-15T10:30:00`、`2026-01-15T00:00:00Z`、`2026-01-15T10:30:00+08:00`、含小數秒的變體；拒絕 `15 January`、`01/15/2026`、`2026-13-01`、`2026-01-15 10:30:00`（空格分隔非 ISO-8601）與空字串。
 
 - [ ] **Step 6: Commit**
 
@@ -1717,13 +1846,35 @@ public sealed class MongoItemRepository(MongoContext context, IUserContext userC
         return Items.InsertOneAsync(item, cancellationToken: ct);
     }
 
+    /// <summary>
+    /// 刻意用 $set 具名欄位而非 ReplaceOne。
+    ///
+    /// MongoConventions 註冊了 IgnoreExtraElementsConvention(true)——這是滾動式 schema 演進
+    /// 的必要條件，但代價是反序列化會丟掉實體沒宣告的欄位。若用 ReplaceOne 把實體整個寫回去，
+    /// 任何一次「欄位改名 → 舊欄位變成 extra element → 使用者編輯該筆」就會永久刪掉舊資料。
+    /// $set 只碰列舉出來的欄位，文件裡的其他東西原封不動。
+    /// </summary>
     public async Task UpdateAsync(Item item, CancellationToken ct)
     {
         item.OwnerId = userContext.UserId;
 
-        var result = await Items.ReplaceOneAsync(
+        var update = Builders<Item>.Update
+            .Set(x => x.CategoryId, item.CategoryId)
+            .Set(x => x.Name, item.Name)
+            .Set(x => x.Description, item.Description)
+            .Set(x => x.Images, item.Images)
+            .Set(x => x.Tags, item.Tags)
+            .Set(x => x.IsShowcased, item.IsShowcased)
+            .Set(x => x.Acquisition, item.Acquisition)
+            .Set(x => x.LocationId, item.LocationId)
+            .Set(x => x.Attributes, item.Attributes)
+            .Set(x => x.UpdatedAt, item.UpdatedAt);
+
+        // OwnerId / Source / ExternalRef / CreatedAt 不在此列：
+        // 它們由同步流程與建立流程擁有，使用者更新不得改寫。
+        var result = await Items.UpdateOneAsync(
             Filter.And(OwnerFilter, Filter.Eq(x => x.Id, item.Id)),
-            item,
+            update,
             cancellationToken: ct);
 
         if (result.MatchedCount == 0)
@@ -2113,7 +2264,8 @@ internal static class ItemWriteHelper
 
         return new Acquisition
         {
-            AcquiredAt = input.AcquiredAt,
+            // 沒帶 Z 的輸入視為 UTC；資料層的 UtcOnlyDateTimeSerializer 會拒絕非 UTC 值
+            AcquiredAt = UtcDate.Normalise(input.AcquiredAt),
             Price = input.Amount is { } amount
                 ? new Money(amount, string.IsNullOrWhiteSpace(input.Currency) ? "TWD" : input.Currency)
                 : null,
@@ -2199,8 +2351,16 @@ public sealed class UpdateItemCommandHandler(
 
 public sealed class DeleteItemCommandHandler(IItemRepository items) : IRequestHandler<DeleteItemCommand>
 {
-    public Task Handle(DeleteItemCommand request, CancellationToken cancellationToken) =>
-        items.DeleteAsync(ObjectId.Parse(request.Id), cancellationToken);
+    public Task Handle(DeleteItemCommand request, CancellationToken cancellationToken)
+    {
+        // 同 GetItemQueryHandler：DeleteItemCommand 無 validator，不合法 id 必須回 404 而非 500
+        if (!ObjectId.TryParse(request.Id, out var id))
+        {
+            throw new NotFoundException(nameof(Item), request.Id);
+        }
+
+        return items.DeleteAsync(id, cancellationToken);
+    }
 }
 ```
 
@@ -2272,7 +2432,14 @@ public sealed class GetItemQueryHandler(IItemRepository items) : IRequestHandler
 {
     public async Task<ItemDto> Handle(GetItemQuery request, CancellationToken cancellationToken)
     {
-        var item = await items.GetAsync(ObjectId.Parse(request.Id), cancellationToken)
+        // GetItemQuery 沒有 validator，直接 Parse 會讓 GET /items/abc 擲 FormatException → 500。
+        // 不合法的 id 是「找不到」而非伺服器錯誤。
+        if (!ObjectId.TryParse(request.Id, out var id))
+        {
+            throw new NotFoundException(nameof(Item), request.Id);
+        }
+
+        var item = await items.GetAsync(id, cancellationToken)
                    ?? throw new NotFoundException(nameof(Item), request.Id);
 
         return ItemMapper.ToDto(item);
@@ -2380,7 +2547,9 @@ public class CatalogEndpointsTests(MongoFixture mongo) : IAsyncLifetime
             kind = "Physical",
             fields = new[]
             {
-                new { key = "brand", label = "廠商", type = "Select", options = new[] { "GSC", "ALTER" }, required = true, searchable = true, showOnCard = true },
+                // 第一個元素必須明確標成 string[]?：匿名型別陣列以第一個元素推論型別，
+                // 若這裡是 non-nullable string[]，下一個元素的 (string[]?)null 會觸發 CS8619（→ 建置失敗）
+                new { key = "brand", label = "廠商", type = "Select", options = (string[]?)["GSC", "ALTER"], required = true, searchable = true, showOnCard = true },
                 new { key = "scale", label = "比例", type = "Text", options = (string[]?)null, required = false, searchable = false, showOnCard = false }
             }
         });

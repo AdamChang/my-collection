@@ -48,7 +48,9 @@
 
 - [ ] **Step 1: 建立 solution 與專案**
 
-在 `F:\VibeCode\MyCollection` 執行：
+> .NET 10 SDK 的 `dotnet new sln` 產生的是新的 XML 格式 **`MyCollection.slnx`**（非 `.sln`）。後續所有引用 solution 檔的地方（例如 Plan 5 的 Dockerfile）都以 `.slnx` 為準。
+
+在 repo 根目錄執行：
 
 ```bash
 dotnet new sln -n MyCollection
@@ -74,7 +76,6 @@ dotnet add src/MyCollection.Application package MediatR
 dotnet add src/MyCollection.Application package FluentValidation
 dotnet add src/MyCollection.Application package FluentValidation.DependencyInjectionExtensions
 dotnet add src/MyCollection.Infrastructure package MongoDB.Driver
-dotnet add src/MyCollection.Infrastructure package Microsoft.Extensions.Options.ConfigurationExtensions
 dotnet add src/MyCollection.Infrastructure package System.IdentityModel.Tokens.Jwt
 dotnet add src/MyCollection.Api package Microsoft.AspNetCore.Authentication.JwtBearer
 
@@ -91,6 +92,8 @@ dotnet add tests/MyCollection.Tests package Microsoft.AspNetCore.Mvc.Testing
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 ```
+
+**不要**再顯式加 `Microsoft.Extensions.Options` / `.Logging` / `.DependencyInjection` / `.Hosting` 等套件參考——共享框架已經提供，多加會觸發 **NU1510**（套件剪除警告），在 `TreatWarningsAsErrors=true` 下直接讓建置失敗。若後續 Task 遇到 NU1510，正解是移除該顯式 `PackageReference`，不是加 `NoWarn`。
 
 - [ ] **Step 3: 建立 `Directory.Build.props`**
 
@@ -181,7 +184,9 @@ public class DomainExceptionTests
 - [ ] **Step 2: 跑測試確認失敗**
 
 Run: `dotnet test --filter DomainExceptionTests`
-Expected: 編譯失敗，`CS0246: 找不到類型或命名空間名稱 'NotFoundException'`。
+Expected: 編譯失敗，`CS0234: 命名空間 'MyCollection' 中沒有類型或命名空間名稱 'Domain'`。
+
+（此時 Domain 專案還沒有任何 `.cs` 檔，命名空間本身不存在，所以是 CS0234 而非 CS0246。往後 Domain 已有檔案時，同類失敗會是 CS0246。）
 
 - [ ] **Step 3: 實作**
 
@@ -312,33 +317,80 @@ using MongoDB.Bson.Serialization.Serializers;
 namespace MyCollection.Infrastructure.Mongo;
 
 /// <summary>
-/// 全域 BSON 慣例。必須在任何序列化發生前呼叫一次（Register 具冪等性）。
+/// 全域 BSON 慣例。必須在任何序列化發生前呼叫一次。
+///
+/// 註冊在 lock 內完成、旗標最後才設：BsonClassMap 一旦建立就永久快取，
+/// 若讓第二個執行緒在註冊完成前提早返回並開始序列化，整個行程都會固定用錯誤的 schema。
 /// </summary>
 public static class MongoConventions
 {
-    private static int _registered;
+    private static readonly Lock Gate = new();
+    private static bool _registered;
 
     public static void Register()
     {
-        if (Interlocked.Exchange(ref _registered, 1) == 1)
+        lock (Gate)
         {
-            return;
-        }
-
-        ConventionRegistry.Register(
-            "mycollection",
-            new ConventionPack
+            if (_registered)
             {
-                new CamelCaseElementNameConvention(),
-                new IgnoreExtraElementsConvention(true),
-                new EnumRepresentationConvention(BsonType.String)
-            },
-            _ => true);
+                return;
+            }
 
-        BsonSerializer.RegisterSerializer(new DateTimeSerializer(DateTimeKind.Utc));
-        BsonSerializer.RegisterSerializer(new NullableSerializer<DateTime>(new DateTimeSerializer(DateTimeKind.Utc)));
+            ConventionRegistry.Register(
+                "mycollection",
+                new ConventionPack
+                {
+                    new CamelCaseElementNameConvention(),
+                    new IgnoreExtraElementsConvention(true),
+                    new EnumRepresentationConvention(BsonType.String)
+                },
+                _ => true);
+
+            BsonSerializer.TryRegisterSerializer(new UtcOnlyDateTimeSerializer());
+            BsonSerializer.TryRegisterSerializer(
+                new NullableSerializer<DateTime>(new UtcOnlyDateTimeSerializer()));
+
+            _registered = true;
+        }
     }
 }
+
+/// <summary>
+/// 只接受 Kind = Utc 的 DateTime。
+///
+/// 預設的 DateTimeSerializer(DateTimeKind.Utc) 只保證讀出來是 UTC，寫入時會呼叫
+/// ToUniversalTime() —— .NET 把 Unspecified 當成本地時間，於是 UTC+8 的機器會把
+/// 03:00 靜默存成前一天 19:00。購入日期差一天、refresh token 提早失效，都不會拋錯，
+/// 只會在某天變成「時間怪怪的」。寧可在寫入當下就爆。
+/// </summary>
+public sealed class UtcOnlyDateTimeSerializer : SerializerBase<DateTime>
+{
+    // MongoDB.Bson.Serialization.Serializers.DateTimeSerializer 是 sealed，無法繼承，
+    // 改用組合：實際的序列化/反序列化邏輯委派給它，只在寫入前插入 Kind 檢查。
+    private static readonly DateTimeSerializer Inner = new(DateTimeKind.Utc);
+
+    public override void Serialize(BsonSerializationContext context, BsonSerializationArgs args, DateTime value)
+    {
+        if (value.Kind != DateTimeKind.Utc)
+        {
+            throw new InvalidOperationException(
+                $"DateTime must have Kind=Utc before it is persisted, but was {value.Kind}. " +
+                "Normalise the value at the API boundary (treat naive input as UTC).");
+        }
+
+        Inner.Serialize(context, args, value);
+    }
+
+    public override DateTime Deserialize(BsonDeserializationContext context, BsonDeserializationArgs args)
+        => Inner.Deserialize(context, args);
+}
+```
+
+**寫測試時注意**：`BsonClassMapSerializer<T>` 會把成員序列化過程中拋出的例外包一層 `BsonSerializationException`（附上類別/屬性名稱做診斷）。斷言要驗根因：
+
+```csharp
+        act.Should().Throw<Exception>()
+            .Which.GetBaseException().Should().BeOfType<InvalidOperationException>();
 ```
 
 - [ ] **Step 4: 跑測試確認通過**
@@ -377,8 +429,9 @@ namespace MyCollection.Tests.Fixtures;
 
 public sealed class MongoFixture : IAsyncLifetime
 {
-    private readonly MongoDbContainer _container = new MongoDbBuilder()
-        .WithImage("mongo:8.0")
+    // Testcontainers.MongoDb 4.13.0 起，無參數建構子已標記 obsolete（CS0618），
+    // 在 TreatWarningsAsErrors=true 下會直接讓建置失敗。image tag 走建構子參數。
+    private readonly MongoDbContainer _container = new MongoDbBuilder("mongo:8.0")
         .Build();
 
     public string ConnectionString => _container.GetConnectionString();
@@ -2178,6 +2231,11 @@ using MyCollection.Infrastructure.Mongo;
 using MyCollection.Infrastructure.Security;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// 必須早於任何 BSON 序列化：BsonClassMap 一旦建立就永久快取，
+// 若在慣例註冊前先序列化過，整個行程都會固定用 PascalCase 欄位名，
+// 而 Repository 產生的 filter 是 camelCase —— 查不到資料，授權模型也跟著失效。
+MongoConventions.Register();
 
 // MediatR 14 未設定授權金鑰時會在啟動記一則 warning。本專案為個人非營利用途，靜音即可。
 builder.Logging.AddFilter("LuckyPennySoftware.MediatR.License", LogLevel.None);

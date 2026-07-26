@@ -1548,10 +1548,20 @@ public class MongoPublicCatalogReaderTests(MongoFixture fixture) : IAsyncLifetim
             NewItem(OtherOwner, "別人的精選", FigureCategory, showcased: true)
         ]);
 
+        // CreatedAt / UpdatedAt 必須明確賦值：UtcOnlyDateTimeSerializer 會拒絕 Kind = Unspecified 的
+        // DateTime.MinValue（見總覽「實作過程中確認的環境事實」）。
         await fixture.Context.Categories.InsertManyAsync(
         [
-            new Category { Id = FigureCategory, OwnerId = Owner, Name = "公仔", Icon = "figure" },
-            new Category { Id = GameCategory, OwnerId = Owner, Name = "數位遊戲", Icon = "game" }
+            new Category
+            {
+                Id = FigureCategory, OwnerId = Owner, Name = "公仔", Icon = "figure",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            },
+            new Category
+            {
+                Id = GameCategory, OwnerId = Owner, Name = "數位遊戲", Icon = "game",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            }
         ]);
     }
 
@@ -1587,7 +1597,7 @@ public class MongoPublicCatalogReaderTests(MongoFixture fixture) : IAsyncLifetim
 
         items.Should().OnlyContain(i => i.Price != null);
         items[0].Price!.Amount.Should().Be(12800m);
-        items[0].Price.Currency.Should().Be("TWD");
+        items[0].Price!.Currency.Should().Be("TWD");
     }
 
     [Fact]
@@ -1681,16 +1691,11 @@ public sealed class MongoPublicCatalogReader(MongoContext context) : IPublicCata
     {
         var filters = new List<FilterDefinition<Item>> { Filter.Eq(x => x.OwnerId, ownerId) };
 
-        if (scope == ShareScope.Showcase)
-        {
-            filters.Add(Filter.Eq(x => x.IsShowcased, true));
-        }
-        else
-        {
-            filters.Add(categoryIds.Count > 0
-                ? Filter.In(x => x.CategoryId, categoryIds)
-                : Filter.Where(_ => false));
-        }
+        // Category scope 且清單為空時，$in: [] 天然不匹配任何文件——
+        // 不需要（也不該用）Filter.Where(_ => false)，那會走 LINQ 轉譯，行為不保證。
+        filters.Add(scope == ShareScope.Showcase
+            ? Filter.Eq(x => x.IsShowcased, true)
+            : Filter.In(x => x.CategoryId, categoryIds));
 
         var projection = includePrice
             ? BaseProjection.Include("acquisition.price")
@@ -1698,8 +1703,11 @@ public sealed class MongoPublicCatalogReader(MongoContext context) : IPublicCata
 
         var documents = await context.Items
             .Find(Filter.And(filters))
-            .Project(projection)
-            .SortByDescending(x => x.UpdatedAt)
+            // 泛型參數不可省略：ProjectionDefinition<Item> 實際上是 ProjectionDefinition<Item, Item> 的
+            // 子型別，型別推斷會把 TNewProjection 解析成 Item，結果拿到 List<Item> 而非 List<BsonDocument>。
+            .Project<BsonDocument>(projection)
+            // _id 作為決定性次要鍵：updatedAt 只有毫秒精度，極易並列
+            .Sort(Builders<Item>.Sort.Descending(x => x.UpdatedAt).Descending(x => x.Id))
             .ToListAsync(ct);
 
         return documents.Select(ToProjection).ToArray();
@@ -1708,8 +1716,9 @@ public sealed class MongoPublicCatalogReader(MongoContext context) : IPublicCata
     public async Task<IReadOnlyDictionary<ObjectId, string>> ListCategoryNamesAsync(ObjectId ownerId, CancellationToken ct)
     {
         var categories = await context.Categories
-            .Find(Builders<Category>.Filter.In(x => x.OwnerId, [ownerId, null]))
-            .Project(Builders<Category>.Projection.Include(x => x.Name))
+            // 明確指定 ObjectId?[]：集合運算式無法從 [ownerId, null] 推斷可空型別
+            .Find(Builders<Category>.Filter.In(x => x.OwnerId, new ObjectId?[] { ownerId, null }))
+            .Project<BsonDocument>(Builders<Category>.Projection.Include(x => x.Name))
             .ToListAsync(ct);
 
         return categories.ToDictionary(
@@ -1935,7 +1944,9 @@ using System.Security.Cryptography;
 using FluentValidation;
 using MediatR;
 using MongoDB.Bson;
+using MyCollection.Application.Common;
 using MyCollection.Domain.Entities;
+using MyCollection.Domain.Exceptions;
 
 namespace MyCollection.Application.Sharing;
 
@@ -1995,7 +2006,8 @@ public sealed class CreateShareLinkCommandHandler(IShareLinkRepository links, Ti
             Scope = Enum.Parse<ShareScope>(request.Scope, ignoreCase: true),
             IncludeCategoryIds = request.IncludeCategoryIds.Select(ObjectId.Parse).ToList(),
             IncludePrice = request.IncludePrice,
-            ExpiresAt = request.ExpiresAt,
+            // 沒帶 Z 的輸入視為 UTC；資料層會拒絕非 UTC 值
+            ExpiresAt = UtcDate.Normalise(request.ExpiresAt),
             CreatedAt = timeProvider.GetUtcNow().UtcDateTime
         };
 
@@ -2021,8 +2033,17 @@ public sealed class ListShareLinksQueryHandler(IShareLinkRepository links)
 
 public sealed class DeleteShareLinkCommandHandler(IShareLinkRepository links) : IRequestHandler<DeleteShareLinkCommand>
 {
-    public Task Handle(DeleteShareLinkCommand request, CancellationToken cancellationToken) =>
-        links.DeleteAsync(ObjectId.Parse(request.Id), cancellationToken);
+    public Task Handle(DeleteShareLinkCommand request, CancellationToken cancellationToken)
+    {
+        // 路由參數沒有 validator 把關，ObjectId.Parse 會擲 FormatException → 500。
+        // 非法 id 語意上就是「找不到」。
+        if (!ObjectId.TryParse(request.Id, out var id))
+        {
+            throw new NotFoundException(nameof(ShareLink), request.Id);
+        }
+
+        return links.DeleteAsync(id, cancellationToken);
+    }
 }
 ```
 
@@ -2137,6 +2158,10 @@ Run: `dotnet test --filter ShareCommandTests`
 Expected: `Passed: 6`
 
 - [ ] **Step 7: 寫端到端測試**
+
+> **步驟順序的已知缺陷（實作時已確認）：** 端點在 Step 5 就實作完了，所以下面的整合測試第一次跑就是綠的，從未見過紅燈——安全性斷言等於沒被驗證過。
+>
+> 補救方式（實作時務必執行）：測試綠燈後，暫時在 `MongoPublicCatalogReader.BaseProjection` 尾端加一行 `.Include(x => x.Acquisition)` 製造洩漏，重跑 `dotnet test --filter ShareEndpointsTests`，**必須看到 `Public_payload_never_contains_acquisition_by_default` 與 `Public_payload_contains_price_only_when_share_opts_in` 兩個測試失敗**（後者也會紅，因為 vendor 與 acquiredAt 連 opt-in 情境都不該外流）。確認後 `git checkout --` 還原。已實測驗證：失敗 2、通過 5。
 
 `tests/MyCollection.Tests/Integration/ShareEndpointsTests.cs`：
 

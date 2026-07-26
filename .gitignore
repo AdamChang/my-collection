@@ -489,3 +489,6 @@ data/
 web/node_modules/
 web/dist/
 appsettings.Local.json
+
+# Claude Code 本機設定（權限等，不進版控）
+.claude/settings.local.json

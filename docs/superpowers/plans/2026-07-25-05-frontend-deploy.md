@@ -10,6 +10,8 @@
 
 **Tech Stack:** Angular 20（standalone、signals、`@if`/`@for` 控制流程）、TypeScript、nginx、Docker Compose。Node v24 / npm 11。
 
+**Task 10 是後端收尾**，與前端無關：修掉 Plan 1 留下的登入時序側信道。放在這份計畫是因為它屬於「全部做完後的安全性收尾」，不阻擋任何前端工作，可在 Task 1–9 之間任意時點插入。
+
 ---
 
 ## 檔案結構
@@ -3159,7 +3161,7 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 COPY Directory.Build.props ./
-COPY MyCollection.sln ./
+COPY MyCollection.slnx ./
 COPY src/MyCollection.Domain/*.csproj src/MyCollection.Domain/
 COPY src/MyCollection.Application/*.csproj src/MyCollection.Application/
 COPY src/MyCollection.Infrastructure/*.csproj src/MyCollection.Infrastructure/
@@ -3320,6 +3322,113 @@ Expected: 顯示登入/註冊頁。
 ```bash
 git add Dockerfile* docker-compose.yml .env.example .dockerignore src/MyCollection.Api/Dockerfile web/Dockerfile web/nginx.conf
 git commit -m "chore: 新增 Docker 化與 docker-compose 部署"
+```
+
+---
+
+### Task 10：封住登入的時序側信道（Plan 1 遺留）
+
+**背景：** Plan 1 Task 10 的 `LoginCommandHandler` 對「帳號不存在」與「密碼錯誤」回傳相同訊息 `"Invalid email or password."`，防的是訊息內容洩漏。但**回應時間**仍會洩漏：帳號不存在時 `user is null` 短路，完全不跑 PBKDF2；帳號存在但密碼錯時要跑滿 210,000 次迭代（實測約 20ms）。攻擊者拿一份 email 清單各打一次登入，用回應時間就能篩出哪些已註冊，訊息一致的防護等於白做。
+
+**修法：** `user is null` 時仍對一組固定的假雜湊跑一次 `Verify`，讓兩條路徑都付出相同的 PBKDF2 成本。假雜湊在靜態欄位算一次即可（型別初始化時，不影響每次請求）。
+
+**Files:**
+- Modify: `src/MyCollection.Application/Auth/LoginCommand.cs`
+- Modify: `tests/MyCollection.Tests/Unit/LoginCommandTests.cs`
+
+- [ ] **Step 1: 寫失敗測試**
+
+在 `tests/MyCollection.Tests/Unit/LoginCommandTests.cs` 的類別內加入：
+
+```csharp
+    [Fact]
+    public async Task Unknown_email_still_performs_password_verification()
+    {
+        _users.Setup(r => r.GetByEmailAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((User?)null);
+
+        var act = () => CreateSut().Handle(new LoginCommand("nobody@example.com", "x"), CancellationToken.None);
+
+        await act.Should().ThrowAsync<ForbiddenException>();
+
+        // 帳號不存在時若跳過 Verify，回應時間會比密碼錯誤短約一個 PBKDF2 的成本（實測約 20ms），
+        // 攻擊者據此即可列舉已註冊的 email。兩條路徑必須都付出相同成本。
+        _hasher.Verify(h => h.Verify(It.IsAny<string>(), "x"), Times.Once);
+    }
+```
+
+- [ ] **Step 2: 跑測試確認失敗**
+
+Run: `dotnet test --filter LoginCommandTests`
+Expected: `Unknown_email_still_performs_password_verification` 失敗，訊息為 Moq 回報 `Verify` 預期呼叫 1 次但實際 0 次。其餘 3 個測試仍通過。
+
+- [ ] **Step 3: 實作**
+
+`src/MyCollection.Application/Auth/LoginCommand.cs` 的 `LoginCommandHandler` 改為：
+
+```csharp
+public sealed class LoginCommandHandler(
+    IUserRepository users,
+    IPasswordHasher passwordHasher,
+    ITokenService tokenService,
+    TimeProvider timeProvider) : IRequestHandler<LoginCommand, AuthResponse>
+{
+    private const string InvalidCredentials = "Invalid email or password.";
+
+    /// <summary>
+    /// 帳號不存在時拿來墊檔的雜湊。只在型別初始化時算一次，不影響每次請求的成本。
+    /// 目的是讓「帳號不存在」與「密碼錯誤」兩條路徑跑一樣多的 PBKDF2 迭代，
+    /// 否則回應時間差（約 20ms）會直接洩漏該 email 是否已註冊。
+    /// </summary>
+    private static readonly string DummyHash =
+        "pbkdf2.210000.AAAAAAAAAAAAAAAAAAAAAA==.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+
+    public async Task<AuthResponse> Handle(LoginCommand request, CancellationToken cancellationToken)
+    {
+        var user = await users.GetByEmailAsync(request.Email, cancellationToken);
+
+        // 即使帳號不存在也跑一次驗證，兩條路徑的耗時才一致（見 DummyHash 註解）
+        var passwordMatches = passwordHasher.Verify(user?.PasswordHash ?? DummyHash, request.Password);
+
+        // 帳號不存在與密碼錯誤回傳相同訊息，避免帳號列舉
+        if (user is null || !passwordMatches)
+        {
+            throw new ForbiddenException(InvalidCredentials);
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var refreshToken = tokenService.CreateRefreshToken();
+
+        await users.SetRefreshTokenAsync(
+            user.Id,
+            tokenService.HashRefreshToken(refreshToken),
+            now.Add(tokenService.RefreshTokenLifetime),
+            cancellationToken);
+
+        return new AuthResponse(
+            tokenService.CreateAccessToken(user),
+            refreshToken,
+            now.Add(tokenService.AccessTokenLifetime),
+            new UserDto(user.Id.ToString(), user.Email, user.DisplayName));
+    }
+}
+```
+
+`DummyHash` 的 base64 內容是全零，格式合法（`Pbkdf2PasswordHasher.Verify` 會解析成功並實際跑滿 210,000 次迭代），但永遠不會與真實密碼相符。**不要**改成 `"invalid"` 之類的字串——`Verify` 會在格式檢查階段就 `return false`，等於沒跑 PBKDF2，這個 Task 就白做了。
+
+- [ ] **Step 4: 跑測試確認通過**
+
+Run: `dotnet test --filter LoginCommandTests`
+Expected: 通過 4。
+
+Run: `dotnet test`
+Expected: 全綠、0 失敗、0 警告。
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src tests
+git commit -m "fix(auth): 封住登入的帳號列舉時序側信道"
 ```
 
 ---
