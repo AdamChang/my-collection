@@ -13,6 +13,9 @@ public sealed class ItemQuerySpec
     public bool? IsShowcased { get; init; }
     public int Page { get; init; } = 1;
     public int PageSize { get; init; } = 24;
+
+    /// <summary>依 category schema 的 searchable 欄位篩選，key 為 field key、value 為精確比對值。</summary>
+    public IReadOnlyDictionary<string, string>? Attributes { get; init; }
 }
 
 public interface IItemRepository

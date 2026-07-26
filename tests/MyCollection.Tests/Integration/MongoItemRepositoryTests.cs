@@ -178,4 +178,50 @@ public class MongoItemRepositoryTests(MongoFixture fixture) : IAsyncLifetime
 
         tags.Should().BeEquivalentTo("FPS", "GSC", "Puzzle", "VOCALOID");
     }
+
+    [Fact]
+    public async Task SearchAsync_filters_by_attribute_values()
+    {
+        await fixture.Context.Items.InsertManyAsync(
+        [
+            NewItem(Owner, "GSC 公仔", FigureCategory),
+            NewItem(Owner, "ALTER 公仔", FigureCategory)
+        ]);
+        await fixture.Context.Items.UpdateOneAsync(
+            MongoDB.Driver.Builders<Item>.Filter.Eq(x => x.Name, "ALTER 公仔"),
+            MongoDB.Driver.Builders<Item>.Update.Set("attributes.brand", "ALTER"));
+
+        var result = await _sut.SearchAsync(
+            new ItemQuerySpec { Attributes = new Dictionary<string, string> { ["brand"] = "ALTER" } },
+            CancellationToken.None);
+
+        result.Items.Should().ContainSingle().Which.Name.Should().Be("ALTER 公仔");
+    }
+
+    [Fact]
+    public async Task SearchAsync_combines_attribute_filters_with_and()
+    {
+        await SeedAsync();
+
+        var result = await _sut.SearchAsync(
+            new ItemQuerySpec
+            {
+                Attributes = new Dictionary<string, string> { ["brand"] = "GSC", ["scale"] = "1/8" }
+            },
+            CancellationToken.None);
+
+        result.Total.Should().Be(0, "沒有品項同時符合兩個屬性");
+    }
+
+    [Fact]
+    public async Task SearchAsync_ignores_attribute_filters_with_blank_values()
+    {
+        await SeedAsync();
+
+        var result = await _sut.SearchAsync(
+            new ItemQuerySpec { Attributes = new Dictionary<string, string> { ["brand"] = "" } },
+            CancellationToken.None);
+
+        result.Total.Should().Be(3, "空值代表「不篩選」");
+    }
 }

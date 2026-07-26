@@ -13,7 +13,8 @@ public record SearchItemsQuery(
     IReadOnlyList<string>? Tags = null,
     bool? IsShowcased = null,
     int Page = 1,
-    int PageSize = 24) : IRequest<PagedResult<ItemDto>>;
+    int PageSize = 24,
+    IReadOnlyDictionary<string, string>? Attributes = null) : IRequest<PagedResult<ItemDto>>;
 
 public record GetItemQuery(string Id) : IRequest<ItemDto>;
 
@@ -44,7 +45,8 @@ public sealed class SearchItemsQueryHandler(IItemRepository items)
             Tags = request.Tags,
             IsShowcased = request.IsShowcased,
             Page = request.Page,
-            PageSize = request.PageSize
+            PageSize = request.PageSize,
+            Attributes = request.Attributes
         };
 
         var result = await items.SearchAsync(spec, cancellationToken);

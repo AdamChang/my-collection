@@ -9,17 +9,24 @@ public static class ItemEndpoints
     {
         var group = app.MapGroup("/items").WithTags("Items").RequireAuthorization();
 
-        group.MapGet("/", async (
-            string? search,
-            string? categoryId,
-            string[]? tags,
-            bool? isShowcased,
-            int? page,
-            int? pageSize,
-            ISender sender,
-            CancellationToken ct) =>
-            Results.Ok(await sender.Send(new SearchItemsQuery(
-                search, categoryId, tags, isShowcased, page ?? 1, pageSize ?? 24), ct)));
+        group.MapGet("/", async (HttpRequest request, ISender sender, CancellationToken ct) =>
+        {
+            var query = request.Query;
+
+            // attr.brand=GSC → Attributes["brand"] = "GSC"
+            var attributes = query
+                .Where(kv => kv.Key.StartsWith("attr.", StringComparison.Ordinal) && kv.Key.Length > 5)
+                .ToDictionary(kv => kv.Key[5..], kv => kv.Value.ToString());
+
+            return Results.Ok(await sender.Send(new SearchItemsQuery(
+                query["search"].FirstOrDefault(),
+                query["categoryId"].FirstOrDefault(),
+                query["tags"].ToArray()!,
+                bool.TryParse(query["isShowcased"], out var showcased) ? showcased : null,
+                int.TryParse(query["page"], out var page) ? page : 1,
+                int.TryParse(query["pageSize"], out var pageSize) ? pageSize : 24,
+                attributes), ct));
+        });
 
         // 必須早於 "/{id}"：否則 "tags" 會被當成品項 id。
         group.MapGet("/tags", async (ISender sender, CancellationToken ct) =>

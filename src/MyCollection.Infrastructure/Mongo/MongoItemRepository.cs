@@ -40,6 +40,17 @@ public sealed class MongoItemRepository(MongoContext context, IUserContext userC
             filters.Add(Filter.All(x => x.Tags, spec.Tags));
         }
 
+        foreach (var (key, value) in spec.Attributes ?? new Dictionary<string, string>())
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            // 欄位 key 已由 category schema 的 camelCase 規則約束，不會構成注入路徑
+            filters.Add(Filter.Eq($"attributes.{key}", value));
+        }
+
         if (!string.IsNullOrWhiteSpace(spec.Search))
         {
             filters.Add(Filter.Text(spec.Search));
