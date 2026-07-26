@@ -1,6 +1,7 @@
 using FluentValidation;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using MyCollection.Application.Media;
 using MyCollection.Domain.Exceptions;
 
 namespace MyCollection.Api;
@@ -62,6 +63,8 @@ public sealed class GlobalExceptionHandler(
                 (IDictionary<string, string[]>)v.Errors
                     .GroupBy(e => e.PropertyName)
                     .ToDictionary(g => g.Key, g => g.Select(e => e.ErrorMessage).ToArray())),
+
+            InvalidImageException i => (StatusCodes.Status400BadRequest, "Invalid image.", i.Message, null),
 
             NotFoundException n => (StatusCodes.Status404NotFound, "Resource not found.", n.Message, null),
 
