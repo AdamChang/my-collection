@@ -24,4 +24,9 @@ public sealed class MongoContext
     public IMongoCollection<Item> Items => Database.GetCollection<Item>("items");
 
     public IMongoCollection<ShareLink> ShareLinks => Database.GetCollection<ShareLink>("shareLinks");
+
+    public IMongoCollection<ExternalAccount> ExternalAccounts =>
+        Database.GetCollection<ExternalAccount>("externalAccounts");
+
+    public IMongoCollection<SyncJob> SyncJobs => Database.GetCollection<SyncJob>("syncJobs");
 }

@@ -84,5 +84,17 @@ public static class MongoIndexInitializer
                 Builders<ShareLink>.IndexKeys.Ascending(x => x.Slug),
                 new CreateIndexOptions { Name = "ux_shareLinks_slug", Unique = true }),
             cancellationToken: ct);
+
+        await context.ExternalAccounts.Indexes.CreateOneAsync(
+            new CreateIndexModel<ExternalAccount>(
+                Builders<ExternalAccount>.IndexKeys.Ascending(x => x.OwnerId).Ascending(x => x.Provider),
+                new CreateIndexOptions { Name = "ux_externalAccounts_owner_provider", Unique = true }),
+            cancellationToken: ct);
+
+        await context.SyncJobs.Indexes.CreateOneAsync(
+            new CreateIndexModel<SyncJob>(
+                Builders<SyncJob>.IndexKeys.Ascending(x => x.OwnerId).Descending(x => x.StartedAt),
+                new CreateIndexOptions { Name = "ix_syncJobs_owner_startedAt" }),
+            cancellationToken: ct);
     }
 }
