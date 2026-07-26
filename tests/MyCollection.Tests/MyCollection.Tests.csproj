@@ -28,4 +28,8 @@
     <ProjectReference Include="..\..\src\MyCollection.Api\MyCollection.Api.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="Fixtures\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

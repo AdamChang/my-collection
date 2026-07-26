@@ -1,0 +1,28 @@
+{
+  "response": {
+    "game_count": 3,
+    "games": [
+      {
+        "appid": 440,
+        "name": "Team Fortress 2",
+        "playtime_forever": 1234,
+        "img_icon_url": "e3f595a92552da3d664ad00277fad2107345f743",
+        "rtime_last_played": 1735689600
+      },
+      {
+        "appid": 620,
+        "name": "Portal 2",
+        "playtime_forever": 0,
+        "img_icon_url": "9f7d3b0e9f0c9d3f2e1a5b6c7d8e9f0a1b2c3d4e",
+        "rtime_last_played": 0
+      },
+      {
+        "appid": 292030,
+        "name": "The Witcher 3: Wild Hunt",
+        "playtime_forever": 5678,
+        "img_icon_url": "",
+        "rtime_last_played": 1740000000
+      }
+    ]
+  }
+}
