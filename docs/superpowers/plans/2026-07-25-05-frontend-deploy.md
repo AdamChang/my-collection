@@ -497,6 +497,13 @@ describe('authInterceptor', () => {
 
   afterEach(() => controller.verify());
 
+  /**
+   * 讓 refresh() 的 promise 鏈與 from(promise) 的 .then 全部跑完。
+   * setTimeout 是 macrotask，排在所有 pending microtask 之後，
+   * 因此不必猜要 await 幾次 Promise.resolve()。
+   */
+  const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
   async function signIn(): Promise<void> {
     const promise = auth.login('a@b.c', 'x');
     controller.expectOne('/api/auth/login').flush({
@@ -545,6 +552,8 @@ describe('authInterceptor', () => {
       user: { id: 'u1', email: 'a@b.c', displayName: 'Adam' },
     });
 
+    await settle();
+
     const retried = controller.expectOne('/api/items');
     expect(retried.request.headers.get('Authorization')).toBe('Bearer access-2');
     retried.flush({ ok: true });
@@ -560,10 +569,29 @@ describe('authInterceptor', () => {
     controller.expectOne('/api/items').flush(null, { status: 401, statusText: 'Unauthorized' });
     controller.expectOne('/api/auth/refresh').flush(null, { status: 403, statusText: 'Forbidden' });
 
+    await settle();
+
     expect(auth.isAuthenticated()).toBe(false);
   });
 });
 ```
+
+> **為什麼兩個 401 測試要 `await settle()`：** `AuthService.refresh()` 是 `async` method，內部用
+> `firstValueFrom(http.post(...))`；`auth.interceptor.ts` 再用 `from(auth.refresh()).pipe(switchMap(...))`
+> 把這個 Promise 接回 Observable。`flush()` 對 mock 後端而言是同步的，但 Promise 的
+> `.then()`／`await` 續行永遠是排入 microtask queue，不會跟觸發它的同步程式碼在同一輪跑完。
+> 從「refresh 的 `/api/auth/refresh` 被 flush」到「重試的請求真正送出」，中間要經過
+> `promise resolve → store() → async function 回傳的 promise settle → from(promise) 的 .then →
+> switchMap`，共數個 microtask tick；「refresh 失敗時呼叫 `auth.logout()`」也是同樣的鏈。
+> 若在 `flush()` 後不等待就直接呼叫 `controller.expectOne(...)` 或斷言，會確定性地撲空
+> （不是 flaky，是每次都失敗）。
+>
+> 修正時選 `setTimeout(resolve, 0)`（macrotask）而不是 `await Promise.resolve()`
+> （microtask）：`await Promise.resolve()` 必須猜對要等幾個 tick，一旦 `AuthService.refresh()`
+> 之後多加一個 `await`，tick 數就變了，測試又會悄悄壞掉；`setTimeout` 一定排在所有現存的
+> pending microtask 之後執行，不必管鏈有多長，比較不脆弱。`fakeAsync`/`tick()` 也能解決同樣的
+> 問題，但要連 `signIn()` 一起改寫（`fakeAsync` 底下 promise 的 zone 語意不同），改動面較大，
+> 這裡不採用。
 
 - [ ] **Step 2: 跑測試確認失敗**
 
