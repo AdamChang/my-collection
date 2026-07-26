@@ -28,6 +28,7 @@ public static class DependencyInjection
         services.AddScoped<ICategoryRepository, MongoCategoryRepository>();
         services.AddScoped<IItemRepository, MongoItemRepository>();
         services.AddScoped<IShareLinkRepository, MongoShareLinkRepository>();
+        services.AddScoped<IPublicCatalogReader, MongoPublicCatalogReader>();
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
         services.AddSingleton<ITokenService, JwtTokenService>();
         services.AddSingleton<IAttributeValidator, AttributeValidator>();
