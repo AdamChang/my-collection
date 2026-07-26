@@ -22,4 +22,6 @@ public sealed class MongoContext
     public IMongoCollection<Category> Categories => Database.GetCollection<Category>("categories");
 
     public IMongoCollection<Item> Items => Database.GetCollection<Item>("items");
+
+    public IMongoCollection<ShareLink> ShareLinks => Database.GetCollection<ShareLink>("shareLinks");
 }

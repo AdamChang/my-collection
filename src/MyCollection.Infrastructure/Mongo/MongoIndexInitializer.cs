@@ -78,5 +78,11 @@ public static class MongoIndexInitializer
                     new CreateIndexOptions { Name = "tx_items_text" })
             ],
             cancellationToken: ct);
+
+        await context.ShareLinks.Indexes.CreateOneAsync(
+            new CreateIndexModel<ShareLink>(
+                Builders<ShareLink>.IndexKeys.Ascending(x => x.Slug),
+                new CreateIndexOptions { Name = "ux_shareLinks_slug", Unique = true }),
+            cancellationToken: ct);
     }
 }

@@ -5,6 +5,7 @@ using MyCollection.Application.Categories;
 using MyCollection.Application.Common;
 using MyCollection.Application.Items;
 using MyCollection.Application.Media;
+using MyCollection.Application.Sharing;
 using MyCollection.Infrastructure.Imaging;
 using MyCollection.Infrastructure.Mongo;
 using MyCollection.Infrastructure.Security;
@@ -26,6 +27,7 @@ public static class DependencyInjection
         services.AddScoped<IUserRepository, MongoUserRepository>();
         services.AddScoped<ICategoryRepository, MongoCategoryRepository>();
         services.AddScoped<IItemRepository, MongoItemRepository>();
+        services.AddScoped<IShareLinkRepository, MongoShareLinkRepository>();
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
         services.AddSingleton<ITokenService, JwtTokenService>();
         services.AddSingleton<IAttributeValidator, AttributeValidator>();

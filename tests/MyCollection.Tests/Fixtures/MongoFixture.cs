@@ -36,6 +36,7 @@ public sealed class MongoFixture : IAsyncLifetime
         await Context.Users.DeleteManyAsync(FilterDefinition<User>.Empty);
         await Context.Categories.DeleteManyAsync(FilterDefinition<Category>.Empty);
         await Context.Items.DeleteManyAsync(FilterDefinition<Item>.Empty);
+        await Context.ShareLinks.DeleteManyAsync(FilterDefinition<ShareLink>.Empty);
     }
 
     public Task DisposeAsync() => _container.DisposeAsync().AsTask();
