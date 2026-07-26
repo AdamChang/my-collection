@@ -3,11 +3,13 @@ using Microsoft.Extensions.DependencyInjection;
 using MyCollection.Application.Auth;
 using MyCollection.Application.Categories;
 using MyCollection.Application.Common;
+using MyCollection.Application.Ingestion;
 using MyCollection.Application.Items;
 using MyCollection.Application.Media;
 using MyCollection.Application.Sharing;
 using MyCollection.Infrastructure.Imaging;
 using MyCollection.Infrastructure.Mongo;
+using MyCollection.Infrastructure.Providers;
 using MyCollection.Infrastructure.Security;
 using MyCollection.Infrastructure.Storage;
 
@@ -20,6 +22,8 @@ public static class DependencyInjection
         services.Configure<MongoOptions>(configuration.GetSection(MongoOptions.SectionName));
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         services.Configure<StorageOptions>(configuration.GetSection(StorageOptions.SectionName));
+        services.Configure<SecretProtectionOptions>(configuration.GetSection(SecretProtectionOptions.SectionName));
+        services.Configure<SteamOptions>(configuration.GetSection(SteamOptions.SectionName));
 
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<MongoContext>();
@@ -34,6 +38,32 @@ public static class DependencyInjection
         services.AddSingleton<IAttributeValidator, AttributeValidator>();
         services.AddSingleton<IFileStorage, LocalFileStorage>();
         services.AddSingleton<IImageProcessor, ImageSharpProcessor>();
+
+        services.AddSingleton<ISecretProtector, AesGcmSecretProtector>();
+
+        services.AddScoped<IExternalAccountRepository, MongoExternalAccountRepository>();
+        services.AddScoped<ISyncJobRepository, MongoSyncJobRepository>();
+        services.AddScoped<IItemSyncWriter, MongoItemSyncWriter>();
+
+        var steam = configuration.GetSection(SteamOptions.SectionName).Get<SteamOptions>() ?? new SteamOptions();
+
+        // 韌性處理器要等 Task 10 裝 Microsoft.Extensions.Http.Resilience 之後才掛上
+        services.AddHttpClient<SteamProvider>(client =>
+        {
+            client.BaseAddress = new Uri(steam.BaseAddress);
+            client.Timeout = TimeSpan.FromSeconds(steam.TimeoutSeconds);
+        });
+
+        services.AddHttpClient<OpenGraphProvider>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(10);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("MyCollection/1.0 (+metadata-fetch)");
+            client.MaxResponseContentBufferSize = 2 * 1024 * 1024;
+        });
+
+        services.AddScoped<IMetadataProvider>(sp => sp.GetRequiredService<SteamProvider>());
+        services.AddScoped<IMetadataProvider>(sp => sp.GetRequiredService<OpenGraphProvider>());
+        services.AddScoped<ProviderRegistry>();
 
         return services;
     }
