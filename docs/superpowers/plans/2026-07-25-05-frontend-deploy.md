@@ -3019,7 +3019,11 @@ Expected: 編譯失敗，`ItemQuerySpec` 沒有 `Attributes` 屬性。
                 continue;
             }
 
-            // 欄位 key 已由 category schema 的 camelCase 規則約束，不會構成注入路徑
+            // key 未經 schema 驗證——它直接來自查詢字串的 attr.{key}，呼叫端可以送任意字串。
+            // 不構成注入的理由是這兩點，不是「key 已被約束」：
+            //   1. key 永遠被 "attributes." 前綴包住，無法成為頂層的 $ 運算子
+            //   2. value 的型別是 string，無法變成 {$ne: null} 之類的文件
+            // 後果僅止於「可以查未宣告的屬性鍵」，查無資料而已，且擁有者條件仍然生效。
             filters.Add(Filter.Eq($"attributes.{key}", value));
         }
 ```
