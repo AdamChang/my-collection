@@ -17,7 +17,8 @@ public sealed class ApiFactory(MongoFixture mongo) : WebApplicationFactory<Progr
             ["Mongo:Database"] = mongo.DatabaseName,
             ["Jwt:Key"] = "integration-test-signing-key-at-least-32-bytes!!",
             ["Jwt:Issuer"] = "mycollection",
-            ["Jwt:Audience"] = "mycollection-web"
+            ["Jwt:Audience"] = "mycollection-web",
+            ["Storage:LocalRoot"] = Path.Combine(Path.GetTempPath(), "mycollection-tests", Guid.NewGuid().ToString("N"))
         }));
 
         return base.CreateHost(builder);

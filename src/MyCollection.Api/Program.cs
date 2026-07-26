@@ -70,6 +70,7 @@ if (app.Environment.IsDevelopment())
 app.MapAuthEndpoints();
 app.MapCategoryEndpoints();
 app.MapItemEndpoints();
+app.MapMediaEndpoints();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 
 await using (var scope = app.Services.CreateAsyncScope())
