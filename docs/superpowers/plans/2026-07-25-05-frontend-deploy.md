@@ -10,7 +10,19 @@
 
 **Tech Stack:** Angular 20（standalone、signals、`@if`/`@for` 控制流程）、TypeScript、nginx、Docker Compose。Node v24 / npm 11。
 
-**Task 10 是後端收尾**，與前端無關：修掉 Plan 1 留下的登入時序側信道。放在這份計畫是因為它屬於「全部做完後的安全性收尾」，不阻擋任何前端工作，可在 Task 1–9 之間任意時點插入。
+**Task 10 是後端收尾**，與前端無關：修掉 Plan 1 留下的登入時序側信道。放在這份計畫是因為它屬於「全部做完後的安全性收尾」，不阻擋任何前端工作，可在任意時點插入。
+
+## 執行順序
+
+Task 7 已拆成 7a/7b/7c、Task 8 已拆成 8a/8b（理由見各自的拆分說明），實際共 13 個 Task：
+
+```
+Task 10（登入時序側信道）→ Task 8a（後端屬性篩選）→ 後端封版
+   ↓
+Task 1（Angular 骨架）→ 2 → 3 → 4 → 5 → 6 → 7a → 7b → 7c → 8b → 9
+```
+
+**兩個純後端的 Task（10、8a）先做完再碰前端。** 之後所有工作都關在 `web/` 內，`src/`、`tests/` 完全凍結——這條界線讓每個前端 Task 的 review 都可以用「`git diff --stat -- src tests` 必須為空」機械化地驗證有沒有越界。反過來排（前端做到一半才回頭改後端）會讓 `SearchItemsQuery` 的簽章在前端服務層已經接上之後才變動。
 
 ---
 
@@ -1730,21 +1742,24 @@ git commit -m "feat(web): 新增 ItemCard、ImageUploader 與 TagInput"
 
 ---
 
-### Task 7：功能頁面與路由
+> **原本這裡是單一的 Task 7（11 個 Step、7 個 component、約 1,100 行）。已拆成 7a / 7b / 7c 三個 Task。**
+>
+> 拆分理由：單一 Task 的份量超出一個實作者能一次拿在手上的量，兩階段 review 也審不動——reviewer 要嘛草草放行，要嘛在第 4 個 component 才發現第 1 個的設計問題。拆開後每段結束都是可建置、可測試、可 commit 的完整狀態。
+>
+> **路由表必須跟著拆。** `loadComponent: () => import('./features/catalog/catalog.component')` 是動態 import，但 TypeScript 仍會在**編譯期**檢查模組存在，檔案還沒建就是 `TS2307`、建置直接失敗。所以 7a 只寫它自己建出來的路由，7b、7c 各自追加，不要一次貼完整張表。
+>
+> **傳給實作者的共通提醒（三段都適用）：** `DynamicFormComponent` 的 `effect` 同時讀 `fields()` 與 `value()`，每次變動都重建 FormGroup。若把 `[value]` 綁到父層用 `(valueChange)` 更新的同一份狀態，會形成「打字 → emit → 父層更新 value → effect 重建表單」的無窮迴圈。**`[value]` 只能綁初始值（例如載入回來的品項），不可綁隨 `valueChange` 變動的狀態。**
+
+---
+
+### Task 7a：路由表、登入頁與 Showcase 牆
 
 **Files:**
 - Create: `web/src/app/features/auth/login.component.ts`
 - Create: `web/src/app/features/showcase/showcase.component.ts`
-- Create: `web/src/app/features/catalog/catalog.component.ts`
-- Create: `web/src/app/features/item-detail/item-detail.component.ts`
-- Create: `web/src/app/features/categories/categories.component.ts`
-- Create: `web/src/app/features/settings/settings.component.ts`
-- Create: `web/src/app/features/public/public-share.component.ts`
-- Modify: `web/src/app/app.routes.ts`、`web/src/app/app.ts`（或 `app.component.ts`）
+- Modify: `web/src/app/app.routes.ts`
 
-因篇幅，此 Task 逐頁給出完整程式碼；每完成一頁就跑一次 `npm run build` 再進下一頁。
-
-- [ ] **Step 1: 路由表**
+- [ ] **Step 1: 路由表（僅 7a 的路由）**
 
 `web/src/app/app.routes.ts`：
 
@@ -1758,11 +1773,6 @@ export const routes: Routes = [
     loadComponent: () => import('./features/auth/login.component').then((m) => m.LoginComponent),
   },
   {
-    path: 'p/:slug',
-    loadComponent: () =>
-      import('./features/public/public-share.component').then((m) => m.PublicShareComponent),
-  },
-  {
     path: '',
     canActivate: [authGuard],
     children: [
@@ -1771,36 +1781,13 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/showcase/showcase.component').then((m) => m.ShowcaseComponent),
       },
-      {
-        path: 'catalog',
-        loadComponent: () =>
-          import('./features/catalog/catalog.component').then((m) => m.CatalogComponent),
-      },
-      {
-        path: 'items/new',
-        loadComponent: () =>
-          import('./features/item-detail/item-detail.component').then((m) => m.ItemDetailComponent),
-      },
-      {
-        path: 'items/:id',
-        loadComponent: () =>
-          import('./features/item-detail/item-detail.component').then((m) => m.ItemDetailComponent),
-      },
-      {
-        path: 'categories',
-        loadComponent: () =>
-          import('./features/categories/categories.component').then((m) => m.CategoriesComponent),
-      },
-      {
-        path: 'settings',
-        loadComponent: () =>
-          import('./features/settings/settings.component').then((m) => m.SettingsComponent),
-      },
     ],
   },
   { path: '**', redirectTo: '' },
 ];
 ```
+
+`catalog`、`items/*`、`categories`、`settings`、`p/:slug` 的路由分別由 Task 7b、7c 追加。此刻寫進去會因為 component 檔案不存在而編譯失敗。
 
 - [ ] **Step 2: 登入頁**
 
@@ -1957,7 +1944,33 @@ export class ShowcaseComponent {
 }
 ```
 
-- [ ] **Step 4: 庫存頁**
+- [ ] **Step 4: 驗證建置與測試**
+
+Run: `cd web && npm run build`
+Expected: `Application bundle generation complete`
+
+Run: `cd web && npm test -- --watch=false --browsers=ChromeHeadless`
+Expected: 全綠。7a 不新增測試（頁面元件的行為由 Task 8 的整合測試涵蓋），既有測試不可因路由變更而轉紅。
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add web/src/app/features web/src/app/app.routes.ts
+git commit -m "feat(web): 新增路由表、登入頁與 Showcase 牆"
+```
+
+---
+
+### Task 7b：庫存頁與品項檢視/編輯頁
+
+**Files:**
+- Create: `web/src/app/features/catalog/catalog.component.ts`
+- Create: `web/src/app/features/item-detail/item-detail.component.ts`
+- Modify: `web/src/app/app.routes.ts`（追加路由）
+
+提醒：品項編輯頁會用到 `DynamicFormComponent`。`[value]` 只能綁「從後端載回來的品項屬性」這種初始值，**不可**綁隨 `(valueChange)` 更新的狀態，否則會無窮迴圈重建表單（原因見 Task 7 拆分說明）。
+
+- [ ] **Step 1: 庫存頁**
 
 `web/src/app/features/catalog/catalog.component.ts`：
 
@@ -2081,7 +2094,7 @@ export class CatalogComponent {
 }
 ```
 
-- [ ] **Step 5: 品項檢視/編輯頁**
+- [ ] **Step 2: 品項檢視/編輯頁**
 
 `web/src/app/features/item-detail/item-detail.component.ts`：
 
@@ -2330,7 +2343,58 @@ export class ItemDetailComponent {
 }
 ```
 
-- [ ] **Step 6: 品類 schema 編輯器**
+- [ ] **Step 3: 追加 7b 的路由**
+
+`web/src/app/app.routes.ts` 的 `canActivate: [authGuard]` 那個節點的 `children` 陣列，在 Showcase 路由之後追加：
+
+```ts
+      {
+        path: 'catalog',
+        loadComponent: () =>
+          import('./features/catalog/catalog.component').then((m) => m.CatalogComponent),
+      },
+      {
+        path: 'items/new',
+        loadComponent: () =>
+          import('./features/item-detail/item-detail.component').then((m) => m.ItemDetailComponent),
+      },
+      {
+        path: 'items/:id',
+        loadComponent: () =>
+          import('./features/item-detail/item-detail.component').then((m) => m.ItemDetailComponent),
+      },
+```
+
+`items/new` 必須排在 `items/:id` **之前**。Angular router 是先到先匹配，順序顛倒的話 `/items/new` 會被 `:id` 吃掉，`new` 被當成 ObjectId 送去後端查詢。
+
+- [ ] **Step 4: 驗證建置與測試**
+
+Run: `cd web && npm run build`
+Expected: `Application bundle generation complete`
+
+Run: `cd web && npm test -- --watch=false --browsers=ChromeHeadless`
+Expected: 全綠，既有測試不可轉紅。
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add web/src/app/features web/src/app/app.routes.ts
+git commit -m "feat(web): 新增庫存頁與品項檢視/編輯頁"
+```
+
+---
+
+### Task 7c：品類編輯器、設定頁、公開分享頁與應用外殼
+
+**Files:**
+- Create: `web/src/app/features/categories/categories.component.ts`
+- Create: `web/src/app/features/settings/settings.component.ts`
+- Create: `web/src/app/features/public/public-share.component.ts`
+- Modify: `web/src/app/app.routes.ts`（追加路由）、`web/src/app/app.ts`
+
+應用外殼排在最後，是為了讓它導覽列上的每一個 `routerLink` 目標都已經存在。若提早做，連結會被 `{ path: '**', redirectTo: '' }` 全部導回首頁——建置是綠的，但點擊行為是錯的，而且沒有測試會抓到。
+
+- [ ] **Step 1: 品類 schema 編輯器**
 
 `web/src/app/features/categories/categories.component.ts`：
 
@@ -2517,7 +2581,7 @@ export class CategoriesComponent {
 }
 ```
 
-- [ ] **Step 7: 設定頁（Steam 綁定、同步紀錄、分享連結）**
+- [ ] **Step 2: 設定頁（Steam 綁定、同步紀錄、分享連結）**
 
 `web/src/app/features/settings/settings.component.ts`：
 
@@ -2688,7 +2752,7 @@ export class SettingsComponent {
 
 `SettingsComponent` 用到 `DatePipe`，在 `imports` 加入 `DatePipe`（`import { DatePipe } from '@angular/common';`，並把 `DatePipe` 加進 `imports` 陣列）。
 
-- [ ] **Step 8: 公開分享頁**
+- [ ] **Step 3: 公開分享頁**
 
 `web/src/app/features/public/public-share.component.ts`：
 
@@ -2759,7 +2823,34 @@ export class PublicShareComponent {
 }
 ```
 
-- [ ] **Step 9: 應用外殼**
+- [ ] **Step 4: 追加 7c 的路由**
+
+`web/src/app/app.routes.ts`：`children` 陣列追加 `categories` 與 `settings`，並在**頂層**（`login` 之後、`path: ''` 那個受 guard 保護的節點之前）加入公開分享頁：
+
+```ts
+  {
+    path: 'p/:slug',
+    loadComponent: () =>
+      import('./features/public/public-share.component').then((m) => m.PublicShareComponent),
+  },
+```
+
+```ts
+      {
+        path: 'categories',
+        loadComponent: () =>
+          import('./features/categories/categories.component').then((m) => m.CategoriesComponent),
+      },
+      {
+        path: 'settings',
+        loadComponent: () =>
+          import('./features/settings/settings.component').then((m) => m.SettingsComponent),
+      },
+```
+
+`p/:slug` 必須在頂層而非 `children` 內。放進 children 會套上 `authGuard`，未登入的訪客開分享連結會被踢去登入頁——分享功能就完全失效了，而且自己測試時多半已經登入，不會發現。
+
+- [ ] **Step 5: 應用外殼**
 
 `web/src/app/app.ts`（Angular 20 樣板檔名；若是 `app.component.ts` 則改該檔）：
 
@@ -2810,32 +2901,38 @@ export class App {
 }
 ```
 
-- [ ] **Step 10: 驗證建置與測試**
+- [ ] **Step 6: 驗證建置與測試**
 
 Run: `cd web && npm run build && npm test -- --watch=false --browsers=ChromeHeadless`
 Expected: 建置成功、測試全過。
 
-- [ ] **Step 11: Commit**
+另外手動確認一次導覽列：外殼上的每個 `routerLink`（`/`、`/catalog`、`/categories`、`/settings`）都要真的到達對應頁面，而不是被 `**` 通配路由導回首頁。這一項沒有自動化測試涵蓋。
+
+- [ ] **Step 7: Commit**
 
 ```bash
 git add web
-git commit -m "feat(web): 新增全部功能頁面與路由"
+git commit -m "feat(web): 新增品類編輯器、設定頁、公開分享頁與應用外殼"
 ```
 
 ---
 
-### Task 8：schema 驅動的屬性篩選與卡片欄位
+> **原本這裡是單一的 Task 8（12 個 Step）。已拆成 8a（後端）/ 8b（前端）。**
+>
+> 拆分理由：Step 1–5 是純 .NET（`dotnet test` 驗證），Step 6–12 是純 Angular（`npm test` 驗證），兩者的工具鏈、測試框架、驗證指令完全不同。合在一個 Task 裡，實作者要在兩套心智模型之間切換，而且中途沒有任何可 commit 的綠燈點——後端改完但前端還沒接上時，`SearchItemsQuery` 的簽章已經變了。拆開後 8a 結束時後端是完整且全綠的。
 
-spec §5.3 要求 `fields` 同時餵給**動態表單、動態驗證、篩選器 UI** 三處。前兩者已完成，這個 Task 補上第三處，並讓 `showOnCard` 真的影響卡片顯示。
+### Task 8a：後端支援依 schema 屬性篩選
+
+spec §5.3 要求 `fields` 同時餵給**動態表單、動態驗證、篩選器 UI** 三處。前兩者已完成，Task 8a + 8b 補上第三處，並讓 `showOnCard` 真的影響卡片顯示。8a 負責後端查詢能力。
+
+**注意：這是 Plan 5 唯一會動到 .NET 後端的前端相關 Task**（另一個是 Task 10，與前端無關）。做完之後後端就應該完全凍結，Task 1–7、8b、9 都不該再出現 `src/` 或 `tests/` 的異動。
 
 **Files:**
 - Modify: `src/MyCollection.Application/Items/IItemRepository.cs`（`ItemQuerySpec`）
 - Modify: `src/MyCollection.Infrastructure/Mongo/MongoItemRepository.cs`
 - Modify: `src/MyCollection.Application/Items/ItemQueries.cs`
 - Modify: `src/MyCollection.Api/Endpoints/ItemEndpoints.cs`
-- Modify: `web/src/app/core/api/catalog.service.ts`、`features/catalog/catalog.component.ts`、`shared/item-card/item-card.component.ts`
 - Test: `tests/MyCollection.Tests/Integration/MongoItemRepositoryTests.cs`（追加）
-- Test: `web/src/app/shared/item-card/item-card.component.spec.ts`（追加）
 
 - [ ] **Step 1: 寫失敗的後端測試**
 
@@ -2967,7 +3064,29 @@ public record SearchItemsQuery(
 Run: `dotnet test --filter "MongoItemRepositoryTests|CatalogEndpointsTests"`
 Expected: `Failed: 0`
 
-- [ ] **Step 6: 寫失敗的前端測試**
+Run: `dotnet test`
+Expected: 全綠、0 失敗。`SearchItemsQuery` 的簽章變了，所有呼叫端都必須跟著編譯過。
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src tests
+git commit -m "feat(api): 品項查詢支援依 schema 屬性篩選"
+```
+
+---
+
+### Task 8b：前端屬性篩選 UI 與卡片欄位
+
+**Files:**
+- Modify: `web/src/app/core/api/catalog.service.ts`
+- Modify: `web/src/app/features/catalog/catalog.component.ts`
+- Modify: `web/src/app/shared/item-card/item-card.component.ts`
+- Test: `web/src/app/shared/item-card/item-card.component.spec.ts`（追加）
+
+前置：Task 8a 已完成，後端 `GET /items` 已能解析 `attr.{key}={value}` 查詢參數。
+
+- [ ] **Step 1: 寫失敗的前端測試**
 
 在 `web/src/app/shared/item-card/item-card.component.spec.ts` 的 `describe` 內追加：
 
@@ -2994,12 +3113,12 @@ Expected: `Failed: 0`
   });
 ```
 
-- [ ] **Step 7: 跑前端測試確認失敗**
+- [ ] **Step 2: 跑前端測試確認失敗**
 
 Run: `cd web && npm test -- --watch=false --browsers=ChromeHeadless`
 Expected: 2 筆新測試 FAIL（`cardFields` input 不存在）。
 
-- [ ] **Step 8: 擴充 ItemCard**
+- [ ] **Step 3: 擴充 ItemCard**
 
 `web/src/app/shared/item-card/item-card.component.ts`：
 
@@ -3045,7 +3164,7 @@ import { CategoryFieldDto, ItemDto } from '../../core/models';
     .card__fields dd { margin: 0; }
 ```
 
-- [ ] **Step 9: 前端服務支援屬性篩選**
+- [ ] **Step 4: 前端服務支援屬性篩選**
 
 `web/src/app/core/api/catalog.service.ts` 的 `ItemSearchOptions` 追加：
 
@@ -3063,7 +3182,7 @@ import { CategoryFieldDto, ItemDto } from '../../core/models';
     }
 ```
 
-- [ ] **Step 10: 篩選側欄依 schema 動態產生**
+- [ ] **Step 5: 篩選側欄依 schema 動態產生**
 
 `web/src/app/features/catalog/catalog.component.ts`：
 
@@ -3152,17 +3271,19 @@ import { CategoryDto, CategoryFieldDto, ItemDto } from '../../core/models';
 import { Component, computed, inject, signal } from '@angular/core';
 ```
 
-- [ ] **Step 11: 跑測試確認通過**
+- [ ] **Step 6: 跑測試確認通過**
 
 Run: `cd web && npm run build && npm test -- --watch=false --browsers=ChromeHeadless`
 Expected: 建置成功、`ItemCardComponent` 7 筆全過。
 
-- [ ] **Step 12: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add src tests web
-git commit -m "feat: schema 的 searchable 與 showOnCard 驅動篩選器與卡片欄位"
+git add web
+git commit -m "feat(web): schema 的 searchable 與 showOnCard 驅動篩選器與卡片欄位"
 ```
+
+只 `git add web`。後端的部分在 Task 8a 已經 commit 過了，這裡若寫成 `git add src tests` 會把不相干的殘留一起帶進來。
 
 ---
 
