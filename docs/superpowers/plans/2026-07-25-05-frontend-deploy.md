@@ -1970,6 +1970,15 @@ git commit -m "feat(web): 新增路由表、登入頁與 Showcase 牆"
 
 提醒：品項編輯頁會用到 `DynamicFormComponent`。`[value]` 只能綁「從後端載回來的品項屬性」這種初始值，**不可**綁隨 `(valueChange)` 更新的狀態，否則會無窮迴圈重建表單（原因見 Task 7 拆分說明）。
 
+**`acquisition` 的讀寫形狀不一樣，轉換不可漏。** 後端刻意用了兩種結構：
+
+| 方向 | 型別 | 形狀 |
+|---|---|---|
+| 讀（`GET /items/{id}`） | `AcquisitionDto`（`ItemDtos.cs:12`） | `{ acquiredAt, price: { amount, currency }, vendor }` |
+| 寫（`POST`/`PUT /items`） | `AcquisitionInput`（`ItemCommands.cs:12`） | `{ acquiredAt, amount, currency, vendor }` |
+
+編輯頁載入時拿到巢狀的 `price`，送出時必須攤平成 `amount` + `currency`。漏掉這層轉換的話 `amount` 會是 `undefined`，後端收到 null 就把價格清成空——**畫面上金額還在（那是載入時的舊值），存檔後才消失，而且沒有任何測試會抓到**。撰寫編輯頁的送出邏輯時，明確寫出 `amount: item.acquisition?.price?.amount` 這層取值，不要用展開運算子直接把 `AcquisitionDto` 丟進 payload。
+
 - [ ] **Step 1: 庫存頁**
 
 `web/src/app/features/catalog/catalog.component.ts`：
