@@ -7,6 +7,7 @@ using MyCollection.Application.Ingestion;
 using MyCollection.Application.Items;
 using MyCollection.Application.Media;
 using MyCollection.Application.Sharing;
+using MyCollection.Application.Showcase;
 using MyCollection.Infrastructure.Imaging;
 using MyCollection.Infrastructure.Mongo;
 using MyCollection.Infrastructure.Providers;
@@ -40,6 +41,7 @@ public static class DependencyInjection
         services.AddSingleton<IImageProcessor, ImageSharpProcessor>();
 
         services.AddSingleton<ISecretProtector, AesGcmSecretProtector>();
+        services.AddSingleton<IShowcaseImageQueue, ShowcaseImageQueue>();
 
         services.AddScoped<IExternalAccountRepository, MongoExternalAccountRepository>();
         services.AddScoped<ISyncJobRepository, MongoSyncJobRepository>();

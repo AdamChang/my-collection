@@ -150,7 +150,8 @@ public sealed class UpdateItemCommandHandler(
     IItemRepository items,
     ICategoryRepository categories,
     IAttributeValidator attributeValidator,
-    TimeProvider timeProvider) : IRequestHandler<UpdateItemCommand, ItemDto>
+    TimeProvider timeProvider,
+    Showcase.IShowcaseImageQueue showcaseImageQueue) : IRequestHandler<UpdateItemCommand, ItemDto>
 {
     public async Task<ItemDto> Handle(UpdateItemCommand request, CancellationToken cancellationToken)
     {
@@ -160,6 +161,8 @@ public sealed class UpdateItemCommandHandler(
 
         var (category, attributes) = await ItemWriteHelper.ResolveAsync(
             categories, attributeValidator, request.CategoryId, request.Attributes, cancellationToken);
+
+        var becameShowcased = !existing.IsShowcased && request.IsShowcased;
 
         // Source / ExternalRef / Images / CreatedAt 不接受使用者輸入，由同步與 Media 模組管理
         existing.CategoryId = category.Id;
@@ -173,6 +176,12 @@ public sealed class UpdateItemCommandHandler(
         existing.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
 
         await items.UpdateAsync(existing, cancellationToken);
+
+        // 只有第一次被設為精選、且尚無本地圖片時才觸發下載
+        if (becameShowcased && existing.Images.Count == 0)
+        {
+            showcaseImageQueue.Enqueue(existing.Id);
+        }
 
         return ItemMapper.ToDto(existing);
     }

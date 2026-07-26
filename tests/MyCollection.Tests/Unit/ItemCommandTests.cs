@@ -15,6 +15,7 @@ public class ItemCommandTests
 {
     private readonly Mock<IItemRepository> _items = new();
     private readonly Mock<ICategoryRepository> _categories = new();
+    private readonly Mock<Application.Showcase.IShowcaseImageQueue> _showcaseQueue = new();
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 7, 25, 3, 0, 0, TimeSpan.Zero));
 
     private static readonly ObjectId CategoryId = ObjectId.GenerateNewId();
@@ -139,7 +140,7 @@ public class ItemCommandTests
             existing.Id.ToString(), CategoryId.ToString(), "新名稱", null, ["FPS"], true,
             Json("""{ "brand": "Valve" }"""), null);
 
-        await new UpdateItemCommandHandler(_items.Object, _categories.Object, new AttributeValidator(), _time)
+        await new UpdateItemCommandHandler(_items.Object, _categories.Object, new AttributeValidator(), _time, _showcaseQueue.Object)
             .Handle(command, CancellationToken.None);
 
         saved!.Name.Should().Be("新名稱");
