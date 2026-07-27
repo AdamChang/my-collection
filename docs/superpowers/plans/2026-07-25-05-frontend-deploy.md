@@ -3236,7 +3236,7 @@ import { CategoryDto, CategoryFieldDto, ItemDto } from '../../core/models';
           <label>
             {{ field.label }}
             @if (field.type === 'Select') {
-              <select [ngModel]="attributeFilters()[field.key] ?? ''"
+              <select [ngModel]="filterValue(field.key)"
                       (ngModelChange)="setAttributeFilter(field.key, $event)"
                       [name]="'attr_' + field.key">
                 <option value="">全部</option>
@@ -3246,7 +3246,7 @@ import { CategoryDto, CategoryFieldDto, ItemDto } from '../../core/models';
               </select>
             } @else {
               <input type="text"
-                     [ngModel]="attributeFilters()[field.key] ?? ''"
+                     [ngModel]="filterValue(field.key)"
                      (ngModelChange)="setAttributeFilter(field.key, $event)"
                      [name]="'attr_' + field.key" />
             }
@@ -3273,6 +3273,17 @@ import { CategoryDto, CategoryFieldDto, ItemDto } from '../../core/models';
 
   fieldsFor(categoryId: string): CategoryFieldDto[] {
     return this.categories().find((c) => c.id === categoryId)?.fields ?? [];
+  }
+
+  /**
+   * 未設定的 key 在執行期是 undefined，但 Record<string, string> 的索引型別是 string
+   * ——tsconfig 沒開 noUncheckedIndexedAccess，型別在說謊。
+   *
+   * 把 `?? ''` 直接寫在 template 會觸發 NG8102 並「建議」移除它；照做的話 [ngModel]
+   * 會收到 undefined，輸入框變成不受控。所以在這裡收斂，讓 template 拿到的一定是 string。
+   */
+  filterValue(key: string): string {
+    return this.attributeFilters()[key] ?? '';
   }
 
   setAttributeFilter(key: string, value: string): void {
