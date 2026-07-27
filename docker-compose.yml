@@ -1,0 +1,42 @@
+services:
+  mongo:
+    image: mongo:8.0
+    restart: unless-stopped
+    volumes:
+      - ./data/mongo:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: src/MyCollection.Api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Mongo__ConnectionString: mongodb://mongo:27017
+      Mongo__Database: mycollection
+      Jwt__Key: ${JWT_KEY:?JWT_KEY is required}
+      Jwt__Issuer: mycollection
+      Jwt__Audience: mycollection-web
+      SecretProtection__Key: ${SECRET_PROTECTION_KEY:?SECRET_PROTECTION_KEY is required}
+      Storage__Provider: Local
+      Storage__LocalRoot: /app/data/media
+    volumes:
+      - ./data/media:/app/data/media
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "8080:80"
