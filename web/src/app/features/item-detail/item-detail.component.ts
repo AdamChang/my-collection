@@ -152,6 +152,12 @@ export class ItemDetailComponent {
 
   onCategoryChanged(): void {
     this.syncSelectedCategory();
+
+    // 換品類就清空屬性。表單重建本身不會觸發 valueChanges，所以在使用者實際輸入前，
+    // attributes 仍是前一個品類的內容；此時存檔會送出新 schema 沒宣告的 key，
+    // 後端 AttributeValidator 直接回 400。
+    this.initialAttributes.set({});
+    this.attributes.set({});
   }
 
   fetchMetadata(): void {

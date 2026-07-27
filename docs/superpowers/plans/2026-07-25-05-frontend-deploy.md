@@ -1748,7 +1748,13 @@ git commit -m "feat(web): 新增 ItemCard、ImageUploader 與 TagInput"
 >
 > **路由表必須跟著拆。** `loadComponent: () => import('./features/catalog/catalog.component')` 是動態 import，但 TypeScript 仍會在**編譯期**檢查模組存在，檔案還沒建就是 `TS2307`、建置直接失敗。所以 7a 只寫它自己建出來的路由，7b、7c 各自追加，不要一次貼完整張表。
 >
-> **傳給實作者的共通提醒（三段都適用）：** `DynamicFormComponent` 的 `effect` 同時讀 `fields()` 與 `value()`，每次變動都重建 FormGroup。若把 `[value]` 綁到父層用 `(valueChange)` 更新的同一份狀態，會形成「打字 → emit → 父層更新 value → effect 重建表單」的無窮迴圈。**`[value]` 只能綁初始值（例如載入回來的品項），不可綁隨 `valueChange` 變動的狀態。**
+> **傳給實作者的共通提醒（三段都適用）：** `DynamicFormComponent` 的 `effect` 同時讀 `fields()` 與 `value()`，每次變動都重建 FormGroup。若把 `[value]` 綁到父層用 `(valueChange)` 更新的同一份狀態，就變成「打字 → emit → 父層更新 value → effect 重建整個 FormGroup」，**每敲一個字表單就被換掉，焦點與輸入中的狀態全部丟失**。
+
+（不是無窮迴圈——`new FormGroup(...)` 不會觸發 `valueChanges`，所以不會自我延續。除錯時該找的是焦點跳掉，不是畫面卡死。）
+
+**`[value]` 只能綁初始值，不可綁隨 `valueChange` 變動的狀態。** 正確做法是拆成兩個 signal：`initialAttributes` 只在載入品項時寫入、餵給 `[value]`；`attributes` 由 `(valueChange)` 更新、只在送出時讀取。
+
+連帶地，**切換品類時必須把兩個 signal 都清空**。表單重建不會觸發 `valueChanges`，所以在使用者實際輸入前 `attributes` 還是舊品類的內容，此時存檔會送出新 schema 沒宣告的 key，後端 `AttributeValidator` 直接回 400。
 
 ---
 
@@ -2169,7 +2175,7 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
             <h2>{{ category.name }} 專屬欄位</h2>
             <app-dynamic-form
               [fields]="category.fields"
-              [value]="attributes()"
+              [value]="initialAttributes()"
               (valueChange)="attributes.set($event)"
               (validityChange)="attributesValid.set($event)"
             />
@@ -2221,7 +2227,17 @@ export class ItemDetailComponent {
   readonly item = signal<ItemDto | null>(null);
   readonly categories = signal<CategoryDto[]>([]);
   readonly selectedCategory = signal<CategoryDto | null>(null);
+
+  /**
+   * 只在「從後端載回品項」與「切換品類」時寫入，是餵給 app-dynamic-form 的 [value] 的初始值。
+   * 不可改成 attributes：DynamicFormComponent 的 effect 同時讀 fields() 與 value()，
+   * 若 [value] 綁到隨 (valueChange) 更新的狀態，每次打字都會重建整個 FormGroup、丟掉焦點。
+   */
+  readonly initialAttributes = signal<Record<string, unknown>>({});
+
+  /** 使用者當下的表單值，只寫不讀進 [value]，送出時使用。 */
   readonly attributes = signal<Record<string, unknown>>({});
+
   readonly attributesValid = signal(true);
   readonly tags = signal<string[]>([]);
 
@@ -2253,6 +2269,12 @@ export class ItemDetailComponent {
 
   onCategoryChanged(): void {
     this.syncSelectedCategory();
+
+    // 換品類就清空屬性。表單重建本身不會觸發 valueChanges，所以在使用者實際輸入前，
+    // attributes 仍是前一個品類的內容；此時存檔會送出新 schema 沒宣告的 key，
+    // 後端 AttributeValidator 直接回 400。
+    this.initialAttributes.set({});
+    this.attributes.set({});
   }
 
   fetchMetadata(): void {
@@ -2317,6 +2339,8 @@ export class ItemDetailComponent {
     this.description = item.description ?? '';
     this.isShowcased = item.isShowcased;
     this.tags.set(item.tags);
+    // 兩個都要寫：initialAttributes 餵表單，attributes 是使用者未修改時的送出值
+    this.initialAttributes.set(item.attributes);
     this.attributes.set(item.attributes);
     this.acquiredAt = item.acquisition?.acquiredAt?.slice(0, 10) ?? '';
     this.price = item.acquisition?.price?.amount ?? null;
