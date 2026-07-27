@@ -7,6 +7,11 @@ export const routes: Routes = [
     loadComponent: () => import('./features/auth/login.component').then((m) => m.LoginComponent),
   },
   {
+    path: 'p/:slug',
+    loadComponent: () =>
+      import('./features/public/public-share.component').then((m) => m.PublicShareComponent),
+  },
+  {
     path: '',
     canActivate: [authGuard],
     children: [
@@ -29,6 +34,16 @@ export const routes: Routes = [
         path: 'items/:id',
         loadComponent: () =>
           import('./features/item-detail/item-detail.component').then((m) => m.ItemDetailComponent),
+      },
+      {
+        path: 'categories',
+        loadComponent: () =>
+          import('./features/categories/categories.component').then((m) => m.CategoriesComponent),
+      },
+      {
+        path: 'settings',
+        loadComponent: () =>
+          import('./features/settings/settings.component').then((m) => m.SettingsComponent),
       },
     ],
   },

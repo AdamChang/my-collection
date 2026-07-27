@@ -1,23 +1,71 @@
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { App } from './app';
+import { AuthService } from './core/auth.service';
+import { NotificationService } from './core/notification.service';
+
+const SESSION = JSON.stringify({
+  accessToken: 'access-1',
+  refreshToken: 'refresh-1',
+  user: { id: 'u1', email: 'a@b.c', displayName: 'Adam' },
+});
 
 describe('App', () => {
   beforeEach(async () => {
+    localStorage.clear();
     await TestBed.configureTestingModule({
       imports: [App],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
   });
 
+  afterEach(() => localStorage.clear());
+
   it('should create the app', () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance;
-    expect(app).toBeTruthy();
+    expect(fixture.componentInstance).toBeTruthy();
   });
 
-  it('should render title', () => {
+  it('hides the navigation while unauthenticated', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
-    const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('h1')?.textContent).toContain('Hello, web');
+
+    expect(fixture.nativeElement.querySelector('nav')).toBeNull();
+  });
+
+  it('renders a navigation link for every shell route once authenticated', () => {
+    localStorage.setItem('mycollection.session', SESSION);
+    expect(TestBed.inject(AuthService).isAuthenticated()).toBe(true);
+
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    const hrefs = Array.from(
+      fixture.nativeElement.querySelectorAll('nav a') as NodeListOf<HTMLAnchorElement>,
+    ).map((a) => a.getAttribute('href'));
+
+    expect(hrefs).toEqual(['/', '/catalog', '/categories', '/settings']);
+  });
+
+  it('renders a router outlet for the active page', () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('router-outlet')).toBeTruthy();
+  });
+
+  it('renders notifications as toasts', () => {
+    const notifications = TestBed.inject(NotificationService);
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    notifications.error('同步失敗');
+    fixture.detectChanges();
+
+    const toast: HTMLElement = fixture.nativeElement.querySelector('.toast');
+    expect(toast.textContent).toContain('同步失敗');
+    expect(toast.classList).toContain('toast--error');
   });
 });
