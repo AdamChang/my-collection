@@ -11,6 +11,7 @@ export interface ItemSearchOptions {
   isShowcased?: boolean;
   page?: number;
   pageSize?: number;
+  attributes?: Record<string, string>;
 }
 
 export interface ItemWritePayload {
@@ -43,6 +44,11 @@ export class CatalogService {
     if (options.pageSize) params = params.set('pageSize', options.pageSize);
     for (const tag of options.tags ?? []) {
       params = params.append('tags', tag);
+    }
+    for (const [key, value] of Object.entries(options.attributes ?? {})) {
+      if (value) {
+        params = params.set(`attr.${key}`, value);
+      }
     }
 
     return this.http.get<PagedResult<ItemDto>>(`${API_BASE}/items`, { params });

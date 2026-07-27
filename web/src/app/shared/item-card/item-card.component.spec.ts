@@ -71,4 +71,25 @@ describe('ItemCardComponent', () => {
 
     expect(fixture.nativeElement.querySelector('[data-showcased]')).toBeTruthy();
   });
+
+  it('renders only the attributes marked showOnCard', () => {
+    fixture.componentRef.setInput('item', item({ attributes: { brand: 'GSC', scale: '1/8' } }));
+    fixture.componentRef.setInput('cardFields', [
+      { key: 'brand', label: '廠商', type: 'Text', options: null, required: false, searchable: true, showOnCard: true },
+      { key: 'scale', label: '比例', type: 'Text', options: null, required: false, searchable: false, showOnCard: false },
+    ]);
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.querySelector('[data-card-fields]').textContent;
+    expect(text).toContain('GSC');
+    expect(text).not.toContain('1/8');
+  });
+
+  it('renders no attribute row when no field is marked showOnCard', () => {
+    fixture.componentRef.setInput('item', item({ attributes: { brand: 'GSC' } }));
+    fixture.componentRef.setInput('cardFields', []);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-card-fields]')).toBeNull();
+  });
 });

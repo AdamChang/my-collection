@@ -1,9 +1,9 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { CatalogService } from '../../core/api/catalog.service';
 import { CategoryService } from '../../core/api/category.service';
-import { CategoryDto, ItemDto } from '../../core/models';
+import { CategoryDto, CategoryFieldDto, ItemDto } from '../../core/models';
 import { ItemCardComponent } from '../../shared/item-card/item-card.component';
 
 @Component({
@@ -24,6 +24,27 @@ import { ItemCardComponent } from '../../shared/item-card/item-card.component';
           </select>
         </label>
 
+        @for (field of searchableFields(); track field.key) {
+          <label>
+            {{ field.label }}
+            @if (field.type === 'Select') {
+              <select [ngModel]="attributeFilters()[field.key] ?? ''"
+                      (ngModelChange)="setAttributeFilter(field.key, $event)"
+                      [name]="'attr_' + field.key">
+                <option value="">全部</option>
+                @for (option of field.options ?? []; track option) {
+                  <option [value]="option">{{ option }}</option>
+                }
+              </select>
+            } @else {
+              <input type="text"
+                     [ngModel]="attributeFilters()[field.key] ?? ''"
+                     (ngModelChange)="setAttributeFilter(field.key, $event)"
+                     [name]="'attr_' + field.key" />
+            }
+          </label>
+        }
+
         <fieldset>
           <legend>標籤</legend>
           @for (tag of allTags(); track tag) {
@@ -43,7 +64,7 @@ import { ItemCardComponent } from '../../shared/item-card/item-card.component';
 
         <div class="catalog__grid">
           @for (item of items(); track item.id) {
-            <app-item-card [item]="item" />
+            <app-item-card [item]="item" [cardFields]="fieldsFor(item.categoryId)" />
           }
         </div>
 
@@ -70,6 +91,13 @@ export class CatalogComponent {
   readonly categories = signal<CategoryDto[]>([]);
   readonly allTags = signal<string[]>([]);
   readonly selectedTags = signal<string[]>([]);
+  readonly attributeFilters = signal<Record<string, string>>({});
+
+  /** 只有選定品類時才有屬性篩選——不同品類的 schema 無法混用。 */
+  readonly searchableFields = computed<CategoryFieldDto[]>(() => {
+    const category = this.categories().find((c) => c.id === this.categoryId);
+    return category?.fields.filter((f) => f.searchable) ?? [];
+  });
 
   search = '';
   categoryId = '';
@@ -83,6 +111,11 @@ export class CatalogComponent {
   }
 
   reload(): void {
+    const allowed = new Set(this.searchableFields().map((f) => f.key));
+    this.attributeFilters.update((current) =>
+      Object.fromEntries(Object.entries(current).filter(([key]) => allowed.has(key))),
+    );
+
     this.page = 1;
     this.items.set([]);
     this.load();
@@ -100,6 +133,15 @@ export class CatalogComponent {
     this.reload();
   }
 
+  fieldsFor(categoryId: string): CategoryFieldDto[] {
+    return this.categories().find((c) => c.id === categoryId)?.fields ?? [];
+  }
+
+  setAttributeFilter(key: string, value: string): void {
+    this.attributeFilters.update((current) => ({ ...current, [key]: value }));
+    this.reload();
+  }
+
   private load(): void {
     this.catalog
       .search({
@@ -108,6 +150,7 @@ export class CatalogComponent {
         tags: this.selectedTags(),
         page: this.page,
         pageSize: 24,
+        attributes: this.attributeFilters(),
       })
       .subscribe((result) => {
         this.items.update((current) => [...current, ...result.items]);
