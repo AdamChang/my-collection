@@ -124,4 +124,16 @@ public class LocalFileStorageTests : IDisposable
 
         await act.Should().ThrowAsync<ArgumentException>();
     }
+
+    [Fact]
+    public async Task DeleteDirectory_matches_path_segments_not_raw_string_prefixes()
+    {
+        var sut = CreateSut();
+        await sut.SaveAsync("owner/item/a-full.webp", Content("x"), CancellationToken.None);
+        await sut.SaveAsync("owner/item2/b-full.webp", Content("x"), CancellationToken.None);
+
+        await sut.DeleteDirectoryAsync("owner/item", CancellationToken.None);
+
+        File.Exists(Path.Combine(_root, "owner", "item2", "b-full.webp")).Should().BeTrue();
+    }
 }

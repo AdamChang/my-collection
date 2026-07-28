@@ -18,6 +18,7 @@ public interface IFileStorage
     /// <summary>
     /// 刪除整個目錄前綴底下的所有檔案。不存在時不擲例外。
     /// 逐檔刪除只能清掉 DB 有記錄的檔案，孤兒檔會殘留，因此需要這個方法。
+    /// 實作必須以路徑區段為界，不可用字串前綴比對（<c>owner/item</c> 不得誤刪 <c>owner/item2</c>）。
     /// </summary>
     Task DeleteDirectoryAsync(string relativePrefix, CancellationToken ct);
 }
