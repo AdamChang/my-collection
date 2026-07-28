@@ -31,6 +31,12 @@ describe('DynamicFormComponent', () => {
     fixture.detectChanges();
   }
 
+  it('labels the generated form as a schema field matrix', () => {
+    render([field({ key: 'brand' })]);
+
+    expect(fixture.nativeElement.querySelector('[data-schema-fields]')).toBeTruthy();
+  });
+
   it('renders one control per field', () => {
     render([field({ key: 'brand' }), field({ key: 'scale', label: '比例' })]);
 

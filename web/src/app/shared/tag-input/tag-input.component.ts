@@ -19,11 +19,12 @@ import { Component, input, output } from '@angular/core';
     </div>
   `,
   styles: `
-    .tags { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center;
-            border: 1px solid #dfe4e6; border-radius: 0.5rem; padding: 0.35rem; }
-    .tags__chip { display: inline-flex; gap: 0.25rem; align-items: center; font-size: 0.8rem;
-                  background: #ecf0f1; border-radius: 0.35rem; padding: 0.1rem 0.4rem; }
-    .tags input { border: 0; outline: none; flex: 1; min-width: 8rem; }
+    .tags { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center;
+      border: 1px solid var(--mc-border); padding: 0.45rem; background: #07101a; }
+    .tags__chip { display: inline-flex; align-items: center; gap: 0.25rem;
+      border: 1px solid var(--mc-cyan); padding-left: 0.5rem; color: var(--mc-cyan); }
+    .tags__chip button { min-width: 44px; min-height: 44px; border: 0; padding: 0; background: transparent; }
+    .tags input { flex: 1; min-width: 9rem; border: 0 !important; outline: 0; }
   `,
 })
 export class TagInputComponent {

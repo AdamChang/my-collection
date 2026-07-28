@@ -27,13 +27,13 @@ import { ItemImageDto } from '../../core/models';
     </div>
   `,
   styles: `
-    .uploader { display: grid; gap: 0.75rem; }
-    .uploader__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0.5rem; }
-    .uploader__item { margin: 0; display: grid; gap: 0.25rem; }
-    .uploader__item img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 0.5rem; }
-    .uploader__item--primary img { outline: 2px solid #f1c40f; }
-    .uploader__drop { display: grid; place-items: center; padding: 1.5rem; gap: 0.5rem;
-                      border: 2px dashed #bdc3c7; border-radius: 0.75rem; cursor: pointer; }
+    .uploader { display: grid; gap: 0.8rem; }
+    .uploader__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.7rem; }
+    .uploader__item { margin: 0; border: 1px solid var(--mc-border); padding: 0.4rem; background: var(--mc-surface); }
+    .uploader__item img { width: 100%; aspect-ratio: 1; object-fit: cover; }
+    .uploader__item--primary { border-color: var(--mc-warning); }
+    .uploader__drop { display: grid; place-items: center; min-height: 8rem; border: 1px dashed var(--mc-cyan);
+      padding: 1rem; background: var(--mc-cyan-soft); color: var(--mc-cyan); cursor: pointer; }
   `,
 })
 export class ImageUploaderComponent {

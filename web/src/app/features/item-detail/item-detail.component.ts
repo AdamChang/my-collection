@@ -16,46 +16,49 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
   template: `
     <form class="detail" (ngSubmit)="save()">
       <header class="detail__header">
-        <h1>{{ itemId() ? '編輯品項' : '新增品項' }}</h1>
         <div>
+          <div class="mc-eyebrow">OBJECT EDITOR</div>
+          <h1>{{ itemId() ? '編輯品項' : '新增品項' }}</h1>
+        </div>
+        <div class="detail__actions">
           <button type="submit" [disabled]="!canSave()">儲存</button>
           @if (itemId()) {
-            <button type="button" (click)="remove()">刪除</button>
+            <button type="button" class="button--danger" (click)="remove()">刪除</button>
           }
         </div>
       </header>
 
       @if (!itemId()) {
-        <fieldset class="detail__fetch">
+        <fieldset class="detail__fetch mc-panel">
           <legend>從商品網址自動填表</legend>
           <input type="url" [(ngModel)]="fetchUrl" name="fetchUrl" placeholder="https://…" />
           <button type="button" (click)="fetchMetadata()" [disabled]="!fetchUrl">擷取</button>
         </fieldset>
       }
 
-      <label>
-        品類
-        <select [(ngModel)]="categoryId" name="categoryId" (ngModelChange)="onCategoryChanged()" required>
-          <option value="">請選擇</option>
-          @for (category of categories(); track category.id) {
-            <option [value]="category.id">{{ category.name }}</option>
-          }
-        </select>
-      </label>
-
-      <label>名稱<input [(ngModel)]="name" name="name" required /></label>
-      <label>描述<textarea [(ngModel)]="description" name="description" rows="3"></textarea></label>
-
-      <label class="detail__checkbox">
-        <input type="checkbox" [(ngModel)]="isShowcased" name="isShowcased" />
-        設為精選（顯示在首頁牆面）
-      </label>
-
-      <app-tag-input [tags]="tags()" (tagsChange)="tags.set($event)" />
+      <section class="detail__panel mc-panel" data-item-core>
+        <div class="mc-eyebrow">CORE METADATA</div>
+        <label>
+          品類
+          <select [(ngModel)]="categoryId" name="categoryId" (ngModelChange)="onCategoryChanged()" required>
+            <option value="">請選擇</option>
+            @for (category of categories(); track category.id) {
+              <option [value]="category.id">{{ category.name }}</option>
+            }
+          </select>
+        </label>
+        <label>名稱<input [(ngModel)]="name" name="name" required /></label>
+        <label>描述<textarea [(ngModel)]="description" name="description" rows="3"></textarea></label>
+        <label class="detail__checkbox">
+          <input type="checkbox" [(ngModel)]="isShowcased" name="isShowcased" />
+          設為精選（顯示在首頁牆面）
+        </label>
+        <app-tag-input [tags]="tags()" (tagsChange)="tags.set($event)" />
+      </section>
 
       @if (selectedCategory(); as category) {
         @if (category.fields.length) {
-          <section>
+          <section class="detail__panel mc-panel" data-item-schema>
             <h2>{{ category.name }} 專屬欄位</h2>
             <app-dynamic-form
               [fields]="category.fields"
@@ -67,7 +70,7 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
         }
 
         @if (category.kind === 'Physical') {
-          <fieldset class="detail__acquisition">
+          <fieldset class="detail__acquisition mc-panel" data-item-acquisition>
             <legend>購入資訊</legend>
             <label>日期<input type="date" [(ngModel)]="acquiredAt" name="acquiredAt" /></label>
             <label>金額<input type="number" [(ngModel)]="price" name="price" /></label>
@@ -78,7 +81,7 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
       }
 
       @if (itemId(); as id) {
-        <section>
+        <section class="detail__panel mc-panel">
           <h2>圖片</h2>
           <app-image-uploader
             [images]="item()?.images ?? []"
@@ -93,6 +96,8 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
   styles: `
     .detail { display: grid; gap: 1rem; max-width: 46rem; }
     .detail__header { display: flex; justify-content: space-between; align-items: center; }
+    .detail__actions { display: flex; gap: 0.5rem; }
+    .detail__panel { display: grid; gap: 1rem; }
     .detail label { display: grid; gap: 0.25rem; }
     .detail__checkbox { display: flex !important; gap: 0.5rem; align-items: center; }
     .detail__fetch { display: flex; gap: 0.5rem; align-items: center; }
