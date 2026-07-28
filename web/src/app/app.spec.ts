@@ -28,6 +28,26 @@ describe('App', () => {
     expect(fixture.componentInstance).toBeTruthy();
   });
 
+  it('exposes the Neon Grid design tokens', () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    const styles = getComputedStyle(document.documentElement);
+    expect(styles.getPropertyValue('--mc-bg').trim()).toBe('#05070d');
+    expect(styles.getPropertyValue('--mc-cyan').trim()).toBe('#20e7ff');
+    expect(styles.getPropertyValue('--mc-magenta').trim()).toBe('#ff2f8b');
+  });
+
+  it('renders the authenticated Neon Grid shell and brand', () => {
+    localStorage.setItem('mycollection.session', SESSION);
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-app-shell]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.brand')?.textContent).toContain('MY//COLLECTION');
+    expect(fixture.nativeElement.querySelector('.nav__links')).toBeTruthy();
+  });
+
   it('hides the navigation while unauthenticated', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();

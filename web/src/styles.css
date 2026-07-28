@@ -1,1 +1,107 @@
-/* You can add global styles to this file, and also import other style files */
+:root {
+  color-scheme: dark;
+  --mc-bg: #05070d;
+  --mc-surface: #09111a;
+  --mc-surface-raised: #0d1824;
+  --mc-border: #17384a;
+  --mc-border-strong: #26647a;
+  --mc-text: #e9f7ff;
+  --mc-text-muted: #7f9aae;
+  --mc-cyan: #20e7ff;
+  --mc-cyan-soft: rgb(32 231 255 / 14%);
+  --mc-magenta: #ff2f8b;
+  --mc-warning: #f4d35e;
+  --mc-danger: #ff4d6d;
+  --mc-success: #46f2a5;
+  --mc-cut: 10px;
+  --mc-shadow: 0 18px 48px rgb(0 0 0 / 38%);
+  font-family: "Segoe UI", "Noto Sans TC", system-ui, sans-serif;
+  background: var(--mc-bg);
+  color: var(--mc-text);
+}
+
+* { box-sizing: border-box; }
+
+html { min-width: 320px; background: var(--mc-bg); }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    linear-gradient(rgb(32 231 255 / 3%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(32 231 255 / 3%) 1px, transparent 1px),
+    radial-gradient(circle at 10% 0%, rgb(32 231 255 / 9%), transparent 32rem),
+    var(--mc-bg);
+  background-size: 36px 36px, 36px 36px, auto, auto;
+  color: var(--mc-text);
+}
+
+button, input, select, textarea { font: inherit; }
+
+a { color: var(--mc-cyan); text-underline-offset: 0.22em; }
+
+button {
+  min-height: 2.65rem;
+  border: 1px solid var(--mc-border-strong);
+  padding: 0.58rem 0.95rem;
+  background: var(--mc-surface-raised);
+  color: var(--mc-text);
+  cursor: pointer;
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%);
+}
+
+button[type="submit"], .button--primary {
+  border-color: var(--mc-cyan);
+  background: var(--mc-cyan);
+  color: #031015;
+  font-weight: 800;
+}
+
+.button--danger { border-color: var(--mc-danger); color: var(--mc-danger); }
+
+input:not([type="checkbox"]):not([type="file"]),
+select,
+textarea {
+  width: 100%;
+  min-height: 2.7rem;
+  border: 1px solid var(--mc-border);
+  border-radius: 2px;
+  padding: 0.62rem 0.72rem;
+  background: #07101a;
+  color: var(--mc-text);
+}
+
+:where(a, button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--mc-cyan);
+  outline-offset: 3px;
+}
+
+button:disabled { cursor: not-allowed; opacity: 0.5; }
+
+.mc-panel {
+  border: 1px solid var(--mc-border);
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+  background: rgb(9 17 26 / 92%);
+  box-shadow: var(--mc-shadow);
+  clip-path: polygon(0 0, calc(100% - var(--mc-cut)) 0, 100% var(--mc-cut), 100% 100%, 0 100%);
+}
+
+.mc-eyebrow {
+  color: var(--mc-cyan);
+  font: 700 0.72rem/1.4 Consolas, monospace;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.mc-muted { color: var(--mc-text-muted); }
+.mc-badge { border: 1px solid var(--mc-border-strong); padding: 0.18rem 0.45rem; font-size: 0.72rem; }
+.mc-empty { border: 1px dashed var(--mc-border-strong); padding: 2rem; color: var(--mc-text-muted); text-align: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
