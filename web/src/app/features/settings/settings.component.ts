@@ -10,9 +10,13 @@ import { ExternalAccountDto, ShareLinkDto, SyncJobDto } from '../../core/models'
   selector: 'app-settings',
   imports: [FormsModule, DatePipe],
   template: `
-    <h1>設定</h1>
+    <header class="settings__header">
+      <div class="mc-eyebrow">CONNECTIONS / CONTROL DECK</div>
+      <h1>設定</h1>
+    </header>
 
-    <section>
+    <section class="settings__panel mc-panel" data-settings-panel>
+      <div class="mc-eyebrow">ACCOUNT LINK</div>
       <h2>Steam 帳號</h2>
 
       @if (steamAccount(); as account) {
@@ -31,30 +35,44 @@ import { ExternalAccountDto, ShareLinkDto, SyncJobDto } from '../../core/models'
       }
     </section>
 
-    <section>
+    <section class="settings__panel mc-panel" data-settings-panel>
+      <div class="mc-eyebrow">SYNC TELEMETRY</div>
       <h2>同步紀錄</h2>
-      <table>
-        <thead>
-          <tr><th>時間</th><th>來源</th><th>狀態</th><th>新增</th><th>更新</th><th>失敗</th></tr>
-        </thead>
-        <tbody>
-          @for (job of jobs(); track job.id) {
-            <tr>
-              <td>{{ job.startedAt | date: 'yyyy-MM-dd HH:mm' }}</td>
-              <td>{{ job.provider }}</td>
-              <td [title]="job.error ?? ''">{{ job.status }}</td>
-              <td>{{ job.created }}</td>
-              <td>{{ job.updated }}</td>
-              <td>{{ job.failed }}</td>
-            </tr>
-          } @empty {
-            <tr><td colspan="6">尚無同步紀錄。</td></tr>
-          }
-        </tbody>
-      </table>
+      <div class="settings__table-scroll">
+        <table>
+          <thead>
+            <tr><th>時間</th><th>來源</th><th>狀態</th><th>新增</th><th>更新</th><th>失敗</th></tr>
+          </thead>
+          <tbody>
+            @for (job of jobs(); track job.id) {
+              <tr>
+                <td>{{ job.startedAt | date: 'yyyy-MM-dd HH:mm' }}</td>
+                <td>{{ job.provider }}</td>
+                <td>
+                  <span
+                    class="sync-status"
+                    [class.sync-status--ok]="job.status === 'Succeeded'"
+                    [class.sync-status--error]="job.status === 'Failed'"
+                    [attr.aria-label]="job.error ? job.status + ': ' + job.error : null"
+                  >{{ job.status }}</span>
+                  @if (job.error) {
+                    <span class="sync-status__detail">{{ job.error }}</span>
+                  }
+                </td>
+                <td>{{ job.created }}</td>
+                <td>{{ job.updated }}</td>
+                <td>{{ job.failed }}</td>
+              </tr>
+            } @empty {
+              <tr><td colspan="6">尚無同步紀錄。</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
     </section>
 
-    <section>
+    <section class="settings__panel mc-panel" data-settings-panel>
+      <div class="mc-eyebrow">PUBLIC ACCESS</div>
       <h2>分享連結</h2>
 
       <label class="settings__inline">
@@ -76,11 +94,24 @@ import { ExternalAccountDto, ShareLinkDto, SyncJobDto } from '../../core/models'
     </section>
   `,
   styles: `
-    section { margin-block: 1.5rem; display: grid; gap: 0.5rem; justify-items: start; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border-bottom: 1px solid #ecf0f1; padding: 0.35rem 0.5rem; text-align: left; }
-    .hint { color: #7f8c8d; font-size: 0.85rem; }
+    .settings__header { margin: 0 0 1.5rem; }
+    .settings__header h1 { margin: 0.35rem 0 0; }
+    .settings__panel { margin-block: 1.5rem; display: grid; gap: 0.75rem; justify-items: start; }
+    .settings__panel h2 { margin: 0; font-size: 1.1rem; }
+    .settings__table-scroll { width: 100%; overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; min-width: 42rem; }
+    th, td { border-bottom: 1px solid var(--mc-border); padding: 0.5rem; text-align: left; vertical-align: top; }
+    .hint { color: var(--mc-text-muted); font-size: 0.85rem; }
     .settings__inline { display: flex; gap: 0.5rem; align-items: center; }
+    .sync-status { display: inline-flex; border: 1px solid var(--mc-border-strong); padding: 0.15rem 0.4rem; font: 700 0.72rem/1.4 Consolas, monospace; }
+    .sync-status--ok { border-color: var(--mc-success); color: var(--mc-success); }
+    .sync-status--error { border-color: var(--mc-danger); color: var(--mc-danger); }
+    .sync-status__detail { display: block; max-width: 20rem; margin-top: 0.35rem; color: var(--mc-text-muted); font-size: 0.8rem; overflow-wrap: anywhere; }
+    ul { width: 100%; margin: 0; padding: 0; list-style: none; }
+    li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.65rem; padding: 0.65rem 0; border-bottom: 1px solid var(--mc-border); }
+    @media (max-width: 520px) {
+      .settings__panel { margin-block: 1rem; }
+    }
   `,
 })
 export class SettingsComponent {
