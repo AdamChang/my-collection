@@ -2276,6 +2276,7 @@ public sealed class ImportArchiveCommandHandler(
                 Tags = source.Tags,
                 IsShowcased = source.IsShowcased,
                 Source = source.Source,
+                ExternalRef = ArchiveMapper.ToDomain(source.ExternalRef),
                 Acquisition = ArchiveMapper.ToDomain(source.Acquisition),
                 Attributes = source.Attributes,
                 CreatedAt = source.CreatedAt,
