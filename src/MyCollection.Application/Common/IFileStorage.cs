@@ -14,4 +14,10 @@ public interface IFileStorage
 
     /// <summary>不存在時不擲例外。</summary>
     Task DeleteAsync(string relativePath, CancellationToken ct);
+
+    /// <summary>
+    /// 刪除整個目錄前綴底下的所有檔案。不存在時不擲例外。
+    /// 逐檔刪除只能清掉 DB 有記錄的檔案，孤兒檔會殘留，因此需要這個方法。
+    /// </summary>
+    Task DeleteDirectoryAsync(string relativePrefix, CancellationToken ct);
 }

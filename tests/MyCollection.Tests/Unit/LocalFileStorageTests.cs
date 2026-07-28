@@ -80,4 +80,48 @@ public class LocalFileStorageTests : IDisposable
         await save.Should().ThrowAsync<ArgumentException>();
         await read.Should().ThrowAsync<ArgumentException>();
     }
+
+    [Fact]
+    public async Task DeleteDirectory_removes_every_file_under_the_prefix()
+    {
+        var sut = CreateSut();
+        await sut.SaveAsync("owner/item/a-full.webp", Content("x"), CancellationToken.None);
+        await sut.SaveAsync("owner/item/b-thumb.webp", Content("x"), CancellationToken.None);
+
+        await sut.DeleteDirectoryAsync("owner/item", CancellationToken.None);
+
+        Directory.Exists(Path.Combine(_root, "owner", "item")).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task DeleteDirectory_leaves_sibling_directories_untouched()
+    {
+        var sut = CreateSut();
+        await sut.SaveAsync("owner/item-a/x-full.webp", Content("x"), CancellationToken.None);
+        await sut.SaveAsync("owner/item-b/y-full.webp", Content("x"), CancellationToken.None);
+
+        await sut.DeleteDirectoryAsync("owner/item-a", CancellationToken.None);
+
+        File.Exists(Path.Combine(_root, "owner", "item-b", "y-full.webp")).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task DeleteDirectory_is_silent_when_the_directory_does_not_exist()
+    {
+        var sut = CreateSut();
+
+        var act = async () => await sut.DeleteDirectoryAsync("owner/missing", CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task DeleteDirectory_rejects_paths_that_escape_the_root()
+    {
+        var sut = CreateSut();
+
+        var act = async () => await sut.DeleteDirectoryAsync("../../etc", CancellationToken.None);
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
 }

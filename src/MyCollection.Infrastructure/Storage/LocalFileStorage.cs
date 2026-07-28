@@ -44,6 +44,18 @@ public sealed class LocalFileStorage : IFileStorage
         return Task.CompletedTask;
     }
 
+    public Task DeleteDirectoryAsync(string relativePrefix, CancellationToken ct)
+    {
+        var fullPath = Resolve(relativePrefix);
+
+        if (Directory.Exists(fullPath))
+        {
+            Directory.Delete(fullPath, recursive: true);
+        }
+
+        return Task.CompletedTask;
+    }
+
     /// <summary>
     /// 把相對路徑解析成根目錄底下的絕對路徑，並拒絕任何逃逸嘗試。
     /// 這是唯一的邊界檢查點，所有公開方法都先走過它。
