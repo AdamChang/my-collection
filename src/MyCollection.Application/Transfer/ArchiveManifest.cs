@@ -71,11 +71,21 @@ public sealed class ArchiveItem
     public List<string> Tags { get; set; } = [];
     public bool IsShowcased { get; set; }
     public ItemSource Source { get; set; }
+    public ArchiveExternalRef? ExternalRef { get; set; }
     public ArchiveAcquisition? Acquisition { get; set; }
     public BsonDocument Attributes { get; set; } = [];
     public List<ArchiveImage> Images { get; set; } = [];
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+}
+
+/// <summary>磁碟格式版的 <see cref="ExternalRef"/>，見 <see cref="ArchiveCategoryField"/> 上的說明。</summary>
+public sealed class ArchiveExternalRef
+{
+    public required string Provider { get; set; }
+    public required string ExternalId { get; set; }
+    public string? Url { get; set; }
+    public DateTime LastSyncedAt { get; set; }
 }
 
 /// <summary>磁碟格式版的 <see cref="Acquisition"/>，見 <see cref="ArchiveCategoryField"/> 上的說明。</summary>

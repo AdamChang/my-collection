@@ -46,6 +46,16 @@ public static class ArchiveMapper
                 : new ArchiveMoney { Amount = acquisition.Price.Amount, Currency = acquisition.Price.Currency }
         };
 
+    public static ArchiveExternalRef? ToArchive(ExternalRef? reference) => reference is null
+        ? null
+        : new ArchiveExternalRef
+        {
+            Provider = reference.Provider,
+            ExternalId = reference.ExternalId,
+            Url = reference.Url,
+            LastSyncedAt = reference.LastSyncedAt
+        };
+
     public static ArchiveItem ToArchive(Item item) => new()
     {
         Id = item.Id,
@@ -55,6 +65,7 @@ public static class ArchiveMapper
         Tags = item.Tags,
         IsShowcased = item.IsShowcased,
         Source = item.Source,
+        ExternalRef = ToArchive(item.ExternalRef),
         Acquisition = ToArchive(item.Acquisition),
         Attributes = item.Attributes,
         Images =
@@ -116,5 +127,15 @@ public static class ArchiveMapper
             AcquiredAt = source.AcquiredAt,
             Vendor = source.Vendor,
             Price = source.Price is null ? null : new Money(source.Price.Amount, source.Price.Currency)
+        };
+
+    public static ExternalRef? ToDomain(ArchiveExternalRef? source) => source is null
+        ? null
+        : new ExternalRef
+        {
+            Provider = source.Provider,
+            ExternalId = source.ExternalId,
+            Url = source.Url,
+            LastSyncedAt = source.LastSyncedAt
         };
 }

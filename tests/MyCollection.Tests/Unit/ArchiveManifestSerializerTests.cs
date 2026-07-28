@@ -59,6 +59,13 @@ public class ArchiveManifestSerializerTests
                     Name = "Kind of Blue",
                     Tags = ["jazz"],
                     Source = ItemSource.Manual,
+                    ExternalRef = new ArchiveExternalRef
+                    {
+                        Provider = "steam",
+                        ExternalId = "12345",
+                        Url = "https://store.steampowered.com/app/12345",
+                        LastSyncedAt = new DateTime(2026, 7, 3, 0, 0, 0, DateTimeKind.Utc)
+                    },
                     Acquisition = new ArchiveAcquisition
                     {
                         AcquiredAt = new DateTime(2026, 7, 2, 0, 0, 0, DateTimeKind.Utc),
@@ -142,7 +149,7 @@ public class ArchiveManifestSerializerTests
     }
 
     [Fact]
-    public void Round_trip_preserves_share_links_images_and_acquisition()
+    public void Round_trip_preserves_share_links_images_acquisition_and_external_ref()
     {
         var original = ManifestWith([]);
 
@@ -165,6 +172,13 @@ public class ArchiveManifestSerializerTests
         acquisition.Price.Should().NotBeNull();
         acquisition.Price!.Amount.Should().Be(899.5m);
         acquisition.Price.Currency.Should().Be("TWD");
+
+        var externalRef = result.Items[0].ExternalRef;
+        externalRef.Should().NotBeNull();
+        externalRef!.Provider.Should().Be("steam");
+        externalRef.ExternalId.Should().Be("12345");
+        externalRef.Url.Should().Be("https://store.steampowered.com/app/12345");
+        externalRef.LastSyncedAt.Should().Be(original.Items[0].ExternalRef!.LastSyncedAt);
     }
 
     [Fact]
