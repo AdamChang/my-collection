@@ -8,6 +8,7 @@ using MyCollection.Application.Items;
 using MyCollection.Application.Media;
 using MyCollection.Application.Sharing;
 using MyCollection.Application.Showcase;
+using MyCollection.Application.Transfer;
 using MyCollection.Infrastructure.Imaging;
 using MyCollection.Infrastructure.Mongo;
 using MyCollection.Infrastructure.Providers;
@@ -33,6 +34,7 @@ public static class DependencyInjection
         services.AddScoped<ICategoryRepository, MongoCategoryRepository>();
         services.AddScoped<IItemRepository, MongoItemRepository>();
         services.AddScoped<IShareLinkRepository, MongoShareLinkRepository>();
+        services.AddScoped<ITransferRepository, MongoTransferRepository>();
         services.AddScoped<IPublicCatalogReader, MongoPublicCatalogReader>();
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
         services.AddSingleton<ITokenService, JwtTokenService>();
