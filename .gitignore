@@ -484,6 +484,10 @@ $RECYCLE.BIN/
 # Claude Code worktrees
 .claude/worktrees/
 
+# Codex isolated worktrees and Superpowers scratch state
+.worktrees/
+.superpowers/
+
 # MyCollection
 data/
 web/node_modules/
