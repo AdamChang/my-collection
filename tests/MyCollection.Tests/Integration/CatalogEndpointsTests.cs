@@ -161,6 +161,18 @@ public class CatalogEndpointsTests(MongoFixture mongo) : IAsyncLifetime
         (await anonymous.GetAsync("/categories")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    [Fact]
+    public async Task Api_startup_exposes_the_four_system_categories()
+    {
+        var categories = await _client.GetFromJsonAsync<CategoryDto[]>("/categories");
+
+        categories!
+            .Where(x => x.IsSystem)
+            .Select(x => x.Name)
+            .Should()
+            .BeEquivalentTo("實體遊戲", "數位遊戲", "音樂專輯", "電影光碟");
+    }
+
     [Theory]
     [InlineData("/items/not-an-objectid")]
     [InlineData("/items/123")]

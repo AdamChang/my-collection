@@ -79,7 +79,10 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 await using (var scope = app.Services.CreateAsyncScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<MongoContext>();
+    var timeProvider = scope.ServiceProvider.GetRequiredService<TimeProvider>();
+
     await MongoIndexInitializer.EnsureIndexesAsync(context, CancellationToken.None);
+    await SystemCategorySeeder.SeedAsync(context, timeProvider, CancellationToken.None);
 }
 
 app.Run();
