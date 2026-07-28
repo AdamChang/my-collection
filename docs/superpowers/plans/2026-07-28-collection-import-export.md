@@ -1501,8 +1501,8 @@ public class CategoryReconcilerTests
             [steamItem]);
 
         plan.Repoints.Should().ContainSingle();
-        plan.Repoints[0].TargetCategoryId.Should().Be(archiveId);
-        plan.Repoints[0].ItemIds.Should().Equal(steamItem.Id);
+        plan.Repoints[0].FromCategoryId.Should().Be(localId);
+        plan.Repoints[0].ToCategoryId.Should().Be(archiveId);
         plan.Delete.Should().Equal(localId);
         plan.KeptOrphanNames.Should().BeEmpty();
     }
@@ -1554,7 +1554,7 @@ using MyCollection.Domain.Entities;
 
 namespace MyCollection.Application.Transfer;
 
-public sealed record CategoryRepoint(IReadOnlyList<ObjectId> ItemIds, ObjectId TargetCategoryId);
+public sealed record CategoryRepoint(ObjectId FromCategoryId, ObjectId ToCategoryId);
 
 public sealed record CategoryPlan(
     IReadOnlyList<ObjectId> Delete,
@@ -1580,9 +1580,9 @@ public static class CategoryReconciler
             .GroupBy(c => c.Name, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.Ordinal);
 
-        var itemsByCategory = steamItems
-            .GroupBy(i => i.CategoryId)
-            .ToDictionary(g => g.Key, g => (IReadOnlyList<ObjectId>)[.. g.Select(i => i.Id)]);
+        // 只需要「哪些品類仍被 Steam 品項引用」，不需要知道是哪幾筆品項：
+        // RepointItemsAsync 以來源品類過濾，在執行當下對活資料操作。
+        var referencedBySteam = steamItems.Select(i => i.CategoryId).ToHashSet();
 
         var delete = new List<ObjectId>();
         var repoints = new List<CategoryRepoint>();
@@ -1598,7 +1598,7 @@ public static class CategoryReconciler
                 continue;
             }
 
-            if (!itemsByCategory.TryGetValue(local.Id, out var referencingItems))
+            if (!referencedBySteam.Contains(local.Id))
             {
                 delete.Add(local.Id);
                 continue;
@@ -1606,7 +1606,7 @@ public static class CategoryReconciler
 
             if (archiveByName.TryGetValue(local.Name, out var target))
             {
-                repoints.Add(new CategoryRepoint(referencingItems, target));
+                repoints.Add(new CategoryRepoint(local.Id, target));
                 delete.Add(local.Id);
                 continue;
             }
@@ -2194,7 +2194,7 @@ public sealed class ImportArchiveCommandHandler(
         // repoint 必須在 delete 之前：否則 Steam item 會在中間狀態指向已不存在的品類。
         foreach (var repoint in plan.Repoints)
         {
-            await repository.RepointItemsAsync(repoint.ItemIds, repoint.TargetCategoryId, ct);
+            await repository.RepointItemsAsync(repoint.FromCategoryId, repoint.ToCategoryId, ct);
         }
 
         await repository.DeleteCategoriesAsync(plan.Delete, ct);
