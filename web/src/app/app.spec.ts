@@ -48,6 +48,18 @@ describe('App', () => {
     expect(fixture.nativeElement.querySelector('.nav__links')).toBeTruthy();
   });
 
+  it('gives the brand mark a box so its dimensions and rotation render', () => {
+    localStorage.setItem('mycollection.session', SESSION);
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    const brand: HTMLElement = fixture.nativeElement.querySelector('.brand');
+    const mark: HTMLElement = fixture.nativeElement.querySelector('.brand__mark');
+    brand.style.display = 'block';
+
+    expect(getComputedStyle(mark).display).toBe('inline-block');
+  });
+
   it('hides the navigation while unauthenticated', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();

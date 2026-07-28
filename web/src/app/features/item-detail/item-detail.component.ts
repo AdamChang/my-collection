@@ -102,6 +102,10 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
     .detail__checkbox { display: flex !important; gap: 0.5rem; align-items: center; }
     .detail__fetch { display: flex; gap: 0.5rem; align-items: center; }
     .detail__acquisition { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; }
+    @media (max-width: 42rem) {
+      .detail__fetch { display: grid; grid-template-columns: 1fr; align-items: stretch; }
+      .detail__acquisition { grid-template-columns: 1fr; }
+    }
   `,
 })
 export class ItemDetailComponent {
