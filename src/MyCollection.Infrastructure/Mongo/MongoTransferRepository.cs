@@ -13,34 +13,39 @@ public sealed class MongoTransferRepository(MongoContext context, IUserContext u
     private FilterDefinition<Item> OwnItems =>
         Builders<Item>.Filter.Eq(x => x.OwnerId, Owner);
 
+    private FilterDefinition<Category> OwnCategories =>
+        Builders<Category>.Filter.Eq(x => x.OwnerId, Owner);
+
+    private FilterDefinition<ShareLink> OwnShareLinks =>
+        Builders<ShareLink>.Filter.Eq(x => x.OwnerId, Owner);
+
     public async Task<IReadOnlyList<Category>> ListOwnCategoriesAsync(CancellationToken ct) =>
         await context.Categories
-            .Find(Builders<Category>.Filter.Eq(x => x.OwnerId, Owner))
+            .Find(OwnCategories)
             .ToListAsync(ct);
 
     public async Task<IReadOnlyList<Item>> ListExportableItemsAsync(CancellationToken ct) =>
         await context.Items
-            .Find(OwnItems & Builders<Item>.Filter.Ne(x => x.Source, ItemSource.Steam))
+            .Find(Builders<Item>.Filter.And(OwnItems, Builders<Item>.Filter.Ne(x => x.Source, ItemSource.Steam)))
             .SortBy(x => x.Id)
             .ToListAsync(ct);
 
     public async Task<IReadOnlyList<ShareLink>> ListOwnShareLinksAsync(CancellationToken ct) =>
         await context.ShareLinks
-            .Find(Builders<ShareLink>.Filter.Eq(x => x.OwnerId, Owner))
+            .Find(OwnShareLinks)
             .ToListAsync(ct);
 
     public async Task<IReadOnlyList<Item>> ListSteamItemsAsync(CancellationToken ct) =>
         await context.Items
-            .Find(OwnItems & Builders<Item>.Filter.Eq(x => x.Source, ItemSource.Steam))
+            .Find(Builders<Item>.Filter.And(OwnItems, Builders<Item>.Filter.Eq(x => x.Source, ItemSource.Steam)))
             .ToListAsync(ct);
 
     public async Task DeleteNonSteamItemsAsync(CancellationToken ct) =>
         await context.Items.DeleteManyAsync(
-            OwnItems & Builders<Item>.Filter.Ne(x => x.Source, ItemSource.Steam), ct);
+            Builders<Item>.Filter.And(OwnItems, Builders<Item>.Filter.Ne(x => x.Source, ItemSource.Steam)), ct);
 
     public async Task DeleteOwnShareLinksAsync(CancellationToken ct) =>
-        await context.ShareLinks.DeleteManyAsync(
-            Builders<ShareLink>.Filter.Eq(x => x.OwnerId, Owner), ct);
+        await context.ShareLinks.DeleteManyAsync(OwnShareLinks, ct);
 
     public async Task DeleteCategoriesAsync(IReadOnlyList<ObjectId> ids, CancellationToken ct)
     {
@@ -50,23 +55,14 @@ public sealed class MongoTransferRepository(MongoContext context, IUserContext u
         }
 
         await context.Categories.DeleteManyAsync(
-            Builders<Category>.Filter.Eq(x => x.OwnerId, Owner)
-            & Builders<Category>.Filter.In(x => x.Id, ids), ct);
+            Builders<Category>.Filter.And(OwnCategories, Builders<Category>.Filter.In(x => x.Id, ids)), ct);
     }
 
-    public async Task RepointItemsAsync(
-        IReadOnlyList<ObjectId> itemIds, ObjectId targetCategoryId, CancellationToken ct)
-    {
-        if (itemIds.Count == 0)
-        {
-            return;
-        }
-
+    public async Task RepointItemsAsync(ObjectId fromCategoryId, ObjectId toCategoryId, CancellationToken ct) =>
         await context.Items.UpdateManyAsync(
-            OwnItems & Builders<Item>.Filter.In(x => x.Id, itemIds),
-            Builders<Item>.Update.Set(x => x.CategoryId, targetCategoryId),
+            Builders<Item>.Filter.And(OwnItems, Builders<Item>.Filter.Eq(x => x.CategoryId, fromCategoryId)),
+            Builders<Item>.Update.Set(x => x.CategoryId, toCategoryId),
             cancellationToken: ct);
-    }
 
     public async Task InsertCategoriesAsync(IReadOnlyList<Category> categories, CancellationToken ct)
     {

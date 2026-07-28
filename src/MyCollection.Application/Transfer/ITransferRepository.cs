@@ -33,8 +33,14 @@ public interface ITransferRepository
 
     Task DeleteCategoriesAsync(IReadOnlyList<ObjectId> ids, CancellationToken ct);
 
-    /// <summary>把指定 item 的 CategoryId 改指到 targetCategoryId。</summary>
-    Task RepointItemsAsync(IReadOnlyList<ObjectId> itemIds, ObjectId targetCategoryId, CancellationToken ct);
+    /// <summary>
+    /// 把仍掛在 <paramref name="fromCategoryId"/> 底下的品項改指到 <paramref name="toCategoryId"/>。
+    ///
+    /// 以來源品類過濾而非收一份呼叫端事先讀好的 id 清單：這裡沒有 transaction，
+    /// 那種清單必然是舊快照，Steam 同步若在讀取與寫入之間插入新品項就會被漏掉，
+    /// 接著來源品類被刪除，那筆品項就指向一個不存在的品類。
+    /// </summary>
+    Task RepointItemsAsync(ObjectId fromCategoryId, ObjectId toCategoryId, CancellationToken ct);
 
     Task InsertCategoriesAsync(IReadOnlyList<Category> categories, CancellationToken ct);
 
