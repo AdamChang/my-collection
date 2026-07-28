@@ -11,7 +11,9 @@ import { ItemCardComponent } from '../../shared/item-card/item-card.component';
   imports: [FormsModule, ItemCardComponent, RouterLink],
   template: `
     <div class="catalog">
-      <aside class="catalog__filters">
+      <aside class="catalog__filters mc-panel" data-catalog-controls>
+        <div class="mc-eyebrow">FILTER MATRIX</div>
+        <h2>篩選控制台</h2>
         <label>搜尋<input type="search" [(ngModel)]="search" (ngModelChange)="reload()" /></label>
 
         <label>
@@ -57,8 +59,12 @@ import { ItemCardComponent } from '../../shared/item-card/item-card.component';
       </aside>
 
       <section class="catalog__results">
-        <header>
-          <span>{{ total() }} 件</span>
+        <header class="catalog__results-header">
+          <div>
+            <div class="mc-eyebrow">CATALOG / QUERY RESULTS</div>
+            <h1>收藏目錄</h1>
+            <span>{{ total() }} 件</span>
+          </div>
           <a routerLink="/items/new">新增品項</a>
         </header>
 
@@ -77,9 +83,15 @@ import { ItemCardComponent } from '../../shared/item-card/item-card.component';
   styles: `
     .catalog { display: grid; grid-template-columns: 16rem 1fr; gap: 1.5rem; align-items: start; }
     .catalog__filters { display: grid; gap: 0.75rem; position: sticky; top: 1rem; }
+    .catalog__filters h2, .catalog__results-header h1 { margin: 0; }
+    .catalog__results-header { display: flex; justify-content: space-between; align-items: end; gap: 1rem; margin-bottom: 1rem; }
+    .catalog__results-header span { display: block; margin-top: 0.35rem; color: var(--mc-text-muted); }
     .catalog__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; }
     .catalog__tag { display: block; font-size: 0.85rem; }
-    @media (max-width: 720px) { .catalog { grid-template-columns: 1fr; } }
+    @media (max-width: 760px) {
+      .catalog { grid-template-columns: 1fr; }
+      .catalog__filters { position: static; }
+    }
   `,
 })
 export class CatalogComponent {

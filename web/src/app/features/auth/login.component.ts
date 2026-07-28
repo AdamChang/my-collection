@@ -8,30 +8,36 @@ import { AuthService } from '../../core/auth.service';
   imports: [FormsModule],
   template: `
     <main class="login">
-      <h1>MyCollection</h1>
+      <section class="login__terminal mc-panel">
+        <div class="mc-eyebrow">PRIVATE ARCHIVE / AUTH GATE</div>
+        <h1>MY//COLLECTION</h1>
+        <p class="mc-muted">跨越實體與數位世界，建立你的私人收藏座標。</p>
+        <form (ngSubmit)="submit()">
+          @if (mode() === 'register') {
+            <label>顯示名稱<input name="displayName" [(ngModel)]="displayName" required /></label>
+          }
+          <label>Email<input name="email" type="email" [(ngModel)]="email" required /></label>
+          <label>密碼<input name="password" type="password" [(ngModel)]="password" required minlength="8" /></label>
 
-      <form (ngSubmit)="submit()">
-        @if (mode() === 'register') {
-          <label>顯示名稱<input name="displayName" [(ngModel)]="displayName" required /></label>
-        }
-        <label>Email<input name="email" type="email" [(ngModel)]="email" required /></label>
-        <label>密碼<input name="password" type="password" [(ngModel)]="password" required minlength="8" /></label>
+          <button type="submit" [disabled]="busy()">
+            {{ busy() ? '連線中…' : mode() === 'login' ? '登入系統' : '建立帳號' }}
+          </button>
+        </form>
 
-        <button type="submit" [disabled]="busy()">
-          {{ mode() === 'login' ? '登入' : '註冊' }}
+        <button type="button" class="login__toggle" (click)="toggle()">
+          {{ mode() === 'login' ? '還沒有帳號？註冊' : '已經有帳號？登入' }}
         </button>
-      </form>
-
-      <button type="button" class="login__toggle" (click)="toggle()">
-        {{ mode() === 'login' ? '還沒有帳號？註冊' : '已經有帳號？登入' }}
-      </button>
+      </section>
     </main>
   `,
   styles: `
-    .login { max-width: 22rem; margin: 4rem auto; display: grid; gap: 1rem; }
+    .login { min-height: calc(100vh - 8rem); display: grid; place-items: center; padding: 2rem 1rem; }
+    .login__terminal { width: min(100%, 26rem); display: grid; gap: 1rem; }
+    .login h1 { margin: 0; letter-spacing: 0.08em; }
+    .login p { margin: 0; }
     .login form { display: grid; gap: 0.75rem; }
-    .login label { display: grid; gap: 0.25rem; }
-    .login__toggle { background: none; border: 0; color: #2980b9; cursor: pointer; }
+    .login label { display: grid; gap: 0.35rem; color: var(--mc-text-muted); }
+    .login__toggle { justify-self: start; min-height: auto; border: 0; padding: 0; background: none; color: var(--mc-cyan); }
   `,
 })
 export class LoginComponent {

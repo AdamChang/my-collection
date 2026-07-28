@@ -8,9 +8,13 @@ import { ItemCardComponent } from '../../shared/item-card/item-card.component';
   selector: 'app-showcase',
   imports: [ItemCardComponent, RouterLink],
   template: `
-    <header class="showcase__header">
-      <h1>精選收藏</h1>
-      <a routerLink="/catalog">看全部庫存 →</a>
+    <header class="showcase__header" data-showcase-terminal>
+      <div>
+        <div class="mc-eyebrow">CURATED ARCHIVE / ONLINE</div>
+        <h1>精選收藏</h1>
+        <p class="mc-muted">{{ total() }} 件已編入精選展示</p>
+      </div>
+      <a class="showcase__all" routerLink="/catalog">OPEN CATALOG →</a>
     </header>
 
     @if (loading()) {
@@ -32,9 +36,15 @@ import { ItemCardComponent } from '../../shared/item-card/item-card.component';
     }
   `,
   styles: `
-    .showcase__header { display: flex; justify-content: space-between; align-items: baseline; }
-    .showcase__wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
-    .showcase__empty { color: #7f8c8d; }
+    .showcase__header { display: flex; justify-content: space-between; align-items: end; gap: 1rem; margin-bottom: 1.5rem; }
+    .showcase__header h1, .showcase__header p { margin: 0.35rem 0 0; }
+    .showcase__all { font: 700 0.8rem/1.4 Consolas, monospace; letter-spacing: 0.08em; white-space: nowrap; }
+    .showcase__wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
+    .showcase__empty { color: var(--mc-text-muted); }
+    @media (max-width: 520px) {
+      .showcase__header { align-items: start; flex-direction: column; }
+      .showcase__wall { grid-template-columns: 1fr; }
+    }
   `,
 })
 export class ShowcaseComponent {

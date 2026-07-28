@@ -45,6 +45,14 @@ describe('ItemCardComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('初音ミク 1/8');
   });
 
+  it('exposes an accessible clickable card contract', () => {
+    render(item());
+
+    const card: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-item-card]');
+    expect(card).toBeTruthy();
+    expect(card.getAttribute('aria-label')).toBe('查看 初音ミク 1/8');
+  });
+
   it('uses the local card image when present', () => {
     render(item({ images: [{ id: 'x', path: 'p/full.webp', cardPath: 'p/card.webp', thumbPath: 'p/thumb.webp', isPrimary: true, order: 0 }] }));
 

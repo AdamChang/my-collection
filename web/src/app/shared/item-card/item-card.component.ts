@@ -7,7 +7,7 @@ import { CategoryFieldDto, ItemDto } from '../../core/models';
   selector: 'app-item-card',
   imports: [RouterLink],
   template: `
-    <a class="card" [routerLink]="['/items', item().id]">
+    <a class="card" data-item-card [attr.aria-label]="'查看 ' + item().name" [routerLink]="['/items', item().id]">
       @if (imageUrl(); as url) {
         <img [src]="url" [alt]="item().name" loading="lazy" />
       } @else {
@@ -38,19 +38,23 @@ import { CategoryFieldDto, ItemDto } from '../../core/models';
     </a>
   `,
   styles: `
-    .card { display: block; border-radius: 0.75rem; overflow: hidden; background: #fff;
-            box-shadow: 0 1px 3px rgb(0 0 0 / 12%); color: inherit; text-decoration: none; }
+    .card { display: block; position: relative; overflow: hidden; border: 1px solid var(--mc-border); background: var(--mc-surface);
+            box-shadow: var(--mc-shadow); color: var(--mc-text); text-decoration: none; transition: transform 160ms ease, border-color 160ms ease;
+            clip-path: polygon(0 0, calc(100% - var(--mc-cut)) 0, 100% var(--mc-cut), 100% 100%, 0 100%); }
+    .card:hover { border-color: var(--mc-cyan); transform: translateY(-3px); }
+    .card::after { content: ''; position: absolute; inset: 0 0 auto; height: 42%; pointer-events: none;
+                   background: linear-gradient(180deg, transparent 55%, rgb(5 7 13 / 48%)); }
     .card img { width: 100%; display: block; aspect-ratio: 4 / 3; object-fit: cover; }
     .card__placeholder { display: grid; place-items: center; aspect-ratio: 4 / 3;
-                         background: #ecf0f1; font-size: 2rem; color: #95a5a6; }
+                         background: var(--mc-surface-raised); font-size: 2rem; color: var(--mc-cyan); }
     .card__body { padding: 0.75rem; display: grid; gap: 0.4rem; }
     .card__title { font-size: 0.95rem; margin: 0; }
     .card__badge { justify-self: start; font-size: 0.7rem; padding: 0.1rem 0.4rem;
-                   border-radius: 0.25rem; background: #f1c40f; }
+                   border: 1px solid var(--mc-warning); color: var(--mc-warning); }
     .card__tags { display: flex; flex-wrap: wrap; gap: 0.25rem; list-style: none; margin: 0; padding: 0; }
-    .card__tags li { font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: 0.25rem; background: #ecf0f1; }
+    .card__tags li { font-size: 0.7rem; padding: 0.1rem 0.4rem; border: 1px solid var(--mc-border); color: var(--mc-text-muted); }
     .card__fields { display: grid; grid-template-columns: auto 1fr; gap: 0 0.4rem;
-                    margin: 0; font-size: 0.75rem; color: #7f8c8d; }
+                    margin: 0; font-size: 0.75rem; color: var(--mc-text-muted); }
     .card__fields dt { font-weight: 600; }
     .card__fields dd { margin: 0; }
   `,
