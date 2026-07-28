@@ -1,8 +1,10 @@
 import { DatePipe } from '@angular/common';
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { finalize } from 'rxjs';
 import { IngestionService } from '../../core/api/ingestion.service';
 import { ShareService } from '../../core/api/share.service';
+import { IGNORE_HANDLED_BY_INTERCEPTOR } from '../../core/error.interceptor';
 import { NotificationService } from '../../core/notification.service';
 import { ExternalAccountDto, ShareLinkDto, SyncJobDto } from '../../core/models';
 
@@ -21,16 +23,18 @@ import { ExternalAccountDto, ShareLinkDto, SyncJobDto } from '../../core/models'
 
       @if (steamAccount(); as account) {
         <p>已綁定 SteamID64：<code>{{ account.externalUserId }}</code></p>
-        <button type="button" (click)="sync()" [disabled]="syncing()">
+        <button type="button" (click)="sync()" [disabled]="busy()">
           {{ syncing() ? '同步中…' : '立即同步' }}
         </button>
-        <button type="button" (click)="unlink()">解除綁定</button>
+        <button type="button" (click)="unlink()" [disabled]="busy()">
+          {{ unlinking() ? '解除中…' : '解除綁定' }}
+        </button>
       } @else {
         <form (ngSubmit)="link()">
           <label>SteamID64<input [(ngModel)]="steamId" name="steamId" required /></label>
           <label>Web API Key<input [(ngModel)]="apiKey" name="apiKey" type="password" required /></label>
           <p class="hint">個人資料需設為公開，否則 Steam 回傳空清單。</p>
-          <button type="submit">綁定</button>
+          <button type="submit" [disabled]="busy()">{{ linking() ? '綁定中…' : '綁定' }}</button>
         </form>
       }
     </section>
@@ -79,7 +83,9 @@ import { ExternalAccountDto, ShareLinkDto, SyncJobDto } from '../../core/models'
         <input type="checkbox" [(ngModel)]="includePrice" name="includePrice" />
         包含購入價格（預設不含）
       </label>
-      <button type="button" (click)="createShare()">建立分享連結</button>
+      <button type="button" (click)="createShare()" [disabled]="busy()" data-create-share>
+        {{ creatingShare() ? '建立中…' : '建立分享連結' }}
+      </button>
 
       <ul>
         @for (share of shares(); track share.id) {
@@ -87,7 +93,9 @@ import { ExternalAccountDto, ShareLinkDto, SyncJobDto } from '../../core/models'
             <a [href]="'/p/' + share.slug" target="_blank" rel="noopener">/p/{{ share.slug }}</a>
             <span>{{ share.scope }}</span>
             @if (share.includePrice) { <span>含價格</span> }
-            <button type="button" (click)="removeShare(share.id)">刪除</button>
+            <button type="button" (click)="removeShare(share.id)" [disabled]="busy()">
+              {{ removingShareId() === share.id ? '刪除中…' : '刪除' }}
+            </button>
           </li>
         }
       </ul>
@@ -123,6 +131,20 @@ export class SettingsComponent {
   readonly jobs = signal<SyncJobDto[]>([]);
   readonly shares = signal<ShareLinkDto[]>([]);
   readonly syncing = signal(false);
+  readonly linking = signal(false);
+  readonly unlinking = signal(false);
+  readonly creatingShare = signal(false);
+  readonly removingShareId = signal<string | null>(null);
+
+  /** 任一改寫動作進行中就鎖住整頁按鈕，避免並行的寫入互相干擾。 */
+  readonly busy = computed(
+    () =>
+      this.syncing() ||
+      this.linking() ||
+      this.unlinking() ||
+      this.creatingShare() ||
+      this.removingShareId() !== null,
+  );
 
   steamId = '';
   apiKey = '';
@@ -135,47 +157,97 @@ export class SettingsComponent {
   }
 
   link(): void {
-    this.ingestion.link('steam', this.steamId, this.apiKey).subscribe(() => {
-      this.apiKey = '';
-      this.notifications.success('已綁定 Steam 帳號。');
-      this.reloadAccounts();
-    });
+    if (this.busy()) {
+      return;
+    }
+
+    this.linking.set(true);
+    this.ingestion
+      .link('steam', this.steamId, this.apiKey)
+      .pipe(finalize(() => this.linking.set(false)))
+      .subscribe({
+        next: () => {
+          this.apiKey = '';
+          this.notifications.success('已綁定 Steam 帳號。');
+          this.reloadAccounts();
+        },
+        error: IGNORE_HANDLED_BY_INTERCEPTOR,
+      });
   }
 
   unlink(): void {
-    this.ingestion.unlink('steam').subscribe(() => {
-      this.notifications.success('已解除綁定。');
-      this.reloadAccounts();
-    });
+    if (this.busy()) {
+      return;
+    }
+
+    this.unlinking.set(true);
+    this.ingestion
+      .unlink('steam')
+      .pipe(finalize(() => this.unlinking.set(false)))
+      .subscribe({
+        next: () => {
+          this.notifications.success('已解除綁定。');
+          this.reloadAccounts();
+        },
+        error: IGNORE_HANDLED_BY_INTERCEPTOR,
+      });
   }
 
   sync(): void {
-    this.syncing.set(true);
+    if (this.busy()) {
+      return;
+    }
 
-    this.ingestion.sync('steam').subscribe({
-      next: (job) => {
-        this.notifications.success(`同步完成：新增 ${job.created}、更新 ${job.updated}、失敗 ${job.failed}`);
-        this.syncing.set(false);
-        this.reloadJobs();
-      },
-      error: () => {
-        this.syncing.set(false);
-        this.reloadJobs();
-      },
-    });
+    this.syncing.set(true);
+    this.ingestion
+      .sync('steam')
+      .pipe(
+        finalize(() => {
+          this.syncing.set(false);
+          // 失敗的同步也會留下一筆紀錄，兩條路徑都要重載。
+          this.reloadJobs();
+        }),
+      )
+      .subscribe({
+        next: (job) =>
+          this.notifications.success(
+            `同步完成：新增 ${job.created}、更新 ${job.updated}、失敗 ${job.failed}`,
+          ),
+        error: IGNORE_HANDLED_BY_INTERCEPTOR,
+      });
   }
 
   createShare(): void {
+    if (this.busy()) {
+      return;
+    }
+
+    this.creatingShare.set(true);
     this.shareApi
       .create({ scope: 'Showcase', includeCategoryIds: [], includePrice: this.includePrice, expiresAt: null })
-      .subscribe(() => {
-        this.notifications.success('已建立分享連結。');
-        this.reloadShares();
+      .pipe(finalize(() => this.creatingShare.set(false)))
+      .subscribe({
+        next: () => {
+          this.notifications.success('已建立分享連結。');
+          this.reloadShares();
+        },
+        error: IGNORE_HANDLED_BY_INTERCEPTOR,
       });
   }
 
   removeShare(id: string): void {
-    this.shareApi.remove(id).subscribe(() => this.reloadShares());
+    if (this.busy()) {
+      return;
+    }
+
+    this.removingShareId.set(id);
+    this.shareApi
+      .remove(id)
+      .pipe(finalize(() => this.removingShareId.set(null)))
+      .subscribe({
+        next: () => this.reloadShares(),
+        error: IGNORE_HANDLED_BY_INTERCEPTOR,
+      });
   }
 
   private reloadAccounts(): void {

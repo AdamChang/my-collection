@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideHttpClient } from '@angular/common/http';
+import { Router, provideRouter } from '@angular/router';
 import { AuthService } from './auth.service';
 import { AuthResponse } from './models';
 
@@ -14,14 +15,21 @@ const response: AuthResponse = {
 describe('AuthService', () => {
   let service: AuthService;
   let http: HttpTestingController;
+  let router: Router;
 
   beforeEach(() => {
     localStorage.clear();
     TestBed.configureTestingModule({
-      providers: [provideHttpClient(), provideHttpClientTesting()],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        // logout() 會真的導航，沒有這條路由 Router 會噴 NG04002 汙染測試輸出。
+        provideRouter([{ path: 'login', children: [] }]),
+      ],
     });
     service = TestBed.inject(AuthService);
     http = TestBed.inject(HttpTestingController);
+    router = TestBed.inject(Router);
   });
 
   afterEach(() => http.verify());
@@ -60,6 +68,15 @@ describe('AuthService', () => {
 
     expect(service.isAuthenticated()).toBe(false);
     expect(localStorage.getItem('mycollection.session')).toBeNull();
+  });
+
+  /** 沒有導航的話 router-outlet 裡的元件會繼續存活並繼續發請求。 */
+  it('sends the user to the login page on a deliberate logout, without a return url', () => {
+    const navigate = spyOn(router, 'navigate').and.resolveTo(true);
+
+    service.logout();
+
+    expect(navigate).toHaveBeenCalledWith(['/login'], {});
   });
 
   it('refresh replaces the stored token pair', async () => {

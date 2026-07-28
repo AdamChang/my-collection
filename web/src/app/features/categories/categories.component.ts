@@ -1,6 +1,8 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { finalize } from 'rxjs';
 import { CategoryService, CategoryWritePayload } from '../../core/api/category.service';
+import { IGNORE_HANDLED_BY_INTERCEPTOR } from '../../core/error.interceptor';
 import { NotificationService } from '../../core/notification.service';
 import { CategoryDto, CategoryFieldDto, FieldType } from '../../core/models';
 
@@ -103,10 +105,14 @@ const FIELD_TYPES: FieldType[] = ['Text', 'Number', 'Date', 'Select', 'Bool', 'U
         <button type="button" (click)="addField()">新增欄位</button>
 
         <div class="editor__actions">
-          <button type="submit" class="button--primary">儲存</button>
-          <button type="button" (click)="draft.set(null)">取消</button>
+          <button type="submit" class="button--primary" [disabled]="busy()">
+            {{ saving() ? '儲存中…' : '儲存' }}
+          </button>
+          <button type="button" (click)="draft.set(null)" [disabled]="busy()">取消</button>
           @if (editingId()) {
-            <button type="button" class="button--danger" (click)="remove()">刪除品類</button>
+            <button type="button" class="button--danger" [disabled]="busy()" (click)="remove()">
+              {{ removing() ? '刪除中…' : '刪除品類' }}
+            </button>
           }
         </div>
       </form>
@@ -142,6 +148,11 @@ export class CategoriesComponent {
   readonly categories = signal<CategoryDto[]>([]);
   readonly draft = signal<CategoryWritePayload | null>(null);
   readonly editingId = signal<string | null>(null);
+  readonly saving = signal(false);
+  readonly removing = signal(false);
+
+  /** 儲存與刪除不該並行，任一進行中就鎖住兩顆。 */
+  readonly busy = computed(() => this.saving() || this.removing());
 
   constructor() {
     this.reload();
@@ -196,31 +207,42 @@ export class CategoriesComponent {
 
   save(): void {
     const payload = this.draft();
-    if (!payload) {
+    if (!payload || this.busy()) {
       return;
     }
 
     const id = this.editingId();
     const request = id ? this.api.update(id, payload) : this.api.create(payload);
 
-    request.subscribe(() => {
-      this.notifications.success('已儲存品類。');
-      this.draft.set(null);
-      this.reload();
+    this.saving.set(true);
+    request.pipe(finalize(() => this.saving.set(false))).subscribe({
+      next: () => {
+        this.notifications.success('已儲存品類。');
+        this.draft.set(null);
+        this.reload();
+      },
+      error: IGNORE_HANDLED_BY_INTERCEPTOR,
     });
   }
 
   remove(): void {
     const id = this.editingId();
-    if (!id) {
+    if (!id || this.busy()) {
       return;
     }
 
-    this.api.remove(id).subscribe(() => {
-      this.notifications.success('已刪除品類。');
-      this.draft.set(null);
-      this.reload();
-    });
+    this.removing.set(true);
+    this.api
+      .remove(id)
+      .pipe(finalize(() => this.removing.set(false)))
+      .subscribe({
+        next: () => {
+          this.notifications.success('已刪除品類。');
+          this.draft.set(null);
+          this.reload();
+        },
+        error: IGNORE_HANDLED_BY_INTERCEPTOR,
+      });
   }
 
   private reload(): void {

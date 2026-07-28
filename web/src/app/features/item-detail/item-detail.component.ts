@@ -1,9 +1,11 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
+import { finalize } from 'rxjs';
 import { CatalogService, ItemWritePayload } from '../../core/api/catalog.service';
 import { CategoryService } from '../../core/api/category.service';
 import { IngestionService } from '../../core/api/ingestion.service';
+import { IGNORE_HANDLED_BY_INTERCEPTOR } from '../../core/error.interceptor';
 import { NotificationService } from '../../core/notification.service';
 import { CategoryDto, ItemDto } from '../../core/models';
 import { DynamicFormComponent } from '../../shared/dynamic-form/dynamic-form.component';
@@ -21,9 +23,13 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
           <h1>{{ itemId() ? '編輯品項' : '新增品項' }}</h1>
         </div>
         <div class="detail__actions">
-          <button type="submit" [disabled]="!canSave()">儲存</button>
+          <button type="submit" [disabled]="!canSave() || busy()">
+            {{ saving() ? '儲存中…' : '儲存' }}
+          </button>
           @if (itemId()) {
-            <button type="button" class="button--danger" (click)="remove()">刪除</button>
+            <button type="button" class="button--danger" [disabled]="busy()" (click)="remove()">
+              {{ removing() ? '刪除中…' : '刪除' }}
+            </button>
           }
         </div>
       </header>
@@ -32,7 +38,9 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
         <fieldset class="detail__fetch mc-panel">
           <legend>從商品網址自動填表</legend>
           <input type="url" [(ngModel)]="fetchUrl" name="fetchUrl" placeholder="https://…" />
-          <button type="button" (click)="fetchMetadata()" [disabled]="!fetchUrl">擷取</button>
+          <button type="button" (click)="fetchMetadata()" [disabled]="!fetchUrl || busy()">
+            {{ fetching() ? '擷取中…' : '擷取' }}
+          </button>
         </fieldset>
       }
 
@@ -133,6 +141,13 @@ export class ItemDetailComponent {
   readonly attributesValid = signal(true);
   readonly tags = signal<string[]>([]);
 
+  readonly saving = signal(false);
+  readonly removing = signal(false);
+  readonly fetching = signal(false);
+
+  /** 任一改寫動作進行中就鎖住全部按鈕：同一筆品項不該有並行的改寫。 */
+  readonly busy = computed(() => this.saving() || this.removing() || this.fetching());
+
   categoryId = '';
   name = '';
   description = '';
@@ -170,39 +185,66 @@ export class ItemDetailComponent {
   }
 
   fetchMetadata(): void {
-    this.ingestion.fetchByUrl(this.fetchUrl).subscribe((metadata) => {
-      this.name = metadata.name;
-      this.description = metadata.description ?? '';
-      this.notifications.success('已從網址帶入資料，請確認後儲存。');
-    });
+    if (this.busy()) {
+      return;
+    }
+
+    // 錯誤訊息由 errorInterceptor 顯示，這裡只負責解鎖讓使用者能換一個網址重試。
+    this.fetching.set(true);
+    this.ingestion
+      .fetchByUrl(this.fetchUrl)
+      .pipe(finalize(() => this.fetching.set(false)))
+      .subscribe({
+        next: (metadata) => {
+          this.name = metadata.name;
+          this.description = metadata.description ?? '';
+          this.notifications.success('已從網址帶入資料，請確認後儲存。');
+        },
+        error: IGNORE_HANDLED_BY_INTERCEPTOR,
+      });
   }
 
   save(): void {
+    if (this.busy()) {
+      return;
+    }
+
     const payload = this.toPayload();
     const id = this.itemId();
 
     const request = id ? this.catalog.update(id, payload) : this.catalog.create(payload);
 
-    request.subscribe((saved) => {
-      this.notifications.success('已儲存。');
-      if (!id) {
-        void this.router.navigate(['/items', saved.id]);
-      } else {
-        this.hydrate(saved);
-      }
+    this.saving.set(true);
+    request.pipe(finalize(() => this.saving.set(false))).subscribe({
+      next: (saved) => {
+        this.notifications.success('已儲存。');
+        if (!id) {
+          void this.router.navigate(['/items', saved.id]);
+        } else {
+          this.hydrate(saved);
+        }
+      },
+      error: IGNORE_HANDLED_BY_INTERCEPTOR,
     });
   }
 
   remove(): void {
     const id = this.itemId();
-    if (!id) {
+    if (!id || this.busy()) {
       return;
     }
 
-    this.catalog.remove(id).subscribe(() => {
-      this.notifications.success('已刪除。');
-      void this.router.navigate(['/catalog']);
-    });
+    this.removing.set(true);
+    this.catalog
+      .remove(id)
+      .pipe(finalize(() => this.removing.set(false)))
+      .subscribe({
+        next: () => {
+          this.notifications.success('已刪除。');
+          void this.router.navigate(['/catalog']);
+        },
+        error: IGNORE_HANDLED_BY_INTERCEPTOR,
+      });
   }
 
   uploadImages(itemId: string, files: File[]): void {

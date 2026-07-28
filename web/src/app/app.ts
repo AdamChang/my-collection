@@ -3,12 +3,17 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 import { AuthService } from './core/auth.service';
+import { LoadingService } from './core/loading.service';
 import { NotificationService } from './core/notification.service';
 
 @Component({
   selector: 'app-root',
   imports: [RouterOutlet, RouterLink, RouterLinkActive],
   template: `
+    @if (loading.showIndicator()) {
+      <div class="progress" role="progressbar" aria-label="載入中" data-app-progress></div>
+    }
+
     @if (auth.isAuthenticated() && !isPublicShell()) {
       <header class="app-header" data-app-shell>
         <a class="brand" routerLink="/" aria-label="MyCollection 首頁">
@@ -43,6 +48,18 @@ import { NotificationService } from './core/notification.service';
   `,
   styles: `
     :host { display: block; min-height: 100vh; }
+    .progress { position: fixed; inset-block-start: 0; inset-inline: 0; z-index: 40; height: 2px;
+      overflow: hidden; background: var(--mc-cyan-soft); }
+    .progress::after { content: ''; display: block; width: 40%; height: 100%;
+      background: linear-gradient(90deg, transparent, var(--mc-cyan), var(--mc-magenta), transparent);
+      box-shadow: 0 0 12px var(--mc-cyan); animation: progress-sweep 1.1s linear infinite; }
+    @keyframes progress-sweep {
+      from { transform: translateX(-100%); }
+      to { transform: translateX(350%); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .progress::after { width: 100%; animation: none; opacity: 0.7; }
+    }
     .app-header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center;
       justify-content: space-between; gap: 1rem; min-height: 4rem; padding: 0.65rem 1rem;
       border-bottom: 1px solid var(--mc-border); background: rgb(5 7 13 / 88%);
@@ -74,6 +91,7 @@ import { NotificationService } from './core/notification.service';
 })
 export class App {
   readonly auth = inject(AuthService);
+  readonly loading = inject(LoadingService);
   readonly notifications = inject(NotificationService);
   private readonly router = inject(Router);
   private readonly navigationEnd = toSignal(
