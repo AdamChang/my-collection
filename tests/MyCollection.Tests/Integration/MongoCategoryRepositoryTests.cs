@@ -1,5 +1,6 @@
 using FluentAssertions;
 using MongoDB.Bson;
+using MongoDB.Driver;
 using Moq;
 using MyCollection.Application.Common;
 using MyCollection.Domain.Entities;
@@ -106,5 +107,20 @@ public class MongoCategoryRepositoryTests(MongoFixture fixture) : IAsyncLifetime
         var act = () => _sut.DeleteAsync(ObjectId.GenerateNewId(), CancellationToken.None);
 
         await act.Should().ThrowAsync<NotFoundException>();
+    }
+
+    [Fact]
+    public async Task DeleteAsync_throws_NotFound_and_preserves_system_category()
+    {
+        var system = NewCategory(null, "數位遊戲");
+        await fixture.Context.Categories.InsertOneAsync(system);
+
+        var act = () => _sut.DeleteAsync(system.Id, CancellationToken.None);
+
+        await act.Should().ThrowAsync<NotFoundException>();
+        var persisted = await fixture.Context.Categories
+            .Find(Builders<Category>.Filter.Eq(x => x.Id, system.Id))
+            .FirstOrDefaultAsync();
+        persisted.Should().NotBeNull();
     }
 }
