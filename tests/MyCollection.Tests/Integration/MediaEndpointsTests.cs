@@ -1,7 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using MyCollection.Application.Categories;
+using MyCollection.Application.Common;
 using MyCollection.Application.Items;
 using MyCollection.Tests.Fixtures;
 using SixLabors.ImageSharp;
@@ -129,5 +131,27 @@ public class MediaEndpointsTests(MongoFixture mongo) : IAsyncLifetime
         var response = await intruder.PostAsync($"/items/{item.Id}/images", PngUpload());
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Media_endpoint_refuses_files_that_are_not_webp()
+    {
+        var storage = _factory.Services.GetRequiredService<IFileStorage>();
+        await storage.SaveAsync("owner/secret.zip", new MemoryStream([1, 2, 3]), CancellationToken.None);
+
+        var response = await _client.GetAsync("/media/owner/secret.zip");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Media_endpoint_still_serves_webp_files()
+    {
+        var storage = _factory.Services.GetRequiredService<IFileStorage>();
+        await storage.SaveAsync("owner/cover.webp", new MemoryStream([1, 2, 3]), CancellationToken.None);
+
+        var response = await _client.GetAsync("/media/owner/cover.webp");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 }

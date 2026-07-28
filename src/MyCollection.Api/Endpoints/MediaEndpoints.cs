@@ -42,6 +42,12 @@ public static class MediaEndpoints
         // 匿名：分享頁需要讀得到圖片。路徑本身含 ObjectId，難以枚舉。
         app.MapGet("/media/{**path}", async (string path, IFileStorage storage, CancellationToken ct) =>
             {
+                // 這是匿名端點。限定副檔名，避免它變成 media root 的任意檔案讀取器。
+                if (!path.EndsWith(".webp", StringComparison.OrdinalIgnoreCase))
+                {
+                    return Results.NotFound();
+                }
+
                 Stream? stream;
                 try
                 {
