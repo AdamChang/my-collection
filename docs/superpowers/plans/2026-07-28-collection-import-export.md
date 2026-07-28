@@ -814,6 +814,7 @@ git commit -m "feat(transfer): add transfer repository for export and import que
 
 **Files:**
 - Create: `src/MyCollection.Application/Transfer/ArchiveWriter.cs`
+- Create: `src/MyCollection.Application/Transfer/ArchiveMapper.cs`
 - Test: `tests/MyCollection.Tests/Unit/ArchiveWriterTests.cs`
 
 - [ ] **Step 1: 寫失敗的測試**
@@ -991,9 +992,9 @@ public sealed class ArchiveWriter(
         var manifest = new ArchiveManifest
         {
             ExportedAt = timeProvider.GetUtcNow().UtcDateTime,
-            Categories = [.. categories.Select(ToArchive)],
-            Items = [.. items.Select(ToArchive)],
-            ShareLinks = [.. shareLinks.Select(ToArchive)]
+            Categories = [.. categories.Select(ArchiveMapper.ToArchive)],
+            Items = [.. items.Select(ArchiveMapper.ToArchive)],
+            ShareLinks = [.. shareLinks.Select(ArchiveMapper.ToArchive)]
         };
 
         using var archive = new ZipArchive(destination, ZipArchiveMode.Create, leaveOpen: true);
@@ -1022,18 +1023,65 @@ public sealed class ArchiveWriter(
         }
     }
 
-    private static ArchiveCategory ToArchive(Category category) => new()
+}
+```
+
+- [ ] **Step 4: 建立 `ArchiveMapper`**
+
+Domain 與封存檔型別的雙向對應集中在這一個檔案。正向只有 `ArchiveWriter` 用，反向 Task 8 的 validator 與 Task 10 的匯入 handler 都要用——把同一份欄位對應手寫三遍，在一個必須跨版本讀得懂的磁碟格式上是實打實的漂移風險。
+
+建立 `src/MyCollection.Application/Transfer/ArchiveMapper.cs`：
+
+```csharp
+using MongoDB.Bson;
+using MyCollection.Domain.Entities;
+
+namespace MyCollection.Application.Transfer;
+
+/// <summary>
+/// Domain 實體與封存檔型別之間的唯一對應點。
+///
+/// 兩個方向放在一起是刻意的：欄位對應寫錯的後果是資料悄悄遺失，
+/// 而不是編譯失敗。放在同一個檔案裡，加欄位時漏掉另一邊會立刻看得出來。
+/// </summary>
+public static class ArchiveMapper
+{
+    // ---- Domain → 封存檔 ----
+
+    public static ArchiveCategory ToArchive(Category category) => new()
     {
         Id = category.Id,
         Name = category.Name,
         Icon = category.Icon,
         Kind = category.Kind,
-        Fields = category.Fields,
+        Fields = [.. category.Fields.Select(ToArchive)],
         CreatedAt = category.CreatedAt,
         UpdatedAt = category.UpdatedAt
     };
 
-    private static ArchiveItem ToArchive(Item item) => new()
+    public static ArchiveCategoryField ToArchive(CategoryField field) => new()
+    {
+        Key = field.Key,
+        Label = field.Label,
+        Type = field.Type,
+        Options = field.Options,
+        Required = field.Required,
+        Searchable = field.Searchable,
+        ShowOnCard = field.ShowOnCard
+    };
+
+    public static ArchiveAcquisition? ToArchive(Acquisition? acquisition) => acquisition is null
+        ? null
+        : new ArchiveAcquisition
+        {
+            AcquiredAt = acquisition.AcquiredAt,
+            Vendor = acquisition.Vendor,
+            Price = acquisition.Price is null
+                ? null
+                : new ArchiveMoney { Amount = acquisition.Price.Amount, Currency = acquisition.Price.Currency }
+        };
+
+    public static ArchiveItem ToArchive(Item item) => new()
     {
         Id = item.Id,
         CategoryId = item.CategoryId,
@@ -1042,7 +1090,7 @@ public sealed class ArchiveWriter(
         Tags = item.Tags,
         IsShowcased = item.IsShowcased,
         Source = item.Source,
-        Acquisition = item.Acquisition,
+        Acquisition = ToArchive(item.Acquisition),
         Attributes = item.Attributes,
         Images =
         [
@@ -1058,7 +1106,7 @@ public sealed class ArchiveWriter(
         UpdatedAt = item.UpdatedAt
     };
 
-    private static ArchiveShareLink ToArchive(ShareLink link) => new()
+    public static ArchiveShareLink ToArchive(ShareLink link) => new()
     {
         Slug = link.Slug,
         Scope = link.Scope,
@@ -1067,20 +1115,58 @@ public sealed class ArchiveWriter(
         ExpiresAt = link.ExpiresAt,
         CreatedAt = link.CreatedAt
     };
+
+    // ---- 封存檔 → Domain ----
+
+    /// <param name="ownerId">
+    /// 封存檔不帶 ownerId，一律由呼叫端指定。驗證階段只需要 schema，可傳 null。
+    /// </param>
+    public static Category ToDomain(ArchiveCategory source, ObjectId? ownerId) => new()
+    {
+        Id = source.Id,
+        OwnerId = ownerId,
+        Name = source.Name,
+        Icon = source.Icon,
+        Kind = source.Kind,
+        Fields = [.. source.Fields.Select(ToDomain)],
+        CreatedAt = source.CreatedAt,
+        UpdatedAt = source.UpdatedAt
+    };
+
+    public static CategoryField ToDomain(ArchiveCategoryField source) => new()
+    {
+        Key = source.Key,
+        Label = source.Label,
+        Type = source.Type,
+        Options = source.Options,
+        Required = source.Required,
+        Searchable = source.Searchable,
+        ShowOnCard = source.ShowOnCard
+    };
+
+    public static Acquisition? ToDomain(ArchiveAcquisition? source) => source is null
+        ? null
+        : new Acquisition
+        {
+            AcquiredAt = source.AcquiredAt,
+            Vendor = source.Vendor,
+            Price = source.Price is null ? null : new Money(source.Price.Amount, source.Price.Currency)
+        };
 }
 ```
 
-- [ ] **Step 4: 執行測試確認通過**
+- [ ] **Step 5: 執行測試確認通過**
 
 Run: `dotnet test tests/MyCollection.Tests --filter "FullyQualifiedName~ArchiveWriterTests"`
 Expected: PASS，4 passed
 
-- [ ] **Step 5: 提交**
+- [ ] **Step 6: 提交**
 
 ```bash
 git add src/MyCollection.Application/Transfer/ArchiveWriter.cs \
+        src/MyCollection.Application/Transfer/ArchiveMapper.cs \
         tests/MyCollection.Tests/Unit/ArchiveWriterTests.cs
-git commit -m "feat(transfer): add archive writer streaming categories, items and images"
+git commit -m "feat(transfer): add archive writer and domain/archive mapper"
 ```
 
 ---
@@ -1579,7 +1665,7 @@ public class ArchiveValidatorTests
     {
         Id = id,
         Name = name,
-        Fields = [new CategoryField { Key = "label", Label = "廠牌", Type = FieldType.Text }],
+        Fields = [new ArchiveCategoryField { Key = "label", Label = "廠牌", Type = FieldType.Text }],
         CreatedAt = new DateTime(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc),
         UpdatedAt = new DateTime(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc)
     };
@@ -1616,15 +1702,6 @@ public class ArchiveValidatorTests
         };
 
         _sut.Validate(manifest, [SystemCategory()]).Should().BeEmpty();
-    }
-
-    [Fact]
-    public void Unknown_schema_version_is_rejected()
-    {
-        var manifest = new ArchiveManifest { SchemaVersion = 99 };
-
-        _sut.Validate(manifest, [SystemCategory()])
-            .Should().ContainSingle().Which.PropertyName.Should().Be("schemaVersion");
     }
 
     [Fact]
@@ -1722,18 +1799,9 @@ public sealed class ArchiveValidator(IAttributeValidator attributeValidator)
         ArchiveManifest manifest,
         IReadOnlyList<Category> systemCategories)
     {
+        // schemaVersion 不在這裡檢查：ArchiveManifestSerializer.Read 會在反序列化之前
+        // 就擋掉版本不符的封存檔並擲 InvalidArchiveException。放在這裡只會是永遠不成立的死碼。
         var failures = new List<ValidationFailure>();
-
-        if (manifest.SchemaVersion != ArchiveManifest.CurrentSchemaVersion)
-        {
-            failures.Add(new ValidationFailure(
-                "schemaVersion",
-                $"Unsupported archive schema version {manifest.SchemaVersion}; " +
-                $"this build reads version {ArchiveManifest.CurrentSchemaVersion}. Re-export from the source machine."));
-
-            // 版本不符時後續欄位檢查沒有意義，結構本來就可能不同。
-            return failures;
-        }
 
         for (var i = 0; i < manifest.Categories.Count; i++)
         {
@@ -1752,16 +1820,8 @@ public sealed class ArchiveValidator(IAttributeValidator attributeValidator)
 
         foreach (var category in manifest.Categories)
         {
-            schemaById[category.Id] = new Category
-            {
-                Id = category.Id,
-                Name = category.Name,
-                Icon = category.Icon,
-                Kind = category.Kind,
-                Fields = category.Fields,
-                CreatedAt = category.CreatedAt,
-                UpdatedAt = category.UpdatedAt
-            };
+            // 驗證只需要 schema（Fields），OwnerId 無關緊要。
+            schemaById[category.Id] = ArchiveMapper.ToDomain(category, ownerId: null);
         }
 
         for (var i = 0; i < manifest.Items.Count; i++)
@@ -1798,7 +1858,9 @@ public sealed class ArchiveValidator(IAttributeValidator attributeValidator)
 - [ ] **Step 4: 執行測試確認通過**
 
 Run: `dotnet test tests/MyCollection.Tests --filter "FullyQualifiedName~ArchiveValidatorTests"`
-Expected: PASS，7 passed
+Expected: PASS，6 passed
+
+`schemaVersion` 沒有對應的測試，因為它不歸這裡管——`ArchiveManifestSerializer.Read` 會在反序列化之前就擋掉版本不符並擲 `InvalidArchiveException`，該行為已由 `ArchiveManifestSerializerTests` 覆蓋。
 
 - [ ] **Step 5: 提交**
 
@@ -2044,6 +2106,7 @@ git commit -m "feat(transfer): add backup store outside the anonymous media root
 
 **Files:**
 - Create: `src/MyCollection.Application/Transfer/ImportCommand.cs`
+- Modify: `src/MyCollection.Api/GlobalExceptionHandler.cs`
 - Modify: `src/MyCollection.Infrastructure/DependencyInjection.cs`
 - Test: 由 Task 11 的整合測試覆蓋（handler 依賴 ZIP、儲存、Mongo 三者的真實互動，mock 出來的測試只會測到 mock 本身）
 
@@ -2140,7 +2203,7 @@ public sealed class ImportArchiveCommandHandler(
             $"品類「{name}」因仍有 Steam 品項掛在上面而保留，未被封存檔取代。"));
 
         await repository.InsertCategoriesAsync(
-            [.. manifest.Categories.Select(c => ToEntity(c, ownerId))], ct);
+            [.. manifest.Categories.Select(c => ArchiveMapper.ToDomain(c, ownerId))], ct);
 
         var (items, imageCount, imageWarnings) = await BuildItemsAsync(archive, manifest, ownerId, ct);
         warnings.AddRange(imageWarnings);
@@ -2153,6 +2216,14 @@ public sealed class ImportArchiveCommandHandler(
         return new ImportResultDto(manifest.Categories.Count, items.Count, imageCount, warnings);
     }
 
+    /// <summary>
+    /// manifest 的大小上限。ArchiveManifestSerializer.Read 的 doc comment 說明了原因：
+    /// MongoDB 的 JsonReader 對巢狀深度沒有上限，極深巢狀的 JSON 會觸發無法攔截的
+    /// StackOverflowException 直接終止行程，只能在讀取前用大小把它擋掉。
+    /// 個人收藏的 manifest 是幾 MB 等級，64 MB 留了非常寬裕的餘裕。
+    /// </summary>
+    private const long MaxManifestBytes = 64L * 1024 * 1024;
+
     private static ZipArchive OpenArchive(Stream source)
     {
         try
@@ -2161,30 +2232,29 @@ public sealed class ImportArchiveCommandHandler(
         }
         catch (InvalidDataException exception)
         {
-            throw new ValidationException("archive", "The uploaded file is not a valid ZIP archive.", exception.Message);
+            throw new InvalidArchiveException("上傳的檔案不是合法的 ZIP 封存檔。", exception);
         }
     }
 
     private static ArchiveManifest ReadManifest(ZipArchive archive)
     {
         var entry = archive.GetEntry(ArchiveManifest.FileName)
-                    ?? throw new ValidationException(
-                        "archive", $"The archive does not contain {ArchiveManifest.FileName}.");
+                    ?? throw new InvalidArchiveException($"封存檔內缺少 {ArchiveManifest.FileName}。");
+
+        if (entry.Length > MaxManifestBytes)
+        {
+            throw new InvalidArchiveException(
+                $"{ArchiveManifest.FileName} 超過 {MaxManifestBytes / 1024 / 1024} MB 上限。");
+        }
 
         using var stream = entry.Open();
         using var buffer = new MemoryStream();
         stream.CopyTo(buffer);
         buffer.Position = 0;
 
-        try
-        {
-            return ArchiveManifestSerializer.Read(buffer);
-        }
-        catch (Exception exception) when (exception is FormatException or ArgumentException)
-        {
-            throw new ValidationException(
-                ArchiveManifest.FileName, $"{ArchiveManifest.FileName} is not readable: {exception.Message}");
-        }
+        // Read 內部已經把 MongoDB.Bson 會丟的各種例外統一成 InvalidArchiveException，
+        // 也已經檢查過 schemaVersion，這裡不需要再包一層。
+        return ArchiveManifestSerializer.Read(buffer);
     }
 
     private async Task<(List<Item> Items, int ImageCount, List<string> Warnings)> BuildItemsAsync(
@@ -2206,7 +2276,7 @@ public sealed class ImportArchiveCommandHandler(
                 Tags = source.Tags,
                 IsShowcased = source.IsShowcased,
                 Source = source.Source,
-                Acquisition = source.Acquisition,
+                Acquisition = ArchiveMapper.ToDomain(source.Acquisition),
                 Attributes = source.Attributes,
                 CreatedAt = source.CreatedAt,
                 UpdatedAt = source.UpdatedAt
@@ -2287,22 +2357,22 @@ public sealed class ImportArchiveCommandHandler(
 
         return links;
     }
-
-    private static Category ToEntity(ArchiveCategory source, ObjectId ownerId) => new()
-    {
-        Id = source.Id,
-        OwnerId = ownerId,
-        Name = source.Name,
-        Icon = source.Icon,
-        Kind = source.Kind,
-        Fields = source.Fields,
-        CreatedAt = source.CreatedAt,
-        UpdatedAt = source.UpdatedAt
-    };
 }
 ```
 
-- [ ] **Step 2: 註冊 DI**
+- [ ] **Step 2: 讓 `InvalidArchiveException` 對應到 400**
+
+`GlobalExceptionHandler` 是唯一的錯誤轉換點。沒有這一條，壞掉的封存檔會變成 500，而它其實是使用者可修正的輸入問題。
+
+在 `src/MyCollection.Api/GlobalExceptionHandler.cs` 的 `Map` switch 中，緊接在 `InvalidImageException` 那一條之後加入：
+
+```csharp
+            InvalidArchiveException a => (StatusCodes.Status400BadRequest, "Invalid archive.", a.Message, null),
+```
+
+並在檔案 using 區加入 `using MyCollection.Application.Transfer;`。
+
+- [ ] **Step 3: 註冊 DI**
 
 在 `src/MyCollection.Infrastructure/DependencyInjection.cs` 的 `services.AddScoped<ArchiveWriter>();` 之後加入：
 
@@ -2310,15 +2380,16 @@ public sealed class ImportArchiveCommandHandler(
         services.AddScoped<ArchiveValidator>();
 ```
 
-- [ ] **Step 3: 確認建置通過**
+- [ ] **Step 4: 確認建置通過**
 
 Run: `dotnet build MyCollection.slnx`
 Expected: Build succeeded，0 Error
 
-- [ ] **Step 4: 提交**
+- [ ] **Step 5: 提交**
 
 ```bash
 git add src/MyCollection.Application/Transfer/ImportCommand.cs \
+        src/MyCollection.Api/GlobalExceptionHandler.cs \
         src/MyCollection.Infrastructure/DependencyInjection.cs
 git commit -m "feat(transfer): add import handler with validation, backup and snapshot replace"
 ```
