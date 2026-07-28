@@ -10,7 +10,7 @@ import { CategoryFieldDto } from '../../core/models';
   selector: 'app-dynamic-form',
   imports: [ReactiveFormsModule],
   template: `
-    <form [formGroup]="form" class="dynamic-form" data-schema-fields>
+    <div [formGroup]="form" class="dynamic-form" data-schema-fields>
       @for (field of fields(); track field.key) {
         <label class="dynamic-form__row">
           <span class="dynamic-form__label">
@@ -49,7 +49,7 @@ import { CategoryFieldDto } from '../../core/models';
           }
         </label>
       }
-    </form>
+    </div>
   `,
   styles: `
     .dynamic-form { display: grid; gap: 0.75rem; }
