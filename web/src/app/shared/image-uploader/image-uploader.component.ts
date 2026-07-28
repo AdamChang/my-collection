@@ -11,7 +11,13 @@ import { ItemImageDto } from '../../core/models';
           <figure class="uploader__item" [class.uploader__item--primary]="image.isPrimary">
             <img [src]="mediaUrl(image.cardPath)" alt="" />
             <figcaption>
-              @if (!image.isPrimary) {
+              @if (image.isPrimary) {
+                <span
+                  class="uploader__primary-badge mc-badge"
+                  data-primary-status
+                  aria-label="目前主圖"
+                >主圖</span>
+              } @else {
                 <button type="button" (click)="setPrimary.emit(image.id)">設為主圖</button>
               }
               <button type="button" (click)="remove.emit(image.id)">刪除</button>
@@ -32,6 +38,8 @@ import { ItemImageDto } from '../../core/models';
     .uploader__item { margin: 0; border: 1px solid var(--mc-border); padding: 0.4rem; background: var(--mc-surface); }
     .uploader__item img { width: 100%; aspect-ratio: 1; object-fit: cover; }
     .uploader__item--primary { border-color: var(--mc-warning); }
+    .uploader__item figcaption { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+    .uploader__primary-badge { border-color: var(--mc-warning); color: var(--mc-warning); font-weight: 700; }
     .uploader__drop { display: grid; place-items: center; min-height: 8rem; border: 1px dashed var(--mc-cyan);
       padding: 1rem; background: var(--mc-cyan-soft); color: var(--mc-cyan); cursor: pointer; }
   `,

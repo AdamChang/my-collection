@@ -1,8 +1,11 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
+import { of } from 'rxjs';
 import { App } from './app';
+import { routes } from './app.routes';
+import { ShareService } from './core/api/share.service';
 import { AuthService } from './core/auth.service';
 import { NotificationService } from './core/notification.service';
 
@@ -17,7 +20,21 @@ describe('App', () => {
     localStorage.clear();
     await TestBed.configureTestingModule({
       imports: [App],
-      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+      providers: [
+        provideRouter(routes),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: ShareService,
+          useValue: {
+            getPublic: () => of({
+              ownerDisplayName: 'Adam',
+              scope: 'Showcase',
+              items: [],
+            }),
+          },
+        },
+      ],
     }).compileComponents();
   });
 
@@ -67,6 +84,21 @@ describe('App', () => {
     expect(fixture.nativeElement.querySelector('nav')).toBeNull();
   });
 
+  it('uses the public shell on /p/:slug even when a session exists', async () => {
+    localStorage.setItem('mycollection.session', SESSION);
+    const router = TestBed.inject(Router);
+    const fixture = TestBed.createComponent(App);
+
+    await router.navigateByUrl('/p/demo');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-app-shell]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('main.shell')?.classList)
+      .toContain('shell--public');
+  });
+
   it('renders a navigation link for every shell route once authenticated', () => {
     localStorage.setItem('mycollection.session', SESSION);
     expect(TestBed.inject(AuthService).isAuthenticated()).toBe(true);
@@ -79,6 +111,39 @@ describe('App', () => {
     ).map((a) => a.getAttribute('href'));
 
     expect(hrefs).toEqual(['/', '/catalog', '/categories', '/settings']);
+  });
+
+  it('keeps authenticated navigation targets at least 44px tall at 390px', () => {
+    localStorage.setItem('mycollection.session', SESSION);
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    const frame = document.createElement('iframe');
+    frame.style.width = '390px';
+    frame.style.height = '844px';
+    frame.style.border = '0';
+    document.body.append(frame);
+
+    try {
+      const frameDocument = frame.contentDocument!;
+      const styles = frameDocument.createElement('style');
+      styles.textContent = Array.from(document.styleSheets)
+        .flatMap((sheet) => Array.from(sheet.cssRules))
+        .map((rule) => rule.cssText)
+        .join('\n');
+      frameDocument.head.append(styles);
+      frameDocument.body.append(fixture.nativeElement.cloneNode(true));
+
+      const targets = frameDocument.querySelectorAll<HTMLElement>('nav a, nav button');
+      expect(targets.length).toBe(5);
+      targets.forEach((target) => {
+        expect(parseFloat(frame.contentWindow!.getComputedStyle(target).height))
+          .withContext(target.textContent?.trim() ?? target.tagName)
+          .toBeGreaterThanOrEqual(44);
+      });
+    } finally {
+      frame.remove();
+    }
   });
 
   it('renders a router outlet for the active page', () => {

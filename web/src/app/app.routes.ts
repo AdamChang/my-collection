@@ -8,6 +8,7 @@ export const routes: Routes = [
   },
   {
     path: 'p/:slug',
+    data: { publicShell: true },
     loadComponent: () =>
       import('./features/public/public-share.component').then((m) => m.PublicShareComponent),
   },

@@ -41,7 +41,7 @@ button, input, select, textarea { font: inherit; }
 a { color: var(--mc-cyan); text-underline-offset: 0.22em; }
 
 button {
-  min-height: 2.65rem;
+  min-block-size: 44px;
   border: 1px solid var(--mc-border-strong);
   padding: 0.58rem 0.95rem;
   background: var(--mc-surface-raised);

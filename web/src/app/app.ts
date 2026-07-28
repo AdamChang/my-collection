@@ -1,5 +1,7 @@
-import { Component, inject } from '@angular/core';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { Component, computed, inject } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { filter } from 'rxjs';
 import { AuthService } from './core/auth.service';
 import { NotificationService } from './core/notification.service';
 
@@ -7,7 +9,7 @@ import { NotificationService } from './core/notification.service';
   selector: 'app-root',
   imports: [RouterOutlet, RouterLink, RouterLinkActive],
   template: `
-    @if (auth.isAuthenticated()) {
+    @if (auth.isAuthenticated() && !isPublicShell()) {
       <header class="app-header" data-app-shell>
         <a class="brand" routerLink="/" aria-label="MyCollection 首頁">
           <span class="brand__mark" aria-hidden="true"></span>
@@ -35,7 +37,7 @@ import { NotificationService } from './core/notification.service';
       }
     </div>
 
-    <main class="shell" [class.shell--public]="!auth.isAuthenticated()">
+    <main class="shell" [class.shell--public]="!auth.isAuthenticated() || isPublicShell()">
       <router-outlet />
     </main>
   `,
@@ -50,7 +52,8 @@ import { NotificationService } from './core/notification.service';
     .brand__mark { display: inline-block; width: 1.2rem; height: 1.2rem; border: 2px solid var(--mc-cyan);
       transform: rotate(45deg); box-shadow: 0 0 14px var(--mc-cyan-soft); }
     .nav, .nav__links { display: flex; align-items: center; gap: 0.35rem; }
-    .nav a { padding: 0.7rem 0.8rem; color: var(--mc-text-muted); text-decoration: none; }
+    .nav a { display: inline-flex; align-items: center; min-block-size: 44px;
+      padding: 0.7rem 0.8rem; color: var(--mc-text-muted); text-decoration: none; }
     .nav a:hover, .nav a.nav--active { color: var(--mc-cyan); background: var(--mc-cyan-soft); }
     .nav__logout { margin-left: 0.5rem; }
     .shell { width: min(84rem, 100%); margin: 0 auto; padding: clamp(1rem, 3vw, 2rem); }
@@ -72,4 +75,13 @@ import { NotificationService } from './core/notification.service';
 export class App {
   readonly auth = inject(AuthService);
   readonly notifications = inject(NotificationService);
+  private readonly router = inject(Router);
+  private readonly navigationEnd = toSignal(
+    this.router.events.pipe(filter((event) => event instanceof NavigationEnd)),
+    { initialValue: null },
+  );
+  readonly isPublicShell = computed(() => {
+    this.navigationEnd();
+    return this.router.routerState.snapshot.root.firstChild?.data['publicShell'] === true;
+  });
 }

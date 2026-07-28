@@ -37,7 +37,8 @@ import { AuthService } from '../../core/auth.service';
     .login p { margin: 0; }
     .login form { display: grid; gap: 0.75rem; }
     .login label { display: grid; gap: 0.35rem; color: var(--mc-text-muted); }
-    .login__toggle { justify-self: start; min-height: auto; border: 0; padding: 0; background: none; color: var(--mc-cyan); }
+    .login__toggle { display: inline-flex; align-items: center; justify-self: start;
+      min-block-size: 44px; border: 0; padding: 0; background: none; color: var(--mc-cyan); }
   `,
 })
 export class LoginComponent {
