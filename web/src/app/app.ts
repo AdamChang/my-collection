@@ -47,7 +47,7 @@ import { NotificationService } from './core/notification.service';
       justify-content: space-between; gap: 1rem; min-height: 4rem; padding: 0.65rem 1rem;
       border-bottom: 1px solid var(--mc-border); background: rgb(5 7 13 / 88%);
       backdrop-filter: blur(16px); }
-    .brand { display: inline-flex; align-items: center; gap: 0.65rem; color: var(--mc-text);
+    .brand { display: inline-flex; align-items: center; min-block-size: 44px; gap: 0.65rem; color: var(--mc-text);
       font: 800 0.84rem/1 Consolas, monospace; letter-spacing: 0.12em; text-decoration: none; }
     .brand__mark { display: inline-block; width: 1.2rem; height: 1.2rem; border: 2px solid var(--mc-cyan);
       transform: rotate(45deg); box-shadow: 0 0 14px var(--mc-cyan-soft); }

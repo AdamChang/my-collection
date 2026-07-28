@@ -134,8 +134,10 @@ describe('App', () => {
       frameDocument.head.append(styles);
       frameDocument.body.append(fixture.nativeElement.cloneNode(true));
 
-      const targets = frameDocument.querySelectorAll<HTMLElement>('nav a, nav button');
-      expect(targets.length).toBe(5);
+      const targets = frameDocument.querySelectorAll<HTMLElement>(
+        '.brand, nav a, nav button',
+      );
+      expect(targets.length).toBe(6);
       targets.forEach((target) => {
         expect(parseFloat(frame.contentWindow!.getComputedStyle(target).height))
           .withContext(target.textContent?.trim() ?? target.tagName)
