@@ -40,8 +40,17 @@ public class SyncCommandTests
                 ExternalUserId = "765", ProtectedApiKey = "protected"
             });
 
-        _categories.Setup(r => r.FindByNameAsync("數位遊戲", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Category { Id = GameCategoryId, OwnerId = Owner, Name = "數位遊戲", Kind = CategoryKind.Digital });
+        _categories.Setup(r => r.ListAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                new Category
+                {
+                    Id = GameCategoryId,
+                    OwnerId = Owner,
+                    Name = "數位遊戲",
+                    Kind = CategoryKind.Digital
+                }
+            ]);
 
         _writer.Setup(w => w.UpsertAsync(
                 It.IsAny<ObjectId>(), It.IsAny<ObjectId>(), It.IsAny<ItemSource>(), It.IsAny<string>(),
@@ -96,8 +105,8 @@ public class SyncCommandTests
     [Fact]
     public async Task Creates_the_digital_category_when_missing()
     {
-        _categories.Setup(r => r.FindByNameAsync("數位遊戲", It.IsAny<CancellationToken>()))
-            .ReturnsAsync((Category?)null);
+        _categories.Setup(r => r.ListAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
 
         Category? created = null;
         _categories.Setup(r => r.InsertAsync(It.IsAny<Category>(), It.IsAny<CancellationToken>()))
@@ -114,8 +123,8 @@ public class SyncCommandTests
     [Fact]
     public async Task Auto_created_category_declares_the_fields_steam_produces()
     {
-        _categories.Setup(r => r.FindByNameAsync("數位遊戲", It.IsAny<CancellationToken>()))
-            .ReturnsAsync((Category?)null);
+        _categories.Setup(r => r.ListAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
 
         Category? created = null;
         _categories.Setup(r => r.InsertAsync(It.IsAny<Category>(), It.IsAny<CancellationToken>()))
@@ -127,6 +136,64 @@ public class SyncCommandTests
         created!.Fields.Select(f => f.Key).Should()
             .Contain(["playtimeForever", "headerUrl", "iconUrl"],
                 "同步寫入的 attributes 必須通過品類 schema 驗證，否則使用者一更新該品項就會 400");
+    }
+
+    [Fact]
+    public async Task Uses_the_system_digital_category_when_no_owner_category_exists()
+    {
+        var systemId = ObjectId.Parse("000000000000000000000002");
+        _categories.Setup(r => r.ListAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                new Category
+                {
+                    Id = systemId,
+                    OwnerId = null,
+                    Name = "數位遊戲",
+                    Kind = CategoryKind.Digital
+                }
+            ]);
+
+        ObjectId? usedCategory = null;
+        _writer.Setup(w => w.UpsertAsync(
+                Owner, It.IsAny<ObjectId>(), ItemSource.Steam, "steam",
+                It.IsAny<IReadOnlyList<ExternalItem>>(), It.IsAny<DateTime>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<ObjectId, ObjectId, ItemSource, string, IReadOnlyList<ExternalItem>, DateTime, CancellationToken>(
+                (_, categoryId, _, _, _, _, _) => usedCategory = categoryId)
+            .ReturnsAsync(new SyncOutcome(1, 0, 0));
+
+        await CreateSut().Handle(new SyncCommand("steam"), CancellationToken.None);
+
+        usedCategory.Should().Be(systemId);
+        _categories.Verify(
+            x => x.InsertAsync(It.IsAny<Category>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Owner_digital_category_takes_precedence_over_system_category()
+    {
+        var systemId = ObjectId.Parse("000000000000000000000002");
+        _categories.Setup(r => r.ListAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                new Category { Id = systemId, OwnerId = null, Name = "數位遊戲", Kind = CategoryKind.Digital },
+                new Category { Id = GameCategoryId, OwnerId = Owner, Name = "數位遊戲", Kind = CategoryKind.Digital }
+            ]);
+
+        ObjectId? usedCategory = null;
+        _writer.Setup(w => w.UpsertAsync(
+                Owner, It.IsAny<ObjectId>(), ItemSource.Steam, "steam",
+                It.IsAny<IReadOnlyList<ExternalItem>>(), It.IsAny<DateTime>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<ObjectId, ObjectId, ItemSource, string, IReadOnlyList<ExternalItem>, DateTime, CancellationToken>(
+                (_, categoryId, _, _, _, _, _) => usedCategory = categoryId)
+            .ReturnsAsync(new SyncOutcome(1, 0, 0));
+
+        await CreateSut().Handle(new SyncCommand("steam"), CancellationToken.None);
+
+        usedCategory.Should().Be(GameCategoryId);
     }
 
     [Fact]

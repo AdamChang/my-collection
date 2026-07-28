@@ -103,7 +103,10 @@ public sealed class SyncCommandHandler(
 
     private async Task<Category> EnsureDigitalCategoryAsync(DateTime now, CancellationToken ct)
     {
-        var existing = await categories.FindByNameAsync(DigitalCategoryName, ct);
+        var existing = (await categories.ListAsync(ct))
+            .Where(x => string.Equals(x.Name, DigitalCategoryName, StringComparison.Ordinal))
+            .OrderBy(x => x.OwnerId is null)
+            .FirstOrDefault();
         if (existing is not null)
         {
             return existing;
@@ -113,7 +116,7 @@ public sealed class SyncCommandHandler(
         {
             Id = ObjectId.GenerateNewId(),
             Name = DigitalCategoryName,
-            Icon = "game",
+            Icon = "gamepad-2",
             Kind = CategoryKind.Digital,
             Fields = DigitalCategoryFields(),
             CreatedAt = now,
