@@ -56,6 +56,13 @@ builder.Services
 builder.Services.AddAuthorization();
 builder.Services.AddOpenApi();
 
+// 匯入端點會上傳整包收藏。MediaEndpoints 的單張圖片 10 MB 上限是自己明確檢查的，
+// 不依賴這個全域值，所以放寬它不會削弱該處的防護。
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = long.MaxValue;
+});
+
 var app = builder.Build();
 
 app.UseExceptionHandler();

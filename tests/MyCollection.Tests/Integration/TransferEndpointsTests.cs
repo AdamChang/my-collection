@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
 using MyCollection.Application.Categories;
+using MyCollection.Application.Common;
 using MyCollection.Application.Items;
 using MyCollection.Application.Sharing;
 using MyCollection.Application.Transfer;
@@ -80,6 +81,17 @@ public class TransferEndpointsTests(MongoFixture mongo) : IAsyncLifetime
         return new ZipArchive(buffer, ZipArchiveMode.Read);
     }
 
+    private static MultipartFormDataContent ArchiveUpload(byte[] zip)
+    {
+        var content = new ByteArrayContent(zip);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/zip");
+
+        return new MultipartFormDataContent { { content, "file", "archive.zip" } };
+    }
+
+    private async Task<byte[]> ExportBytesAsync() =>
+        await (await _client.GetAsync("/export")).Content.ReadAsByteArrayAsync();
+
     [Fact]
     public async Task Export_requires_authentication()
     {
@@ -141,5 +153,50 @@ public class TransferEndpointsTests(MongoFixture mongo) : IAsyncLifetime
         manifest.Categories.Should().BeEmpty();
         manifest.Items.Should().BeEmpty();
         manifest.ShareLinks.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Import_requires_authentication()
+    {
+        using var anonymous = _factory.CreateClient();
+
+        var response = await anonymous.PostAsync("/import", ArchiveUpload([1, 2, 3]));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Import_rejects_a_file_that_is_not_a_zip()
+    {
+        var response = await _client.PostAsync("/import", ArchiveUpload([1, 2, 3, 4]));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Import_rejects_an_unknown_schema_version_without_touching_data()
+    {
+        var category = await CreateCategoryAsync();
+        await CreateItemAsync(category.Id);
+
+        var tampered = new MemoryStream();
+        using (var archive = new ZipArchive(tampered, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            await using var entry = archive.CreateEntry(ArchiveManifest.FileName).Open();
+            // ExportedAt 必須是 Kind=Utc：UtcOnlyDateTimeSerializer 會擋下 default(DateTime)，
+            // 那會在測試自己寫檔時就爆掉，根本走不到要驗證的匯入路徑。
+            await ArchiveManifestSerializer.WriteAsync(
+                entry,
+                new ArchiveManifest { SchemaVersion = 99, ExportedAt = DateTime.UtcNow },
+                default);
+        }
+
+        var response = await _client.PostAsync("/import", ArchiveUpload(tampered.ToArray()));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // 資料未被動過
+        var items = await _client.GetFromJsonAsync<PagedResult<ItemDto>>("/items");
+        items!.Total.Should().Be(1);
     }
 }
