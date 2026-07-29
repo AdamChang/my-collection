@@ -41,6 +41,7 @@ public static class DependencyInjection
         services.AddSingleton<ITokenService, JwtTokenService>();
         services.AddSingleton<IAttributeValidator, AttributeValidator>();
         services.AddSingleton<IFileStorage, LocalFileStorage>();
+        services.AddSingleton<IBackupStore, LocalBackupStore>();
         services.AddSingleton<IImageProcessor, ImageSharpProcessor>();
 
         services.AddSingleton<ISecretProtector, AesGcmSecretProtector>();
