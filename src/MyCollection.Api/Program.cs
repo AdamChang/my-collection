@@ -74,6 +74,7 @@ app.MapMediaEndpoints();
 app.MapShowcaseEndpoints();
 app.MapShareEndpoints();
 app.MapIngestionEndpoints();
+app.MapTransferEndpoints();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 
 await using (var scope = app.Services.CreateAsyncScope())
