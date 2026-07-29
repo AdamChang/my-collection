@@ -13,9 +13,13 @@ public sealed record CategoryPlan(
 /// <summary>
 /// 決定匯入時本機自訂品類的去留（spec §6.2 第 3 步）。純函式，不碰 IO。
 ///
-/// 「同名改指」不是裝飾：兩台機器各自跑 Steam 同步時，
-/// SyncCommand.EnsureDigitalCategoryAsync 會各自建立一個 id 不同的自訂「數位遊戲」品類。
-/// 沒有這步，每來回匯入一次就多累積一個同名品類。名稱是唯一可用的錨點——ObjectId 天生對不上。
+/// 「同名改指」不是裝飾：SyncCommand.EnsureDigitalCategoryAsync 是以「名稱」挑品類來掛
+/// Steam 品項，而且自訂的優先於系統的。使用者只要自建過一個「數位遊戲」，兩台機器上的
+/// Steam 品項就各自掛在一個 id 不同的自訂品類底下——ObjectId 天生對不上，名稱是唯一可用的錨點。
+/// 沒有這步，每來回匯入一次就多累積一個同名品類。
+///
+/// 掛在系統品類上的 Steam 品項不會走到這裡：系統品類的 OwnerId 為 null，不在
+/// ListOwnCategoriesAsync 的結果內，其 id 也跨部署固定，本來就對得上。
 /// </summary>
 public static class CategoryReconciler
 {
