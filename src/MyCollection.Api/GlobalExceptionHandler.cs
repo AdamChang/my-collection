@@ -2,6 +2,7 @@ using FluentValidation;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using MyCollection.Application.Media;
+using MyCollection.Application.Transfer;
 using MyCollection.Domain.Exceptions;
 
 namespace MyCollection.Api;
@@ -65,6 +66,8 @@ public sealed class GlobalExceptionHandler(
                     .ToDictionary(g => g.Key, g => g.Select(e => e.ErrorMessage).ToArray())),
 
             InvalidImageException i => (StatusCodes.Status400BadRequest, "Invalid image.", i.Message, null),
+
+            InvalidArchiveException a => (StatusCodes.Status400BadRequest, "Invalid archive.", a.Message, null),
 
             NotFoundException n => (StatusCodes.Status404NotFound, "Resource not found.", n.Message, null),
 

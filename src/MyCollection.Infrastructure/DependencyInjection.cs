@@ -36,6 +36,7 @@ public static class DependencyInjection
         services.AddScoped<IShareLinkRepository, MongoShareLinkRepository>();
         services.AddScoped<ITransferRepository, MongoTransferRepository>();
         services.AddScoped<ArchiveWriter>();
+        services.AddScoped<ArchiveValidator>();
         services.AddScoped<IPublicCatalogReader, MongoPublicCatalogReader>();
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
         services.AddSingleton<ITokenService, JwtTokenService>();
