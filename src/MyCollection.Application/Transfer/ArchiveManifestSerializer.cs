@@ -15,9 +15,9 @@ namespace MyCollection.Application.Transfer;
 /// 兩種序列化器混用只會讓邊界出錯的機率倍增，所以整份 manifest 統一用這一個。
 ///
 /// 注意：這裡只有壓縮檔內的圖片是以串流方式讀寫（一次一張），manifest 本身不是。
-/// <see cref="Write"/> 是先把整份 <see cref="ArchiveManifest"/> 轉成 BsonDocument 再轉成
+/// <see cref="WriteAsync"/> 是先把整份 <see cref="ArchiveManifest"/> 轉成 BsonDocument 再轉成
 /// 一整條字串才寫出，記憶體用量與收藏的中繼資料量成正比；但 <see cref="ArchiveManifest.Items"/>
-/// 本來就是 List&lt;T&gt;，呼叫 Write 之前整份收藏已經在記憶體裡了，所以在 JSON 層做串流
+/// 本來就是 List&lt;T&gt;，呼叫 WriteAsync 之前整份收藏已經在記憶體裡了，所以在 JSON 層做串流
 /// 並不會改變真正的記憶體上限，不值得為此犧牲程式碼的簡單。個人收藏等級的資料量下這只有幾 MB。
 /// </summary>
 public static class ArchiveManifestSerializer
@@ -28,12 +28,12 @@ public static class ArchiveManifestSerializer
         Indent = true
     };
 
-    public static void Write(Stream destination, ArchiveManifest manifest)
+    public static async Task WriteAsync(Stream destination, ArchiveManifest manifest, CancellationToken ct)
     {
         var json = manifest.ToBsonDocument().ToJson(WriterSettings);
 
-        using var writer = new StreamWriter(destination, new UTF8Encoding(false), leaveOpen: true);
-        writer.Write(json);
+        await using var writer = new StreamWriter(destination, new UTF8Encoding(false), leaveOpen: true);
+        await writer.WriteAsync(json.AsMemory(), ct);
     }
 
     /// <summary>

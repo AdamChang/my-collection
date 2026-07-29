@@ -7,19 +7,19 @@ namespace MyCollection.Tests.Unit;
 
 public class ArchiveManifestSerializerTests
 {
-    private static ArchiveManifest RoundTrip(ArchiveManifest manifest)
+    private static async Task<ArchiveManifest> RoundTrip(ArchiveManifest manifest)
     {
         using var buffer = new MemoryStream();
-        ArchiveManifestSerializer.Write(buffer, manifest);
+        await ArchiveManifestSerializer.WriteAsync(buffer, manifest, CancellationToken.None);
         buffer.Position = 0;
 
         return ArchiveManifestSerializer.Read(buffer);
     }
 
-    private static string WrittenJson(ArchiveManifest manifest)
+    private static async Task<string> WrittenJson(ArchiveManifest manifest)
     {
         using var buffer = new MemoryStream();
-        ArchiveManifestSerializer.Write(buffer, manifest);
+        await ArchiveManifestSerializer.WriteAsync(buffer, manifest, CancellationToken.None);
 
         return System.Text.Encoding.UTF8.GetString(buffer.ToArray());
     }
@@ -103,41 +103,41 @@ public class ArchiveManifestSerializerTests
     }
 
     [Fact]
-    public void Attributes_preserve_decimal128_across_round_trip()
+    public async Task Attributes_preserve_decimal128_across_round_trip()
     {
         var attributes = new BsonDocument { { "price", new BsonDecimal128(1234.56m) } };
 
-        var value = RoundTrip(ManifestWith(attributes)).Items[0].Attributes["price"];
+        var value = (await RoundTrip(ManifestWith(attributes))).Items[0].Attributes["price"];
 
         value.BsonType.Should().Be(BsonType.Decimal128);
         value.AsDecimal.Should().Be(1234.56m);
     }
 
     [Fact]
-    public void Attributes_preserve_int64_and_do_not_collapse_to_int32()
+    public async Task Attributes_preserve_int64_and_do_not_collapse_to_int32()
     {
         var attributes = new BsonDocument { { "playtime", new BsonInt64(42L) } };
 
-        RoundTrip(ManifestWith(attributes)).Items[0].Attributes["playtime"]
+        (await RoundTrip(ManifestWith(attributes))).Items[0].Attributes["playtime"]
             .BsonType.Should().Be(BsonType.Int64);
     }
 
     [Fact]
-    public void Attributes_preserve_utc_datetime_across_round_trip()
+    public async Task Attributes_preserve_utc_datetime_across_round_trip()
     {
         var released = new DateTime(1959, 8, 17, 0, 0, 0, DateTimeKind.Utc);
         var attributes = new BsonDocument { { "releaseDate", new BsonDateTime(released) } };
 
-        RoundTrip(ManifestWith(attributes)).Items[0].Attributes["releaseDate"]
+        (await RoundTrip(ManifestWith(attributes))).Items[0].Attributes["releaseDate"]
             .ToUniversalTime().Should().Be(released);
     }
 
     [Fact]
-    public void Round_trip_preserves_object_ids_and_enums()
+    public async Task Round_trip_preserves_object_ids_and_enums()
     {
         var original = ManifestWith([]);
 
-        var result = RoundTrip(original);
+        var result = await RoundTrip(original);
 
         result.SchemaVersion.Should().Be(ArchiveManifest.CurrentSchemaVersion);
         result.Categories[0].Id.Should().Be(original.Categories[0].Id);
@@ -149,11 +149,11 @@ public class ArchiveManifestSerializerTests
     }
 
     [Fact]
-    public void Round_trip_preserves_share_links_images_acquisition_and_external_ref()
+    public async Task Round_trip_preserves_share_links_images_acquisition_and_external_ref()
     {
         var original = ManifestWith([]);
 
-        var result = RoundTrip(original);
+        var result = await RoundTrip(original);
 
         result.ShareLinks.Should().ContainSingle();
         result.ShareLinks[0].Slug.Should().Be("showcase-abc");
@@ -182,7 +182,7 @@ public class ArchiveManifestSerializerTests
     }
 
     [Fact]
-    public void Written_json_uses_canonical_extended_json_markers()
+    public async Task Written_json_uses_canonical_extended_json_markers()
     {
         var attributes = new BsonDocument
         {
@@ -190,7 +190,7 @@ public class ArchiveManifestSerializerTests
             { "playtime", new BsonInt64(42L) }
         };
 
-        var json = WrittenJson(ManifestWith(attributes));
+        var json = await WrittenJson(ManifestWith(attributes));
 
         json.Should().Contain("$oid")
             .And.Contain("$date")
@@ -209,9 +209,9 @@ public class ArchiveManifestSerializerTests
     }
 
     [Fact]
-    public void Read_throws_invalid_archive_exception_for_truncated_json()
+    public async Task Read_throws_invalid_archive_exception_for_truncated_json()
     {
-        var fullJson = WrittenJson(ManifestWith([]));
+        var fullJson = await WrittenJson(ManifestWith([]));
         var truncated = fullJson[..(fullJson.Length / 2)];
         using var buffer = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(truncated));
 
@@ -221,12 +221,12 @@ public class ArchiveManifestSerializerTests
     }
 
     [Fact]
-    public void Read_throws_invalid_archive_exception_for_unsupported_schema_version()
+    public async Task Read_throws_invalid_archive_exception_for_unsupported_schema_version()
     {
         var manifest = ManifestWith([]);
         manifest.SchemaVersion = 99;
         using var buffer = new MemoryStream();
-        ArchiveManifestSerializer.Write(buffer, manifest);
+        await ArchiveManifestSerializer.WriteAsync(buffer, manifest, CancellationToken.None);
         buffer.Position = 0;
 
         var act = () => ArchiveManifestSerializer.Read(buffer);
