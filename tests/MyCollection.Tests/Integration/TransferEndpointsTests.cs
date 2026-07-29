@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using MyCollection.Application.Categories;
 using MyCollection.Application.Items;
+using MyCollection.Application.Sharing;
 using MyCollection.Application.Transfer;
 using MyCollection.Tests.Fixtures;
 using SixLabors.ImageSharp;
@@ -66,6 +67,12 @@ public class TransferEndpointsTests(MongoFixture mongo) : IAsyncLifetime
             attributes = new { label = "Columbia" }
         })).Content.ReadFromJsonAsync<ItemDto>())!;
 
+    private async Task<ShareLinkDto> CreateShareLinkAsync() =>
+        (await (await _client.PostAsJsonAsync("/shares", new
+        {
+            scope = "Showcase", includeCategoryIds = Array.Empty<string>(), includePrice = false, expiresAt = (DateTime?)null
+        })).Content.ReadFromJsonAsync<ShareLinkDto>())!;
+
     private static async Task<ZipArchive> ReadArchiveAsync(HttpResponseMessage response)
     {
         var buffer = new MemoryStream(await response.Content.ReadAsByteArrayAsync());
@@ -89,6 +96,7 @@ public class TransferEndpointsTests(MongoFixture mongo) : IAsyncLifetime
         var category = await CreateCategoryAsync();
         var item = await CreateItemAsync(category.Id);
         (await _client.PostAsync($"/items/{item.Id}/images", PngUpload())).EnsureSuccessStatusCode();
+        var share = await CreateShareLinkAsync();
 
         var response = await _client.GetAsync("/export");
         response.EnsureSuccessStatusCode();
@@ -109,6 +117,7 @@ public class TransferEndpointsTests(MongoFixture mongo) : IAsyncLifetime
         manifest.Items.Should().ContainSingle(i => i.Name == "Kind of Blue");
         manifest.Items[0].Images.Should().ContainSingle();
         manifest.Items[0].Attributes["label"].AsString.Should().Be("Columbia");
+        manifest.ShareLinks.Should().ContainSingle(s => s.Slug == share.Slug);
     }
 
     [Fact]
@@ -116,6 +125,7 @@ public class TransferEndpointsTests(MongoFixture mongo) : IAsyncLifetime
     {
         var category = await CreateCategoryAsync();
         await CreateItemAsync(category.Id);
+        await CreateShareLinkAsync();
 
         using var stranger = await AuthenticatedClient.CreateAsync(_factory, "stranger@example.com");
         var response = await stranger.GetAsync("/export");
@@ -130,5 +140,6 @@ public class TransferEndpointsTests(MongoFixture mongo) : IAsyncLifetime
         var manifest = ArchiveManifestSerializer.Read(copy);
         manifest.Categories.Should().BeEmpty();
         manifest.Items.Should().BeEmpty();
+        manifest.ShareLinks.Should().BeEmpty();
     }
 }
