@@ -28,8 +28,10 @@ services:
       SecretProtection__Key: ${SECRET_PROTECTION_KEY:?SECRET_PROTECTION_KEY is required}
       Storage__Provider: Local
       Storage__LocalRoot: /app/data/media
+      Storage__BackupRoot: /app/data/backups
     volumes:
       - ./data/media:/app/data/media
+      - ./data/backups:/app/data/backups
 
   web:
     build:
