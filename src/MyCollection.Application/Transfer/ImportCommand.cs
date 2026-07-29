@@ -60,6 +60,8 @@ public sealed class ImportArchiveCommandHandler(
         // ---- 階段二：套用。 ----
         var warnings = new List<string>();
 
+        await RemapCategoryIdsTakenByOthersAsync(manifest, ct);
+
         var replaced = await repository.ListExportableItemsAsync(ct);
         await repository.DeleteNonSteamItemsAsync(ct);
 
@@ -88,7 +90,11 @@ public sealed class ImportArchiveCommandHandler(
         await repository.InsertCategoriesAsync(
             [.. manifest.Categories.Select(c => ArchiveMapper.ToDomain(c, ownerId))], ct);
 
-        var (items, imageCount, imageWarnings) = await BuildItemsAsync(archive, manifest, ownerId, ct);
+        // 必須在 DeleteNonSteamItemsAsync 之後：那時還占著 id 的一定不是本次要覆寫的資料。
+        var itemIdMap = BuildIdMap(
+            await repository.ListExistingItemIdsAsync([.. manifest.Items.Select(i => i.Id)], ct));
+
+        var (items, imageCount, imageWarnings) = await BuildItemsAsync(archive, manifest, itemIdMap, ownerId, ct);
         warnings.AddRange(imageWarnings);
 
         await repository.InsertItemsAsync(items, ct);
@@ -98,6 +104,53 @@ public sealed class ImportArchiveCommandHandler(
 
         return new ImportResultDto(manifest.Categories.Count, items.Count, imageCount, warnings);
     }
+
+    /// <summary>
+    /// 封存檔刻意保留原始 ObjectId：還原自己的備份時，品類與品項就地復位，
+    /// 被保留的 Steam 品項對品類的引用也不會斷。
+    ///
+    /// 但 _id 在 collection 內是全域唯一而不分 owner。同一個部署上的另一個帳號
+    /// （或系統品類）可能已經占用了封存檔裡的 id——例如兩個使用者交換封存檔——
+    /// 那時直接插入會擲 DuplicateKey，使用者只會看到 500。
+    ///
+    /// 所以只在「被別人占住」時才改號：自己的資料在本次匯入中一律先刪再寫，
+    /// 不會落進這個對應表，id 保留的性質對常見情境完全不變。
+    ///
+    /// 就地改寫 manifest 是刻意的：改完之後下游（reconcile、對應、插入）
+    /// 一律看到最終 id，不必每處各自記得套用對應表。
+    /// </summary>
+    private async Task RemapCategoryIdsTakenByOthersAsync(ArchiveManifest manifest, CancellationToken ct)
+    {
+        var map = BuildIdMap(
+            await repository.ListCategoryIdsOwnedByOthersAsync([.. manifest.Categories.Select(c => c.Id)], ct));
+
+        if (map.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var category in manifest.Categories)
+        {
+            category.Id = Map(map, category.Id);
+        }
+
+        foreach (var item in manifest.Items)
+        {
+            // 指向系統品類的 CategoryId 不在對應表內，原樣保留。
+            item.CategoryId = Map(map, item.CategoryId);
+        }
+
+        foreach (var link in manifest.ShareLinks)
+        {
+            link.IncludeCategoryIds = [.. link.IncludeCategoryIds.Select(id => Map(map, id))];
+        }
+    }
+
+    private static Dictionary<ObjectId, ObjectId> BuildIdMap(IReadOnlyList<ObjectId> taken) =>
+        taken.ToDictionary(id => id, _ => ObjectId.GenerateNewId());
+
+    private static ObjectId Map(Dictionary<ObjectId, ObjectId> map, ObjectId id) =>
+        map.TryGetValue(id, out var replacement) ? replacement : id;
 
     /// <summary>
     /// manifest 的大小上限。ArchiveManifestSerializer.Read 的 doc comment 說明了原因：
@@ -140,8 +193,16 @@ public sealed class ImportArchiveCommandHandler(
         return ArchiveManifestSerializer.Read(buffer);
     }
 
+    /// <param name="itemIdMap">
+    /// id 已被別人占用時的替代 id，見 <see cref="RemapCategoryIdsTakenByOthersAsync"/>。
+    /// 只影響寫入 DB 與媒體路徑的 id；zip 內的圖片仍以封存檔原本的路徑（<c>image.File</c>）定址。
+    /// </param>
     private async Task<(List<Item> Items, int ImageCount, List<string> Warnings)> BuildItemsAsync(
-        ZipArchive archive, ArchiveManifest manifest, ObjectId ownerId, CancellationToken ct)
+        ZipArchive archive,
+        ArchiveManifest manifest,
+        Dictionary<ObjectId, ObjectId> itemIdMap,
+        ObjectId ownerId,
+        CancellationToken ct)
     {
         var items = new List<Item>(manifest.Items.Count);
         var warnings = new List<string>();
@@ -151,7 +212,7 @@ public sealed class ImportArchiveCommandHandler(
         {
             var item = new Item
             {
-                Id = source.Id,
+                Id = Map(itemIdMap, source.Id),
                 OwnerId = ownerId,
                 CategoryId = source.CategoryId,
                 Name = source.Name,

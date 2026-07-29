@@ -58,6 +58,37 @@ public sealed class MongoTransferRepository(MongoContext context, IUserContext u
             Builders<Category>.Filter.And(OwnCategories, Builders<Category>.Filter.In(x => x.Id, ids)), ct);
     }
 
+    public async Task<IReadOnlyList<ObjectId>> ListCategoryIdsOwnedByOthersAsync(
+        IReadOnlyList<ObjectId> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        // Ne 對 OwnerId 為 null 的系統品類同樣成立，這是要的：系統品類也不能被覆蓋。
+        return await context.Categories
+            .Find(Builders<Category>.Filter.And(
+                Builders<Category>.Filter.In(x => x.Id, ids),
+                Builders<Category>.Filter.Ne(x => x.OwnerId, Owner)))
+            .Project(x => x.Id)
+            .ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<ObjectId>> ListExistingItemIdsAsync(
+        IReadOnlyList<ObjectId> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        return await context.Items
+            .Find(Builders<Item>.Filter.In(x => x.Id, ids))
+            .Project(x => x.Id)
+            .ToListAsync(ct);
+    }
+
     public async Task RepointItemsAsync(ObjectId fromCategoryId, ObjectId toCategoryId, CancellationToken ct) =>
         await context.Items.UpdateManyAsync(
             Builders<Item>.Filter.And(OwnItems, Builders<Item>.Filter.Eq(x => x.CategoryId, fromCategoryId)),

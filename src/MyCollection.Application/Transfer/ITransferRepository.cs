@@ -34,6 +34,25 @@ public interface ITransferRepository
     Task DeleteCategoriesAsync(IReadOnlyList<ObjectId> ids, CancellationToken ct);
 
     /// <summary>
+    /// 傳入的 id 當中，已被別人（其他使用者，或 OwnerId 為 null 的系統品類）占用的那些。
+    ///
+    /// 封存檔刻意保留原始 ObjectId，但 _id 在 collection 內是全域唯一而不分 owner：
+    /// 同一個部署上的另一個帳號可能已經占用了這些 id，直接插入會擲 DuplicateKey。
+    /// 自己的品類在匯入過程中一律先刪再寫，所以此查詢刻意只問「別人的」。
+    /// </summary>
+    Task<IReadOnlyList<ObjectId>> ListCategoryIdsOwnedByOthersAsync(
+        IReadOnlyList<ObjectId> ids, CancellationToken ct);
+
+    /// <summary>
+    /// 傳入的 id 當中仍存在於 items collection 的那些，不分 owner。
+    ///
+    /// 必須在 <see cref="DeleteNonSteamItemsAsync"/> 之後呼叫：屆時還留著的，
+    /// 若非其他使用者的品項，就是自己被保留的 Steam 品項，兩者都不能被覆蓋。
+    /// </summary>
+    Task<IReadOnlyList<ObjectId>> ListExistingItemIdsAsync(
+        IReadOnlyList<ObjectId> ids, CancellationToken ct);
+
+    /// <summary>
     /// 把仍掛在 <paramref name="fromCategoryId"/> 底下的品項改指到 <paramref name="toCategoryId"/>。
     ///
     /// 以來源品類過濾而非收一份呼叫端事先讀好的 id 清單：這裡沒有 transaction，
