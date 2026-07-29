@@ -22,6 +22,18 @@
 
 ---
 
+## 目前進度
+
+**Tasks 1–5 已完成並提交。** 對這幾個任務而言，**已提交的程式碼才是真實來源**，不是這份計畫裡的程式碼片段——審查過程中發現了幾個計畫本身的錯誤，修正只進到程式碼裡，沒有回頭改寫已完成任務的片段。
+
+執行過程中確立、且後續任務必須遵守的事實：
+
+- `ArchiveManifestSerializer.WriteAsync(Stream, ArchiveManifest, CancellationToken)`——**非同步**。`Read` 維持同步（匯入端先把 entry 複製進 `MemoryStream` 才解析，碰不到 Kestrel 的串流）。
+- `Read` 會在反序列化**之前**檢查 `schemaVersion`，並把 MongoDB.Bson 的各種例外統一成 `InvalidArchiveException`。呼叫端只需處理這一種。
+- 封存檔有自己的 `ArchiveCategoryField` / `ArchiveAcquisition` / `ArchiveMoney` / `ArchiveExternalRef`，不共用 Domain 的類別（列舉仍共用）。雙向對應集中在 `ArchiveMapper`。
+- `ITransferRepository.RepointItemsAsync(fromCategoryId, toCategoryId, ct)`——以來源品類過濾，不收 id 清單。
+- `ArchiveWriter` 內含 `SyncSafeBufferedStream`。`ZipArchiveEntry` 的寫入串流沒有覆寫 `DisposeAsync`（dotnet/runtime#107171），關閉 entry 時會對底層發出同步 `Write`，直接寫 `HttpResponse.Body` 會被 Kestrel 的 `AllowSynchronousIO = false` 擋下。**Task 6 的端點不需要為此做任何事**，緩衝已在 writer 內處理掉。
+
 ## 執行分段與斷點
 
 這份計畫刻意分成四段執行，每段結束時專案都處於「可建置、測試全綠、已提交、功能不半殘」的狀態，可以安心關掉 session，下次從下一個 Task 接續。
@@ -2447,7 +2459,7 @@ git commit -m "feat(transfer): add import handler with validation, backup and sn
         using (var archive = new ZipArchive(tampered, ZipArchiveMode.Create, leaveOpen: true))
         {
             await using var entry = archive.CreateEntry(ArchiveManifest.FileName).Open();
-            ArchiveManifestSerializer.Write(entry, new ArchiveManifest { SchemaVersion = 99 });
+            await ArchiveManifestSerializer.WriteAsync(entry, new ArchiveManifest { SchemaVersion = 99 }, default);
         }
 
         var response = await _client.PostAsync("/import", ArchiveUpload(tampered.ToArray()));
