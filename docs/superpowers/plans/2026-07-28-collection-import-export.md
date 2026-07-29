@@ -24,7 +24,7 @@
 
 ## 目前進度
 
-**Tasks 1–5 已完成並提交。** 對這幾個任務而言，**已提交的程式碼才是真實來源**，不是這份計畫裡的程式碼片段——審查過程中發現了幾個計畫本身的錯誤，修正只進到程式碼裡，沒有回頭改寫已完成任務的片段。
+**Tasks 1–10 已完成並提交（第一段 1–6、第二段 7–10）。** 對這幾個任務而言，**已提交的程式碼才是真實來源**，不是這份計畫裡的程式碼片段——審查過程中發現了幾個計畫本身的錯誤，修正只進到程式碼裡，沒有回頭改寫已完成任務的片段。
 
 執行過程中確立、且後續任務必須遵守的事實：
 
@@ -33,6 +33,8 @@
 - 封存檔有自己的 `ArchiveCategoryField` / `ArchiveAcquisition` / `ArchiveMoney` / `ArchiveExternalRef`，不共用 Domain 的類別（列舉仍共用）。雙向對應集中在 `ArchiveMapper`。
 - `ITransferRepository.RepointItemsAsync(fromCategoryId, toCategoryId, ct)`——以來源品類過濾，不收 id 清單。
 - `ArchiveWriter` 內含 `SyncSafeBufferedStream`。`ZipArchiveEntry` 的寫入串流沒有覆寫 `DisposeAsync`（dotnet/runtime#107171），關閉 entry 時會對底層發出同步 `Write`，直接寫 `HttpResponse.Body` 會被 Kestrel 的 `AllowSynchronousIO = false` 擋下。**Task 6 的端點不需要為此做任何事**，緩衝已在 writer 內處理掉。
+- 第二段（7–10）的計畫程式碼與既有簽章逐一核對後**完全吻合**，照抄即可，無修正。
+- **已知缺口：`Item.LocationId` 不在封存檔格式內**，匯出丟棄、匯入還原成 null。目前無 Location 實體或 collection（`grep` 全 `src` 無 `class Location`），該欄位只由 `CreateItemCommand`／`UpdateItemCommand` 收下並存進 Mongo，帶過去也會是懸空 id。**待決**：現在補進格式是免費的（真實世界尚無封存檔），日後補則需提升 `SchemaVersion`。
 
 ## 執行分段與斷點
 
