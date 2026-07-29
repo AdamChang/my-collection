@@ -8,7 +8,10 @@ namespace MyCollection.Application.Transfer;
 /// 匯出核心。寫入任意 Stream，因此匯出端點（HttpResponse.Body）與
 /// 匯入前的自動備份（備份檔）可以共用同一份邏輯。
 ///
-/// 單趟串流，不落暫存檔也不整包進記憶體，所以耗用與收藏規模無關。
+/// 圖片一次一張串流讀寫，不會同時把多張圖片放進記憶體；manifest 中繼資料
+/// 的量則跟收藏規模成正比（<see cref="ArchiveManifest.Items"/> 本身就是
+/// List&lt;T&gt;）。另外為了繞過 <see cref="SyncSafeBufferedStream"/> 要處理的
+/// 同步 I/O 限制，額外多墊了最多一個 entry 大小的緩衝。
 /// </summary>
 public sealed class ArchiveWriter(
     ITransferRepository repository,
@@ -40,7 +43,10 @@ public sealed class ArchiveWriter(
         // SyncSafeBufferedStream 把這些同步呼叫吃進記憶體緩衝，只有我們自己呼叫
         // FlushBufferedAsync 時才真的用非同步 I/O 送到 destination；緩衝在每個
         // entry 關閉後就會被沖掉，尖峰記憶體只跟單一 entry 大小成正比。
-        var buffered = new SyncSafeBufferedStream(destination);
+        // buffered 自己只持有一塊 MemoryStream，用 await using 讓它在方法結束時
+        // 一併釋放；它的 Dispose 不會碰 inner（destination 的所有權還是呼叫端的），
+        // 所以釋放順序跟下面的 FlushBufferedAsync 呼叫先後無關，兩者不會互相踩到。
+        await using var buffered = new SyncSafeBufferedStream(destination);
 
         await using (var archive = new ZipArchive(buffered, ZipArchiveMode.Create, leaveOpen: true))
         {
@@ -72,6 +78,7 @@ public sealed class ArchiveWriter(
 
         // ZipArchive.DisposeAsync 本身有正確覆寫（負責寫中央目錄），但一樣是先
         // 寫進 buffered，離開上面的 await using 區塊後才把最後這批位元組送出去。
+        // 這一定要在 buffered 被釋放之前執行完，否則中央目錄永遠出不去。
         await buffered.FlushBufferedAsync(ct);
     }
 
@@ -136,6 +143,18 @@ public sealed class ArchiveWriter(
             _buffer.Position = 0;
             await _buffer.CopyToAsync(inner, ct);
             _buffer.SetLength(0);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                // 只釋放自己的緩衝。inner 是呼叫端的（匯出端點的 HttpResponse.Body），
+                // 它的生命週期不歸這裡管。
+                _buffer.Dispose();
+            }
+
+            base.Dispose(disposing);
         }
     }
 }
