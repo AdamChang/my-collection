@@ -16,6 +16,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- 開發環境的連線字串與金鑰改放 user secrets，不落在專案目錄內 -->
+    <UserSecretsId>mycollection-api-9f2c4b1e-5d83-47a6-b0f1-2c7e8a3d6b54</UserSecretsId>
   </PropertyGroup>
 
 </Project>

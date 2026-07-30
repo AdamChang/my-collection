@@ -11,7 +11,10 @@ public sealed class MongoContext
         // 冪等；保證在這個 context 產生任何序列化之前慣例已就緒
         MongoConventions.Register();
 
-        var client = new MongoClient(options.Value.ConnectionString);
+        var settings = MongoClientSettings.FromConnectionString(options.Value.ConnectionString);
+        settings.ServerApi = new ServerApi(ServerApiVersion.V1);
+
+        var client = new MongoClient(settings);
         Database = client.GetDatabase(options.Value.Database);
     }
 
