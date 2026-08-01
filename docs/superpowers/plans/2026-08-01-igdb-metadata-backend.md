@@ -429,6 +429,7 @@ git commit -m "refactor(ingestion): split IMetadataProvider into capability inte
 - Modify: `src/MyCollection.Domain/Entities/SyncJob.cs`
 - Modify: `src/MyCollection.Application/Ingestion/SyncCommand.cs:12-36`
 - Test: `tests/MyCollection.Tests/Unit/SyncJobMapperTests.cs`
+- Test: `tests/MyCollection.Tests/Integration/MongoSyncJobRepositoryTests.cs`
 
 「查無此遊戲」不是失敗。混進 `Failed` 會讓使用者以為出事，所以另設一格。
 
@@ -477,7 +478,7 @@ public class SyncJobMapperTests
     }
 
     [Fact]
-    public void Skipped_defaults_to_zero_for_jobs_written_before_the_field_existed()
+    public void Skipped_defaults_to_zero_when_not_set()
     {
         var job = new SyncJob
         {
@@ -490,6 +491,87 @@ public class SyncJobMapperTests
     }
 }
 ```
+
+> 這個測試只驗證 C# 欄位預設值，**不要**把它命名成「舊文件」之類暗示 BSON 行為的名字——
+> 名字宣稱的範圍大於實際驗證的範圍，比沒有測試更糟。真正的向後相容由下面的整合測試負責。
+
+`tests/MyCollection.Tests/Integration/MongoSyncJobRepositoryTests.cs`：
+
+```csharp
+using FluentAssertions;
+using MongoDB.Bson;
+using MongoDB.Driver;
+using Moq;
+using MyCollection.Application.Common;
+using MyCollection.Domain.Entities;
+using MyCollection.Infrastructure.Mongo;
+using MyCollection.Tests.Fixtures;
+
+namespace MyCollection.Tests.Integration;
+
+[Collection(MongoCollection.Name)]
+public class MongoSyncJobRepositoryTests(MongoFixture fixture) : IAsyncLifetime
+{
+    private static readonly ObjectId Owner = ObjectId.GenerateNewId();
+
+    private MongoSyncJobRepository _sut = null!;
+
+    public async Task InitializeAsync()
+    {
+        await fixture.ResetAsync();
+
+        var userContext = new Mock<IUserContext>();
+        userContext.SetupGet(c => c.UserId).Returns(Owner);
+        userContext.SetupGet(c => c.IsAuthenticated).Returns(true);
+
+        _sut = new MongoSyncJobRepository(fixture.Context, userContext.Object);
+    }
+
+    public Task DisposeAsync() => Task.CompletedTask;
+
+    /// <summary>
+    /// 直接寫入沒有 skipped 欄位的 raw BsonDocument，模擬 Skipped 加入前寫入的舊文件，
+    /// 驗證反序列化時會自動補 0，而不是驗證 C# 物件的預設值（那不代表任何 BSON 行為）。
+    /// </summary>
+    [Fact]
+    public async Task Legacy_document_without_skipped_element_deserializes_to_zero()
+    {
+        var id = ObjectId.GenerateNewId();
+        var startedAt = new DateTime(2026, 8, 1, 3, 0, 0, DateTimeKind.Utc);
+        var legacyDoc = new BsonDocument
+        {
+            ["_id"] = id,
+            ["ownerId"] = Owner,
+            ["provider"] = "steam",
+            ["status"] = "Succeeded",
+            ["created"] = 1,
+            ["updated"] = 2,
+            ["failed"] = 3,
+            // 刻意省略 "skipped"，模擬欄位新增前就存在的文件
+            ["error"] = BsonNull.Value,
+            ["startedAt"] = startedAt,
+            ["finishedAt"] = startedAt.AddSeconds(5)
+        };
+
+        var rawCollection = fixture.Context.SyncJobs.Database.GetCollection<BsonDocument>("syncJobs");
+        await rawCollection.InsertOneAsync(legacyDoc);
+
+        var result = await _sut.ListRecentAsync(10, CancellationToken.None);
+
+        var job = result.Should().ContainSingle().Subject;
+        job.Id.Should().Be(id);
+        job.Skipped.Should().Be(0);
+        job.Created.Should().Be(1);
+        job.Updated.Should().Be(2);
+        job.Failed.Should().Be(3);
+    }
+}
+```
+
+> 元素名稱與型別必須符合驅動程式真正會寫出的格式，否則整份文件反序列化失敗、每個欄位都是預設值，
+> `Skipped == 0` 就會**空洞地通過**。`MongoConventions.cs` 註冊了 `CamelCaseElementNameConvention`
+> 與 `EnumRepresentationConvention(BsonType.String)`，所以元素名是 camelCase、`status` 是字串。
+> 同時斷言 `Created` / `Updated` / `Failed` 為非預設值，就是防這個空洞通過的護欄。
 
 - [ ] **Step 2: 跑測試確認失敗**
 
@@ -542,8 +624,11 @@ MongoDB 對舊文件缺少的 `skipped` 欄位會反序列化成 `0`，不需要
 
 - [ ] **Step 4: 跑測試確認通過**
 
-Run: `dotnet test --filter "SyncJobMapperTests|SyncCommandTests"`
-Expected: `SyncJobMapperTests` `Passed: 2`，`SyncCommandTests` 維持全綠。
+Run: `dotnet test --filter "SyncJobMapperTests|MongoSyncJobRepositoryTests|SyncCommandTests"`
+Expected: `SyncJobMapperTests` `Passed: 2`、`MongoSyncJobRepositoryTests` `Passed: 1`，`SyncCommandTests` 維持全綠。
+
+驗證整合測試不是空洞通過：暫時在 `legacyDoc` 加入 `["skipped"] = 99`，重跑應**失敗**
+（`Expected job.Skipped to be 0, but found 99`），確認後還原。
 
 - [ ] **Step 5: Commit**
 
