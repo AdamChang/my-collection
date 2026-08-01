@@ -66,14 +66,20 @@ Task 1–2 是重構與資料模型，3–7 是 IGDB 客戶端，8 是品類欄�
 - Modify: `src/MyCollection.Application/Ingestion/ProviderRegistry.cs`
 - Modify: `src/MyCollection.Application/Ingestion/SyncCommand.cs:53`
 - Modify: `src/MyCollection.Application/Ingestion/FetchByUrlQuery.cs:40`
+- Modify: `src/MyCollection.Application/Ingestion/ExternalAccountCommands.cs`（`LinkExternalAccountCommandHandler` 也用了舊多載）
 - Modify: `src/MyCollection.Infrastructure/Providers/SteamProvider.cs`
 - Modify: `src/MyCollection.Infrastructure/Providers/OpenGraphProvider.cs`
 - Modify: `src/MyCollection.Api/Endpoints/IngestionEndpoints.cs:12-17`
 - Test: `tests/MyCollection.Tests/Unit/ProviderRegistryTests.cs`（整份改寫）
 - Test: `tests/MyCollection.Tests/Unit/SteamProviderTests.cs`（刪 2 個案例、改 1 個）
 - Test: `tests/MyCollection.Tests/Unit/OpenGraphProviderTests.cs`（刪 1 個案例、改 1 個）
+- Test: `tests/MyCollection.Tests/Unit/SyncCommandTests.cs`、`ExternalAccountCommandTests.cs`、`FetchByUrlQueryTests.cs`
+  （這三個檔案 mock 了 `IMetadataProvider` 並設定 `Capabilities`，改成 mock 對應的能力介面即可。
+  `SyncCommandTests` 的 `Provider_without_bulk_sync_is_rejected` 要**保留** `Mock<IMetadataProvider>`——
+  那個測試就是在驗證 `Require<T>` 轉型失敗的路徑。）
 
-這一步無法拆成更小的 commit——介面簽章改變會讓整個方案在中途無法編譯。步驟仍逐一列出。
+這一步無法拆成更小的 commit——介面簽章改變會讓整個方案在中途無法編譯。以編譯器找出所有呼叫端，
+上面的清單已涵蓋 master 當下的全部。步驟仍逐一列出。
 
 - [ ] **Step 1: 改寫 ProviderRegistryTests**
 

@@ -117,7 +117,9 @@ public T Require<T>(string key) where T : class, IMetadataProvider =>
 
 `ProviderCapability` enum 本身保留，`GET /ingest/providers` 仍回傳旗標供前端決定顯示哪些入口。
 
-修正成本現在只有兩個 provider；等 Discogs、PSN 進來就是四五個。淨結果是刪掉的程式碼多於新增的：兩個假實作、兩個 `Capabilities` 屬性、三個「不支援」測試。
+修正成本現在只有兩個 provider；等 Discogs、PSN 進來就是四五個。拆分本身刪掉兩個假實作、兩個 `Capabilities` 屬性、三個「不支援」測試。
+
+（實測 `src/` 淨行數仍小幅增加，因為這一步刻意把完整的 `ISearchProvider` 與 `ExternalLookupResult` 一次宣告完——當下還沒有實作者，但先宣告可免掉之後再對共用介面做一次破壞性變更。）
 
 ### 3.3 只做精準比對，不做名稱猜測
 
