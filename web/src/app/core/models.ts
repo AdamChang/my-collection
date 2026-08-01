@@ -105,6 +105,8 @@ export interface SyncJobDto {
   created: number;
   updated: number;
   failed: number;
+  /** 正常但未處理的筆數，例如外部來源查無對應。與 failed 語意不同。 */
+  skipped: number;
   error: string | null;
   startedAt: string;
   finishedAt: string | null;
@@ -114,6 +116,12 @@ export interface ExternalAccountDto {
   provider: string;
   externalUserId: string;
   updatedAt: string;
+}
+
+export interface ProviderDto {
+  key: string;
+  /** 逗號分隔的能力旗標，例如 "BulkSync, UrlLookup" 或 "Search"。 */
+  capabilities: string;
 }
 
 export interface FetchedMetadataDto {

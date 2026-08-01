@@ -2,7 +2,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { API_BASE } from '../api-base';
-import { ExternalAccountDto, FetchedMetadataDto, SyncJobDto } from '../models';
+import { ExternalAccountDto, FetchedMetadataDto, ProviderDto, SyncJobDto } from '../models';
 
 @Injectable({ providedIn: 'root' })
 export class IngestionService {
@@ -37,6 +37,27 @@ export class IngestionService {
   fetchByUrl(url: string): Observable<FetchedMetadataDto> {
     return this.http.post<FetchedMetadataDto>(`${API_BASE}/ingest/fetch`, null, {
       params: new HttpParams().set('url', url),
+    });
+  }
+
+  providers(): Observable<ProviderDto[]> {
+    return this.http.get<ProviderDto[]>(`${API_BASE}/ingest/providers`);
+  }
+
+  search(provider: string, query: string, limit = 20): Observable<FetchedMetadataDto[]> {
+    return this.http.get<FetchedMetadataDto[]>(`${API_BASE}/ingest/search`, {
+      params: new HttpParams().set('provider', provider).set('q', query).set('limit', limit),
+    });
+  }
+
+  /**
+   * 不給 itemIds 是批次補完。注意**空陣列也是批次**——後端判斷的是 Count > 0，
+   * 所以 enrich(p, []) 不是「什麼都不做」，而是會去補完 50 筆使用者沒選的品項。
+   * 之後若接上勾選 UI，呼叫端要自己擋掉空陣列。
+   */
+  enrich(provider: string, itemIds?: string[]): Observable<SyncJobDto> {
+    return this.http.post<SyncJobDto>(`${API_BASE}/ingest/enrich/${provider}`, {
+      itemIds: itemIds ?? null,
     });
   }
 }
