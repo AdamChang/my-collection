@@ -3656,12 +3656,26 @@ IGDB_CLIENT_SECRET=
 不設定就整組停用：provider 不註冊，前端不顯示相關入口。
 ```
 
-- [ ] **Step 6: 確認整個方案編譯且全綠**
+- [ ] **Step 6: 加上容器組裝測試**
+
+`tests/MyCollection.Tests/Unit/IgdbRegistrationTests.cs`。這個 Task 原本完全沒有自動化驗證，
+但它改的正是最容易靜默出錯的地方：DI 圖解不開只有啟動時才炸，生命週期寫錯則完全不會炸——
+`ITwitchTokenProvider` 若是 scoped，功能照常運作，只是每個請求都跟 Twitch 換一次 token。
+
+用 `BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true })`
+分別以「有憑證」與「無憑證」兩種設定組一次容器，驗證四件事：無憑證時 registry 不含 `igdb`、
+有憑證時 `Require<ISearchProvider>("igdb")` 解得出 `IgdbProvider`、`ITwitchTokenProvider` 與
+`IgdbRateLimiter` 跨 scope 是同一個實例、`IItemEnrichWriter` 不受 IGDB 設定影響。
+
+`AddInfrastructure` 不註冊 `IUserContext`（那是 Api 層綁 HttpContext 的），測試要自己補一個
+`Mock.Of<IUserContext>()`，否則 `ValidateOnBuild` 會因為六個既有 repository 而失敗。
+
+- [ ] **Step 7: 確認整個方案編譯且全綠**
 
 Run: `dotnet build && dotnet test`
 Expected: 建置成功，所有測試通過。
 
-- [ ] **Step 7: 手動驗證（需真實憑證）**
+- [ ] **Step 8: 手動驗證（需真實憑證）**
 
 ```bash
 export IGDB_CLIENT_ID=... IGDB_CLIENT_SECRET=...
@@ -3685,7 +3699,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
 確認 `enrich` 之後某個 Steam 品項的 `attributes` 多了 `igdbId`、`developer` 等欄位，
 且 `tags`、`isShowcased`、`name` 未被改動。
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add src docker-compose.yml .env.example README.md
