@@ -26,6 +26,16 @@ public interface IItemRepository
 
     Task<IReadOnlyList<string>> ListTagsAsync(CancellationToken ct);
 
+    /// <summary>
+    /// 補完候選：有外部來源綁定（externalRef 非 null）、但 attributes 尚未帶 markerKey 的品項。
+    /// 手動建檔且未綁定過的品項不在其中——補完不猜，那些應走搜尋建檔。
+    /// </summary>
+    Task<IReadOnlyList<Item>> ListEnrichmentCandidatesAsync(
+        string markerKey, int limit, CancellationToken ct);
+
+    /// <summary>依 id 批次載入自己的品項。不存在或不屬於自己的 id 直接不出現在結果中。</summary>
+    Task<IReadOnlyList<Item>> ListByIdsAsync(IReadOnlyList<ObjectId> ids, CancellationToken ct);
+
     Task InsertAsync(Item item, CancellationToken ct);
 
     /// <summary>找不到（含不屬於自己）擲 NotFoundException。</summary>

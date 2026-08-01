@@ -138,4 +138,31 @@ public sealed class MongoItemRepository(MongoContext context, IUserContext userC
             throw new NotFoundException(nameof(Item), id);
         }
     }
+
+    public async Task<IReadOnlyList<Item>> ListEnrichmentCandidatesAsync(
+        string markerKey, int limit, CancellationToken ct)
+    {
+        var filter = Filter.And(
+            OwnerFilter,
+            Filter.Ne(x => x.ExternalRef, null),
+            Filter.Exists($"attributes.{markerKey}", false));
+
+        return await Items
+            .Find(filter)
+            .SortBy(x => x.Id)
+            .Limit(Math.Clamp(limit, 1, 200))
+            .ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<Item>> ListByIdsAsync(IReadOnlyList<ObjectId> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        return await Items
+            .Find(Filter.And(OwnerFilter, Filter.In(x => x.Id, ids)))
+            .ToListAsync(ct);
+    }
 }
