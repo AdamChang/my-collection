@@ -16,6 +16,7 @@ public record SyncJobDto(
     int Created,
     int Updated,
     int Failed,
+    int Skipped,
     string? Error,
     DateTime StartedAt,
     DateTime? FinishedAt);
@@ -31,6 +32,7 @@ public static class SyncJobMapper
         job.Created,
         job.Updated,
         job.Failed,
+        job.Skipped,
         job.Error,
         job.StartedAt,
         job.FinishedAt);

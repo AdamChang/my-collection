@@ -21,6 +21,9 @@ public sealed class SyncJob
     public int Updated { get; set; }
     public int Failed { get; set; }
 
+    /// <summary>正常但未處理的品項數，例如外部來源查無對應。與 Failed 語意不同。</summary>
+    public int Skipped { get; set; }
+
     /// <summary>失敗時的錯誤訊息，供 UI 顯示並提供重試。</summary>
     public string? Error { get; set; }
 
