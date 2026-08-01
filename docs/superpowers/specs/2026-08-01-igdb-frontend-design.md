@@ -190,17 +190,23 @@ private declaredOnly(source: Record<string, unknown>): Record<string, unknown> {
 
 ## 8. 測試
 
-沿用既有的 TestBed + 假服務模式（`useValue: { jobs: () => of([]) }`），不引入 `HttpTestingController`——
-專案目前未使用它，元件測試餵假服務已足夠。
+專案既有的測試慣例是**依層分工**，兩種都用：
 
-| 檔案 | 涵蓋 |
-|---|---|
-| `igdb-search-dialog.component.spec.ts` | 送出查詢字串；結果渲染成網格；點選吐出正確的 DTO；空結果顯示空狀態；搜尋中按鈕停用 |
-| `provider.service.spec.ts` | `supports()` 正確解析 capabilities 字串；請求失敗時退化成空清單而非拋出 |
-| `igdb-enrich.component.spec.ts` | 未設定 IGDB 時整個面板不渲染；補完後重載紀錄表；通知含略過數 |
-| `item-detail.component.spec.ts`（擴充） | 品類未選時按鈕停用；`prefill` 覆寫名稱、`bind` 不覆寫；`declaredOnly` 濾掉未宣告的 key；`opengraph` 不算可定址 |
-| `settings.component.spec.ts`（擴充） | 紀錄表渲染「略過」欄 |
-| `ShowcaseImageDownloaderTests.cs`（新增） | 只有 `coverUrl` 時會被選為來源；`headerUrl` 優先於 `coverUrl` |
+- **服務層**（`catalog.service.spec.ts`、`transfer.service.spec.ts`）用 `provideHttpClientTesting()` + `HttpTestingController`，
+  驗證實際打出去的 URL、查詢參數與 body
+- **元件層**（`settings.component.spec.ts`、`item-detail.component.spec.ts`）用 TestBed + 假服務（`useValue: { jobs: () => of([]) }`）
+
+新增的測試照這個分工，不自創第三種。
+
+| 檔案 | 層 | 涵蓋 |
+|---|---|---|
+| `ingestion.service.spec.ts`（新增） | 服務 | `search()` 打對 URL 與 `provider`/`q`/`limit` 三個查詢參數；`enrich()` 打對路徑且 body 為 `{itemIds}` |
+| `provider.service.spec.ts`（新增） | 服務 | `supports()` 正確解析 capabilities 字串；請求失敗時退化成空清單而非拋出 |
+| `igdb-search-dialog.component.spec.ts` | 元件 | 送出查詢字串；結果渲染成網格；點選吐出正確的 DTO；空結果顯示空狀態；搜尋中按鈕停用 |
+| `igdb-enrich.component.spec.ts` | 元件 | 未設定 IGDB 時整個面板不渲染；補完後重載紀錄表；通知含略過數 |
+| `item-detail.component.spec.ts`（擴充） | 元件 | 品類未選時按鈕停用；`prefill` 覆寫名稱、`bind` 不覆寫；`declaredOnly` 濾掉未宣告的 key；`opengraph` 不算可定址 |
+| `settings.component.spec.ts`（擴充） | 元件 | 紀錄表渲染「略過」欄 |
+| `ShowcaseImageDownloaderTests.cs`（新增） | 後端 | 只有 `coverUrl` 時會被選為來源；`headerUrl` 優先於 `coverUrl` |
 
 最關鍵的三個測試，對應這個設計裡真正會出錯的地方：
 
