@@ -2177,6 +2177,7 @@ git commit -m "feat(igdb): add search provider with steam id resolution"
 
 **Files:**
 - Modify: `src/MyCollection.Infrastructure/Mongo/SystemCategoryDefinitions.cs:15-38`
+- Modify: `tests/MyCollection.Tests/Integration/SystemCategorySeederTests.cs:73-96`
 - Test: `tests/MyCollection.Tests/Unit/SystemCategoryDefinitionsTests.cs`
 
 `SystemCategorySeeder` 每次啟動以 `$set` 覆寫整份 `Fields`，所以既有部署重啟即自動補齊，不需要遷移腳本。
@@ -2294,7 +2295,22 @@ Expected: `Game_categories_declare_every_igdb_field` 失敗，缺 `igdbId`、`ge
 - [ ] **Step 4: 跑測試確認通過**
 
 Run: `dotnet test --filter "SystemCategoryDefinitionsTests|SystemCategorySeederTests"`
-Expected: `SystemCategoryDefinitionsTests` `Passed: 7`（3 個 `[Fact]` + 兩個 `[Theory]` 各展開 2 個），`SystemCategorySeederTests` 維持全綠。
+Expected: `SystemCategoryDefinitionsTests` `Passed: 7`（3 個 `[Fact]` + 兩個 `[Theory]` 各展開 2 個）。
+
+`SystemCategorySeederTests` 的 2 個測試會失敗——它在 `AssertCanonicalCategories` 內硬編碼兩個遊戲品類的完整
+欄位清單並逐一比對順序與標籤，欄位變多必然對不上。這不是回歸，是那個測試在履行職責：它是「系統品類長什麼樣」
+的獨立規格，刻意不從 `SystemCategoryDefinitions` 推導，所以每次改動都必須有人明確認可。
+在兩份清單末尾補上 5 個新欄位（順序與 `SystemCategoryDefinitions` 一致）：
+
+```csharp
+            Field("igdbId", "IGDB ID", FieldType.Number),
+            Field("genres", "類型", FieldType.Text, searchable: true),
+            Field("platforms", "發行平台", FieldType.Text, searchable: true),
+            Field("igdbRating", "IGDB 評分", FieldType.Number),
+            Field("coverUrl", "IGDB 封面網址", FieldType.Url)
+```
+
+不要為了省事把它改成從 `SystemCategoryDefinitions.Create()` 推導——那會讓它變成恆真的重言式。
 
 - [ ] **Step 5: Commit**
 
