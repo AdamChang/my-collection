@@ -1,0 +1,32 @@
+[
+  {
+    "id": 1942,
+    "name": "The Witcher 3: Wild Hunt",
+    "summary": "A story-driven, open world adventure set in a visually stunning fantasy universe.",
+    "url": "https://www.igdb.com/games/the-witcher-3-wild-hunt",
+    "first_release_date": 1431993600,
+    "total_rating": 93.47,
+    "cover": { "id": 89386, "image_id": "co1wyy" },
+    "genres": [
+      { "id": 12, "name": "Role-playing (RPG)" },
+      { "id": 31, "name": "Adventure" }
+    ],
+    "platforms": [
+      { "id": 6, "abbreviation": "PC" },
+      { "id": 48, "abbreviation": "PS4" }
+    ],
+    "involved_companies": [
+      { "id": 1, "company": { "id": 908, "name": "CD Projekt RED" }, "developer": true, "publisher": false },
+      { "id": 2, "company": { "id": 909, "name": "CD Projekt" }, "developer": false, "publisher": true }
+    ]
+  },
+  {
+    "id": 11156,
+    "name": "The Witcher 3: Wild Hunt - Hearts of Stone",
+    "url": "https://www.igdb.com/games/the-witcher-3-wild-hunt-hearts-of-stone",
+    "first_release_date": 1444694400,
+    "platforms": [
+      { "id": 6, "abbreviation": "PC" }
+    ]
+  }
+]
