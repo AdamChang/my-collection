@@ -38,7 +38,7 @@ public class SyncJobMapperTests
     }
 
     [Fact]
-    public void Skipped_defaults_to_zero_for_jobs_written_before_the_field_existed()
+    public void Skipped_defaults_to_zero_when_not_set()
     {
         var job = new SyncJob
         {
