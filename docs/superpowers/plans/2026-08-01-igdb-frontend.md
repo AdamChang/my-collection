@@ -433,6 +433,25 @@ git commit -m "feat(web): add provider capability discovery service"
 1. 對話框內**不可以有 `<form>`**。`ItemDetailComponent` 的模板根節點就是 `<form>`，巢狀 form 是非法 HTML。所有按鈕一律 `type="button"`，Enter 用 `(keydown.enter)` 接。
 2. 這裡的 `ngModel` 會沿元素注入器往上找到外層的 `NgForm`。加 `[ngModelOptions]="{standalone: true}"` 切斷，否則這個查詢字串會變成品項表單的一個欄位。
 
+> **實作後的修正紀錄（commit `809df65`）。** 下面的程式碼是原始版本，實際交付的在審查後有五處差異。
+> 要重讀實作請以 repo 內的檔案為準；這裡記錄的是**為什麼**改：
+>
+> 1. **關閉時要取消進行中的請求。** 原版只在 `open()` 重設狀態。實測：搜尋中按 Esc 再重開，
+>    會看到空搜尋框配上鎖死的搜尋鈕，接著冒出上一個關鍵字的結果——點下去就綁錯遊戲。
+>    改成 `reset()`（清狀態 + `closed.next()`）由 `close()` **同步**呼叫，`(close)` 事件監聽器只留給 Esc；
+>    `search()` 的 pipe 加 `takeUntil(this.closed)`。**`<dialog>` 的 `close` 事件不是同步觸發的**，
+>    只掛事件會在整份 spec 一起跑時 flaky。
+> 2. **最小長度改成 2**，對齊後端 `SearchProviderQueryValidator` 的 `MinimumLength(2)`。
+>    只擋空字串的話，使用者打一個字就會收到一則洩漏 DTO 屬性名的英文 400 訊息。
+> 3. **加了 `aria-labelledby` 與 `<h2>` 標題**，輸入框加 `aria-label`。這是專案第一個 `<dialog>`，
+>    會成為後續對話框的樣板；既有的 `tag-input` 與 `image-uploader` 都有用 `aria-label`。
+> 4. **封面 `alt` 改成空字串**——名稱已在 `<strong>` 裡，載入失敗時會重複出現。
+> 5. **subtitle 為空時不渲染 `<small>`**，否則缺後設資料的卡片會多吃一份 grid gap、網格參差。
+>
+> 測試從 5 條增為 10 條。原本三個缺口都是突變測試證明的：`subtitle()` 完全沒有覆蓋
+> （整個方法可以刪成 `return ''` 而測試全綠）、「搜尋中鎖定」只驗證按鈕外觀而沒驗證請求數
+> （而 `(keydown.enter)` 根本不經過按鈕）、`takeUntil` 的取消邏輯沒有保護。
+
 - [ ] **Step 1: 寫失敗測試**
 
 `web/src/app/shared/igdb-search-dialog/igdb-search-dialog.component.spec.ts`：
@@ -702,12 +721,12 @@ export class IgdbSearchDialogComponent {
 - [ ] **Step 4: 跑測試確認通過**
 
 Run: `cd web && npm test -- --watch=false --browsers=ChromeHeadless --include=src/app/shared/igdb-search-dialog/igdb-search-dialog.component.spec.ts`
-Expected: `TOTAL: 5 SUCCESS`
+Expected: `TOTAL: 10 SUCCESS`
 
 - [ ] **Step 5: 跑全部測試**
 
 Run: `cd web && npm test -- --watch=false --browsers=ChromeHeadless`
-Expected: `TOTAL: 87 SUCCESS`
+Expected: `TOTAL: 93 SUCCESS`
 
 - [ ] **Step 6: Commit**
 
@@ -984,13 +1003,17 @@ import { IGDB_PROVIDER_KEY, ProviderService } from '../../core/api/provider.serv
 在模板最後的 `</form>` **之後**（與 `<form>` 平行的位置）加入：
 
 ```html
-    @if (igdbAvailable()) {
-      <app-igdb-search-dialog (select)="applyMetadata($event, itemId() ? 'bind' : 'prefill')" />
-    }
+    <app-igdb-search-dialog (select)="applyMetadata($event, itemId() ? 'bind' : 'prefill')" />
 ```
 
-> 對話框放在 `</form>` 外面是刻意的：`<dialog>` 是 modal，不屬於表單，
-> 放進去會讓 `<form method="dialog">` 之類的結構與外層表單糾纏。
+> **對話框刻意不包 `@if`。** Task 3 的品質審查實測過：`@if` 的內容要等下一次變更偵測才具現化，
+> 所以「翻開關 + 在同一個 handler 裡呼叫 `open()`」必定拿到 `undefined`，
+> 而 `IgdbSearchDialogComponent` 內部用的是 `viewChild.required`，錯誤訊息會是
+> `NG0951: Child query result is required but no value is available`。
+> 對話框在 `showModal()` 之前不佔任何視覺空間，無條件渲染零成本，且徹底消滅這類時序問題。
+> **只用 `@if (igdbAvailable())` 擋觸發按鈕，不要擋對話框。**
+>
+> 放在 `</form>` 外面也是刻意的：`<dialog>` 是 modal，不屬於表單。
 
 `styles` 區塊在 `.detail__fetch` 那行之後加入：
 
@@ -1007,7 +1030,7 @@ Expected: `TOTAL: 11 SUCCESS`（既有 6 + 新增 5）
 - [ ] **Step 7: 跑全部測試**
 
 Run: `cd web && npm test -- --watch=false --browsers=ChromeHeadless`
-Expected: `TOTAL: 92 SUCCESS`
+Expected: `TOTAL: 98 SUCCESS`
 
 - [ ] **Step 8: Commit**
 
@@ -1258,7 +1281,7 @@ Expected: `TOTAL: 16 SUCCESS`
 - [ ] **Step 6: 跑全部測試**
 
 Run: `cd web && npm test -- --watch=false --browsers=ChromeHeadless`
-Expected: `TOTAL: 97 SUCCESS`
+Expected: `TOTAL: 103 SUCCESS`
 
 - [ ] **Step 7: Commit**
 
@@ -1454,7 +1477,7 @@ Expected: `TOTAL: 4 SUCCESS`
 - [ ] **Step 5: 跑全部測試**
 
 Run: `cd web && npm test -- --watch=false --browsers=ChromeHeadless`
-Expected: `TOTAL: 101 SUCCESS`
+Expected: `TOTAL: 107 SUCCESS`
 
 - [ ] **Step 6: Commit**
 
@@ -1597,7 +1620,7 @@ Expected: 既有測試 + 1 個新測試全數通過。
 - [ ] **Step 7: 跑全部測試**
 
 Run: `cd web && npm test -- --watch=false --browsers=ChromeHeadless`
-Expected: `TOTAL: 102 SUCCESS`
+Expected: `TOTAL: 108 SUCCESS`
 
 - [ ] **Step 8: Commit**
 
@@ -1749,7 +1772,7 @@ git commit -m "feat(showcase): accept igdb covers as a downloadable image source
 
 ## 完成後的驗證
 
-- [ ] `cd web && npm test -- --watch=false --browsers=ChromeHeadless` → `TOTAL: 102 SUCCESS`
+- [ ] `cd web && npm test -- --watch=false --browsers=ChromeHeadless` → `TOTAL: 108 SUCCESS`
 - [ ] `cd web && npm run build` → 成功，無新增警告
 - [ ] `dotnet build` → 0 warnings / 0 errors
 - [ ] `dotnet test` → `Passed: 451`
