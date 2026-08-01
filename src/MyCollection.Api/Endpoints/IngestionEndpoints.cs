@@ -19,6 +19,11 @@ public static class IngestionEndpoints
         group.MapPost("/sync/{provider}", async (string provider, ISender sender, CancellationToken ct) =>
             Results.Accepted($"/ingest/jobs", await sender.Send(new SyncCommand(provider), ct)));
 
+        group.MapPost("/enrich/{provider}", async (
+            string provider, EnrichRequest? body, ISender sender, CancellationToken ct) =>
+            Results.Ok(await sender.Send(
+                new EnrichCommand(provider, body?.ItemIds, body?.Limit ?? 50), ct)));
+
         group.MapGet("/jobs", async (int? limit, ISender sender, CancellationToken ct) =>
             Results.Ok(await sender.Send(new ListSyncJobsQuery(limit ?? 20), ct)));
 
@@ -45,4 +50,7 @@ public static class IngestionEndpoints
 
         return app;
     }
+
+    /// <summary>兩個欄位都可省略：不給 ItemIds 就是批次補完。</summary>
+    public record EnrichRequest(IReadOnlyList<string>? ItemIds, int? Limit);
 }
