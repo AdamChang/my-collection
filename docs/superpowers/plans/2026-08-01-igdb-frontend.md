@@ -256,12 +256,12 @@ import { ExternalAccountDto, FetchedMetadataDto, ProviderDto, SyncJobDto } from 
 - [ ] **Step 5: 跑測試確認通過**
 
 Run: `cd web && npm test -- --watch=false --browsers=ChromeHeadless --include=src/app/core/api/ingestion.service.spec.ts`
-Expected: `TOTAL: 4 SUCCESS`
+Expected: `TOTAL: 5 SUCCESS`
 
 - [ ] **Step 6: 跑全部測試**
 
 Run: `cd web && npm test -- --watch=false --browsers=ChromeHeadless`
-Expected: `TOTAL: 77 SUCCESS`（73 + 4）
+Expected: `TOTAL: 78 SUCCESS`（73 + 5）
 
 - [ ] **Step 7: Commit**
 
@@ -409,7 +409,7 @@ Expected: `TOTAL: 4 SUCCESS`
 - [ ] **Step 5: 跑全部測試**
 
 Run: `cd web && npm test -- --watch=false --browsers=ChromeHeadless`
-Expected: `TOTAL: 81 SUCCESS`
+Expected: `TOTAL: 82 SUCCESS`
 
 - [ ] **Step 6: Commit**
 
@@ -707,7 +707,7 @@ Expected: `TOTAL: 5 SUCCESS`
 - [ ] **Step 5: 跑全部測試**
 
 Run: `cd web && npm test -- --watch=false --browsers=ChromeHeadless`
-Expected: `TOTAL: 86 SUCCESS`
+Expected: `TOTAL: 87 SUCCESS`
 
 - [ ] **Step 6: Commit**
 
@@ -1007,7 +1007,7 @@ Expected: `TOTAL: 11 SUCCESS`（既有 6 + 新增 5）
 - [ ] **Step 7: 跑全部測試**
 
 Run: `cd web && npm test -- --watch=false --browsers=ChromeHeadless`
-Expected: `TOTAL: 91 SUCCESS`
+Expected: `TOTAL: 92 SUCCESS`
 
 - [ ] **Step 8: Commit**
 
@@ -1258,7 +1258,7 @@ Expected: `TOTAL: 16 SUCCESS`
 - [ ] **Step 6: 跑全部測試**
 
 Run: `cd web && npm test -- --watch=false --browsers=ChromeHeadless`
-Expected: `TOTAL: 96 SUCCESS`
+Expected: `TOTAL: 97 SUCCESS`
 
 - [ ] **Step 7: Commit**
 
@@ -1454,7 +1454,7 @@ Expected: `TOTAL: 4 SUCCESS`
 - [ ] **Step 5: 跑全部測試**
 
 Run: `cd web && npm test -- --watch=false --browsers=ChromeHeadless`
-Expected: `TOTAL: 100 SUCCESS`
+Expected: `TOTAL: 101 SUCCESS`
 
 - [ ] **Step 6: Commit**
 
@@ -1597,7 +1597,7 @@ Expected: 既有測試 + 1 個新測試全數通過。
 - [ ] **Step 7: 跑全部測試**
 
 Run: `cd web && npm test -- --watch=false --browsers=ChromeHeadless`
-Expected: `TOTAL: 101 SUCCESS`
+Expected: `TOTAL: 102 SUCCESS`
 
 - [ ] **Step 8: Commit**
 
@@ -1749,7 +1749,7 @@ git commit -m "feat(showcase): accept igdb covers as a downloadable image source
 
 ## 完成後的驗證
 
-- [ ] `cd web && npm test -- --watch=false --browsers=ChromeHeadless` → `TOTAL: 101 SUCCESS`
+- [ ] `cd web && npm test -- --watch=false --browsers=ChromeHeadless` → `TOTAL: 102 SUCCESS`
 - [ ] `cd web && npm run build` → 成功，無新增警告
 - [ ] `dotnet build` → 0 warnings / 0 errors
 - [ ] `dotnet test` → `Passed: 451`
