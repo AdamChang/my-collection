@@ -142,18 +142,28 @@ public sealed class IgdbProvider(
     private async Task<IReadOnlyList<(long GameId, string ExternalId)>> ResolveSteamAsync(
         LookupId[] steamExternalIds, CancellationToken ct)
     {
-        var uidToExternalId = steamExternalIds.ToDictionary(
-            id => id.NumericId.ToString(CultureInfo.InvariantCulture),
-            id => id.ExternalId,
-            StringComparer.Ordinal);
-        var uidList = string.Join(",", uidToExternalId.Keys.Select(uid => $"\"{uid}\""));
+        var uidToExternalIds = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+
+        foreach (var externalId in steamExternalIds)
+        {
+            var uid = externalId.NumericId.ToString(CultureInfo.InvariantCulture);
+
+            if (!uidToExternalIds.TryGetValue(uid, out var originalIds))
+            {
+                uidToExternalIds[uid] = originalIds = [];
+            }
+
+            originalIds.Add(externalId.ExternalId);
+        }
+
+        var uidList = string.Join(",", uidToExternalIds.Keys.Select(uid => $"\"{uid}\""));
         var rows = await QueryAsync(
             "external_games",
             "fields game,uid;\n" +
             $"where external_game_source = {SteamExternalGameSource} & uid = ({uidList});\n" +
             "limit 500;",
             ct);
-        return MapSteamRows(rows, uidToExternalId);
+        return MapSteamRows(rows, uidToExternalIds);
     }
 
     private static void Track(Dictionary<long, List<string>> byGameId, long gameId, string externalId)
@@ -184,10 +194,16 @@ public sealed class IgdbProvider(
     }
 
     private static IReadOnlyList<ExternalItem> MapGames(JsonElement games) =>
-        MapSchema("games", () => games.EnumerateArray().Select(IgdbMapper.ToExternalItem).ToArray());
+        MapSchema("games", () => games.EnumerateArray()
+            .Select(game =>
+            {
+                ValidateGame(game);
+                return IgdbMapper.ToExternalItem(game);
+            })
+            .ToArray());
 
     private static IReadOnlyList<(long GameId, string ExternalId)> MapSteamRows(
-        JsonElement rows, IReadOnlyDictionary<string, string> uidToExternalId) =>
+        JsonElement rows, IReadOnlyDictionary<string, List<string>> uidToExternalIds) =>
         MapSchema("external_games", () =>
         {
             var resolved = new List<(long, string)>();
@@ -198,19 +214,40 @@ public sealed class IgdbProvider(
                     ?? throw new InvalidOperationException("IGDB external game uid was null.");
                 var gameId = row.GetProperty("game").GetInt64();
 
+                if (string.IsNullOrWhiteSpace(uid))
+                {
+                    throw new InvalidOperationException("IGDB external game uid was blank.");
+                }
+
                 if (gameId <= 0)
                 {
                     throw new InvalidOperationException("IGDB external game id was not positive.");
                 }
 
-                if (uidToExternalId.TryGetValue(uid, out var externalId))
+                if (uidToExternalIds.TryGetValue(uid, out var externalIds))
                 {
-                    resolved.Add((gameId, externalId));
+                    resolved.AddRange(externalIds.Select(externalId => (gameId, externalId)));
                 }
             }
 
             return (IReadOnlyList<(long GameId, string ExternalId)>)resolved;
         });
+
+    private static void ValidateGame(JsonElement game)
+    {
+        var id = game.GetProperty("id").GetInt64();
+        var name = game.GetProperty("name").GetString();
+
+        if (id <= 0)
+        {
+            throw new InvalidOperationException("IGDB game id was not positive.");
+        }
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new InvalidOperationException("IGDB game name was null or blank.");
+        }
+    }
 
     private static T MapSchema<T>(string endpoint, Func<T> map)
     {

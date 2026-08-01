@@ -279,6 +279,19 @@ public class IgdbProviderTests
         await act.Should().ThrowAsync<ProviderException>();
     }
 
+    [Theory]
+    [InlineData("[{\"id\":0,\"name\":\"Portal 2\"}]")]
+    [InlineData("[{\"id\":72,\"name\":null}]")]
+    [InlineData("[{\"id\":72,\"name\":\"   \"}]")]
+    public async Task Search_wraps_null_or_blank_required_fields_in_ProviderException(string payload)
+    {
+        var sut = CreateSut(StubHttpMessageHandler.Json(payload));
+
+        var act = () => sut.SearchAsync("portal", 20, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ProviderException>();
+    }
+
     [Fact]
     public async Task Lookup_marks_a_schema_invalid_external_games_row_as_failed()
     {
@@ -288,6 +301,40 @@ public class IgdbProviderTests
 
         result.Found.Should().BeEmpty();
         result.FailedIds.Should().BeEquivalentTo("steam:440");
+    }
+
+    [Theory]
+    [InlineData("[{\"game\":0,\"uid\":\"440\"}]")]
+    [InlineData("[{\"game\":891,\"uid\":null}]")]
+    [InlineData("[{\"game\":891,\"uid\":\"   \"}]")]
+    public async Task Lookup_marks_null_or_blank_external_games_required_fields_as_failed(string payload)
+    {
+        var sut = CreateSut(StubHttpMessageHandler.Json(payload));
+
+        var result = await sut.FetchByExternalIdsAsync(["steam:440"], CancellationToken.None);
+
+        result.Found.Should().BeEmpty();
+        result.FailedIds.Should().BeEquivalentTo("steam:440");
+    }
+
+    [Fact]
+    public async Task Lookup_reuses_a_canonical_steam_uid_and_backfills_each_original_key()
+    {
+        var handler = LookupHandler("440");
+        var sut = CreateSut(handler);
+
+        var result = await sut.FetchByExternalIdsAsync(
+            ["steam:440", "steam:000440", "steam:440"],
+            CancellationToken.None);
+
+        result.Found.Keys.Should().BeEquivalentTo("steam:440", "steam:000440");
+        result.Found["steam:440"].ExternalId.Should().Be("891");
+        result.Found["steam:000440"].ExternalId.Should().Be("891");
+        result.FailedIds.Should().BeEmpty();
+        handler.Requests.Count(uri => uri.AbsolutePath.EndsWith("external_games", StringComparison.Ordinal)).Should().Be(1);
+        handler.RequestBodies
+            .Single(body => body?.Contains("external_game_source = 1", StringComparison.Ordinal) == true)!
+            .Should().Contain("uid = (\"440\")");
     }
 
     [Fact]
