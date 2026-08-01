@@ -30,32 +30,51 @@ public sealed class TwitchTokenProvider(
     private static readonly TimeSpan RenewalMargin = TimeSpan.FromMinutes(5);
 
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly Lock _cacheLock = new();
 
     private string? _token;
     private DateTimeOffset _expiresAt;
+    private long _generation;
 
     public async Task<string> GetAsync(CancellationToken ct)
     {
-        if (IsFresh())
+        long generation;
+        lock (_cacheLock)
         {
-            return _token!;
+            if (IsFresh())
+            {
+                return _token!;
+            }
+
+            generation = _generation;
         }
 
         await _gate.WaitAsync(ct);
         try
         {
             // 等鎖期間可能已有人換好了，再確認一次才不會打出多餘請求
-            if (IsFresh())
+            lock (_cacheLock)
             {
-                return _token!;
+                if (IsFresh())
+                {
+                    return _token!;
+                }
+
+                generation = _generation;
             }
 
             var response = await FetchAsync(ct);
 
-            _token = response.AccessToken;
-            _expiresAt = timeProvider.GetUtcNow().AddSeconds(response.ExpiresIn);
+            lock (_cacheLock)
+            {
+                if (_generation == generation)
+                {
+                    _token = response.AccessToken;
+                    _expiresAt = timeProvider.GetUtcNow().AddSeconds(response.ExpiresIn);
+                }
+            }
 
-            return _token;
+            return response.AccessToken;
         }
         finally
         {
@@ -65,8 +84,12 @@ public sealed class TwitchTokenProvider(
 
     public void Invalidate()
     {
-        _token = null;
-        _expiresAt = default;
+        lock (_cacheLock)
+        {
+            _generation++;
+            _token = null;
+            _expiresAt = default;
+        }
     }
 
     public void Dispose() => _gate.Dispose();
@@ -95,10 +118,14 @@ public sealed class TwitchTokenProvider(
             }
 
             return await response.Content.ReadFromJsonAsync<TokenResponse>(ct)
-                   ?? throw new ProviderException(
-                       IgdbOptions.ProviderKey, "Twitch returned an empty token response.");
+                   is { AccessToken: var accessToken, ExpiresIn: > 0 } tokenResponse
+                   && !string.IsNullOrWhiteSpace(accessToken)
+                ? tokenResponse
+                : throw new ProviderException(
+                    IgdbOptions.ProviderKey, "Twitch returned an invalid token response.");
         }
-        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException)
+        catch (Exception ex) when (!ct.IsCancellationRequested
+                                   && ex is HttpRequestException or JsonException or TaskCanceledException)
         {
             throw new ProviderException(
                 IgdbOptions.ProviderKey, $"Twitch token request failed: {ex.Message}", ex);

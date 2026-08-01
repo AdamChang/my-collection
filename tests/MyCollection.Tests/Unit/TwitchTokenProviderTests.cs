@@ -16,11 +16,11 @@ public class TwitchTokenProviderTests
     private static string Fixture() =>
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "twitch-token.json"));
 
-    private TwitchTokenProvider CreateSut(StubHttpMessageHandler handler)
+    private TwitchTokenProvider CreateSut(HttpMessageHandler handler)
     {
         var factory = new Mock<IHttpClientFactory>();
         factory.Setup(f => f.CreateClient(TwitchTokenProvider.HttpClientName))
-            .Returns(() => handler.CreateClient("https://id.twitch.tv/"));
+            .Returns(() => new HttpClient(handler) { BaseAddress = new Uri("https://id.twitch.tv/") });
 
         return new TwitchTokenProvider(
             factory.Object,
@@ -107,6 +107,23 @@ public class TwitchTokenProviderTests
     }
 
     [Fact]
+    public async Task Invalidate_during_a_fetch_prevents_the_in_flight_token_from_being_cached()
+    {
+        var handler = new DelayedJsonHttpMessageHandler(Fixture());
+        var sut = CreateSut(handler);
+
+        var firstCall = sut.GetAsync(CancellationToken.None);
+        await handler.RequestStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        sut.Invalidate();
+        handler.Release();
+        await firstCall;
+
+        await sut.GetAsync(CancellationToken.None);
+
+        handler.RequestCount.Should().Be(2);
+    }
+
+    [Fact]
     public async Task Concurrent_callers_trigger_only_one_token_request()
     {
         var handler = StubHttpMessageHandler.Json(Fixture());
@@ -140,5 +157,58 @@ public class TwitchTokenProviderTests
         var act = () => sut.GetAsync(CancellationToken.None);
 
         await act.Should().ThrowAsync<ProviderException>();
+    }
+
+    [Fact]
+    public async Task Propagates_caller_cancellation_during_the_token_request()
+    {
+        var handler = new DelayedJsonHttpMessageHandler(Fixture());
+        var sut = CreateSut(handler);
+        using var cts = new CancellationTokenSource();
+
+        var tokenTask = sut.GetAsync(cts.Token);
+        await handler.RequestStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        cts.Cancel();
+
+        var act = () => tokenTask;
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("""{ "access_token": null, "expires_in": 3600 }""")]
+    [InlineData("""{ "access_token": " ", "expires_in": 3600 }""")]
+    [InlineData("""{ "access_token": "token", "expires_in": 0 }""")]
+    [InlineData("""{ "access_token": "token", "expires_in": -1 }""")]
+    public async Task Rejects_an_incomplete_or_invalid_token_response(string response)
+    {
+        var sut = CreateSut(StubHttpMessageHandler.Json(response));
+
+        var act = () => sut.GetAsync(CancellationToken.None);
+
+        await act.Should().ThrowAsync<ProviderException>();
+    }
+
+    private sealed class DelayedJsonHttpMessageHandler(string body) : HttpMessageHandler
+    {
+        private readonly TaskCompletionSource _released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource RequestStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int RequestCount { get; private set; }
+
+        public void Release() => _released.SetResult();
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            RequestStarted.TrySetResult();
+            await _released.Task.WaitAsync(cancellationToken);
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
+            };
+        }
     }
 }
