@@ -25,6 +25,10 @@ public static class IngestionEndpoints
         group.MapPost("/fetch", async (string url, string? provider, ISender sender, CancellationToken ct) =>
             Results.Ok(await sender.Send(new FetchByUrlQuery(url, provider ?? "opengraph"), ct)));
 
+        group.MapGet("/search", async (
+            string provider, string q, int? limit, ISender sender, CancellationToken ct) =>
+            Results.Ok(await sender.Send(new SearchProviderQuery(provider, q, limit ?? 20), ct)));
+
         var accounts = app.MapGroup("/external-accounts").WithTags("Ingestion").RequireAuthorization();
 
         accounts.MapGet("/", async (ISender sender, CancellationToken ct) =>
