@@ -100,15 +100,17 @@ public sealed class TwitchTokenProvider(
     private async Task<TokenResponse> FetchAsync(CancellationToken ct)
     {
         var settings = options.Value;
-        var requestUri =
-            $"oauth2/token?client_id={Uri.EscapeDataString(settings.ClientId)}" +
-            $"&client_secret={Uri.EscapeDataString(settings.ClientSecret)}" +
-            "&grant_type=client_credentials";
+        using var content = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("client_id", settings.ClientId),
+            new KeyValuePair<string, string>("client_secret", settings.ClientSecret),
+            new KeyValuePair<string, string>("grant_type", "client_credentials")
+        ]);
 
         try
         {
             using var client = httpClientFactory.CreateClient(HttpClientName);
-            var response = await client.PostAsync(requestUri, content: null, ct);
+            var response = await client.PostAsync("oauth2/token", content, ct);
 
             if (!response.IsSuccessStatusCode)
             {

@@ -293,6 +293,17 @@ public class IgdbProviderTests
     }
 
     [Fact]
+    public async Task Search_wraps_an_out_of_range_release_date_in_ProviderException()
+    {
+        var sut = CreateSut(StubHttpMessageHandler.Json(
+            "[{\"id\":72,\"name\":\"Portal 2\",\"first_release_date\":9223372036854775807}]"));
+
+        var act = () => sut.SearchAsync("portal", 20, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ProviderException>();
+    }
+
+    [Fact]
     public async Task Lookup_marks_a_schema_invalid_external_games_row_as_failed()
     {
         var sut = CreateSut(StubHttpMessageHandler.Json("[{\"game\":\"891\",\"uid\":\"440\"}]"));
@@ -346,6 +357,26 @@ public class IgdbProviderTests
                 request.RequestUri!.AbsolutePath.EndsWith("external_games", StringComparison.Ordinal)
                     ? "[{\"game\":891,\"uid\":\"440\"}]"
                     : "[{\"id\":891}]",
+                System.Text.Encoding.UTF8,
+                "application/json")
+        });
+        var sut = CreateSut(handler);
+
+        var result = await sut.FetchByExternalIdsAsync(["steam:440"], CancellationToken.None);
+
+        result.Found.Should().BeEmpty();
+        result.FailedIds.Should().BeEquivalentTo("steam:440");
+    }
+
+    [Fact]
+    public async Task Lookup_marks_an_out_of_range_release_date_as_failed()
+    {
+        var handler = new StubHttpMessageHandler(request => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                request.RequestUri!.AbsolutePath.EndsWith("external_games", StringComparison.Ordinal)
+                    ? "[{\"game\":891,\"uid\":\"440\"}]"
+                    : "[{\"id\":891,\"name\":\"Team Fortress 2\",\"first_release_date\":9223372036854775807}]",
                 System.Text.Encoding.UTF8,
                 "application/json")
         });

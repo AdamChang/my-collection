@@ -42,14 +42,24 @@ public class TwitchTokenProviderTests
     [Fact]
     public async Task Sends_the_client_credentials_grant()
     {
-        var handler = StubHttpMessageHandler.Json(Fixture());
+        string? contentType = null;
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            contentType = request.Content?.Headers.ContentType?.MediaType;
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(Fixture(), System.Text.Encoding.UTF8, "application/json")
+            };
+        });
 
         await CreateSut(handler).GetAsync(CancellationToken.None);
 
-        var query = handler.Requests.Single().Query;
-        query.Should().Contain("client_id=cid");
-        query.Should().Contain("client_secret=csecret");
-        query.Should().Contain("grant_type=client_credentials");
+        handler.Requests.Single().Query.Should().BeEmpty();
+        handler.LastRequestBody.Should().Contain("client_id=cid");
+        handler.LastRequestBody.Should().Contain("client_secret=csecret");
+        handler.LastRequestBody.Should().Contain("grant_type=client_credentials");
+        contentType.Should().Be("application/x-www-form-urlencoded");
     }
 
     [Fact]

@@ -255,7 +255,7 @@ public sealed class IgdbProvider(
         {
             return map();
         }
-        catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException or FormatException)
+        catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException or FormatException or ArgumentOutOfRangeException)
         {
             throw new ProviderException(ProviderKey, $"IGDB {endpoint} response had an invalid schema: {ex.Message}", ex);
         }
