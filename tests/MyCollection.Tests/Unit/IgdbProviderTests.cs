@@ -41,15 +41,29 @@ public class IgdbProviderTests
     }
 
     /// <summary>反查先打 external_games 取得 game id，再打 games 取詳情。</summary>
-    private static StubHttpMessageHandler LookupHandler() =>
-        new(request => new HttpResponseMessage(HttpStatusCode.OK)
+    private static StubHttpMessageHandler LookupHandler(params string[] expectedSteamUids) =>
+        new(request =>
         {
-            Content = new StringContent(
-                request.RequestUri!.AbsolutePath.EndsWith("external_games", StringComparison.Ordinal)
-                    ? Fixture("igdb-external-steam.json")
-                    : Fixture("igdb-games-steam.json"),
-                System.Text.Encoding.UTF8,
-                "application/json")
+            if (request.RequestUri!.AbsolutePath.EndsWith("external_games", StringComparison.Ordinal))
+            {
+                var body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+                var expectedUidList = string.Join(",", expectedSteamUids.Select(uid => $"\"{uid}\""));
+
+                request.Method.Should().Be(HttpMethod.Post);
+                request.Content.Headers.ContentType!.MediaType.Should().Be("text/plain");
+                body.Should().Contain("external_game_source = 1");
+                body.Should().Contain($"uid = ({expectedUidList})");
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    request.RequestUri.AbsolutePath.EndsWith("external_games", StringComparison.Ordinal)
+                        ? Fixture("igdb-external-steam.json")
+                        : Fixture("igdb-games-steam.json"),
+                    System.Text.Encoding.UTF8,
+                    "application/json")
+            };
         });
 
     [Fact]
@@ -94,8 +108,11 @@ public class IgdbProviderTests
     }
 
     [Theory]
-    [InlineData("wit\"cher; where id = 1", "witcher where id = 1")]
+    [InlineData("wit\"cher; where id = 1", "wit cher where id = 1")]
     [InlineData("witcher\n3", "witcher 3")]
+    [InlineData("foo\"bar", "foo bar")]
+    [InlineData("foo;bar", "foo bar")]
+    [InlineData("foo\"\n;\rbar", "foo bar")]
     public async Task Search_strips_apicalypse_control_characters_from_user_input(string input, string expected)
     {
         var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
@@ -119,7 +136,7 @@ public class IgdbProviderTests
     [Fact]
     public async Task Lookup_resolves_steam_appids_through_external_games()
     {
-        var sut = CreateSut(LookupHandler());
+        var sut = CreateSut(LookupHandler("440", "620"));
 
         var result = await sut.FetchByExternalIdsAsync(["steam:440", "steam:620"], CancellationToken.None);
 
@@ -133,7 +150,7 @@ public class IgdbProviderTests
     [Fact]
     public async Task Lookup_omits_ids_igdb_has_no_match_for_without_marking_them_failed()
     {
-        var sut = CreateSut(LookupHandler());
+        var sut = CreateSut(LookupHandler("440", "99999999"));
 
         var result = await sut.FetchByExternalIdsAsync(["steam:440", "steam:99999999"], CancellationToken.None);
 
@@ -144,12 +161,13 @@ public class IgdbProviderTests
     [Fact]
     public async Task Lookup_of_an_igdb_id_skips_the_external_games_round_trip()
     {
-        var handler = StubHttpMessageHandler.Json(Fixture("igdb-search-witcher.json"));
+        var handler = StubHttpMessageHandler.Json(Fixture("igdb-games-steam.json"));
         var sut = CreateSut(handler);
 
-        var result = await sut.FetchByExternalIdsAsync(["igdb:1942"], CancellationToken.None);
+        var result = await sut.FetchByExternalIdsAsync(["igdb:72"], CancellationToken.None);
 
-        result.Found.Should().ContainKey("igdb:1942");
+        result.Found.Should().ContainKey("igdb:72");
+        result.Found["igdb:72"].Name.Should().Be("Portal 2");
         handler.Requests.Should().ContainSingle(uri => uri.AbsolutePath.EndsWith("/games"));
     }
 
@@ -162,6 +180,23 @@ public class IgdbProviderTests
 
         result.Found.Should().BeEmpty();
         result.FailedIds.Should().BeEquivalentTo("psn:CUSA123");
+    }
+
+    [Fact]
+    public async Task Lookup_marks_malformed_numeric_ids_as_failed_without_polluting_a_valid_steam_request()
+    {
+        var handler = LookupHandler("440");
+        var sut = CreateSut(handler);
+
+        var result = await sut.FetchByExternalIdsAsync(
+            ["steam:", "steam:44a", "steam:0", "igdb:", "igdb:abc", "igdb:0", "steam:000440"],
+            CancellationToken.None);
+
+        result.Found.Keys.Should().BeEquivalentTo("steam:000440");
+        result.FailedIds.Should().BeEquivalentTo(
+            "steam:", "steam:44a", "steam:0", "igdb:", "igdb:abc", "igdb:0");
+        handler.RequestBodies[0].Should().Contain("uid = (\"440\")");
+        handler.RequestBodies[0].Should().NotContain("44a");
     }
 
     [Fact]
@@ -229,6 +264,50 @@ public class IgdbProviderTests
         var act = () => sut.SearchAsync("witcher 3", 20, CancellationToken.None);
 
         await act.Should().ThrowAsync<ProviderException>();
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("[{\"id\":72}]")]
+    [InlineData("[{\"id\":\"72\",\"name\":\"Portal 2\"}]")]
+    public async Task Search_wraps_schema_invalid_json_in_ProviderException(string payload)
+    {
+        var sut = CreateSut(StubHttpMessageHandler.Json(payload));
+
+        var act = () => sut.SearchAsync("portal", 20, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ProviderException>();
+    }
+
+    [Fact]
+    public async Task Lookup_marks_a_schema_invalid_external_games_row_as_failed()
+    {
+        var sut = CreateSut(StubHttpMessageHandler.Json("[{\"game\":\"891\",\"uid\":\"440\"}]"));
+
+        var result = await sut.FetchByExternalIdsAsync(["steam:440"], CancellationToken.None);
+
+        result.Found.Should().BeEmpty();
+        result.FailedIds.Should().BeEquivalentTo("steam:440");
+    }
+
+    [Fact]
+    public async Task Lookup_marks_a_schema_invalid_game_details_payload_as_failed()
+    {
+        var handler = new StubHttpMessageHandler(request => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                request.RequestUri!.AbsolutePath.EndsWith("external_games", StringComparison.Ordinal)
+                    ? "[{\"game\":891,\"uid\":\"440\"}]"
+                    : "[{\"id\":891}]",
+                System.Text.Encoding.UTF8,
+                "application/json")
+        });
+        var sut = CreateSut(handler);
+
+        var result = await sut.FetchByExternalIdsAsync(["steam:440"], CancellationToken.None);
+
+        result.Found.Should().BeEmpty();
+        result.FailedIds.Should().BeEquivalentTo("steam:440");
     }
 
     [Fact]

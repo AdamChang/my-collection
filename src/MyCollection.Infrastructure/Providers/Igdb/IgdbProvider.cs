@@ -49,7 +49,7 @@ public sealed class IgdbProvider(
 
         var games = await QueryAsync("games", body, ct);
 
-        return games.EnumerateArray().Select(IgdbMapper.ToExternalItem).ToArray();
+        return MapGames(games);
     }
 
     public async Task<ExternalLookupResult> FetchByExternalIdsAsync(
@@ -57,18 +57,21 @@ public sealed class IgdbProvider(
     {
         var found = new Dictionary<string, ExternalItem>(StringComparer.Ordinal);
         var failed = new List<string>();
-        var recognised = new List<string>();
+        var recognised = new List<LookupId>();
 
         foreach (var externalId in externalIds.Distinct(StringComparer.Ordinal))
         {
-            if (externalId.StartsWith(SteamPrefix, StringComparison.Ordinal)
-                || externalId.StartsWith(IgdbPrefix, StringComparison.Ordinal))
+            if (TryParseNumericId(externalId, SteamPrefix, out var steamId))
             {
-                recognised.Add(externalId);
+                recognised.Add(new LookupId(externalId, IsSteam: true, steamId));
+            }
+            else if (TryParseNumericId(externalId, IgdbPrefix, out var igdbId))
+            {
+                recognised.Add(new LookupId(externalId, IsSteam: false, igdbId));
             }
             else
             {
-                logger.LogWarning("Unsupported external id prefix: {ExternalId}", externalId);
+                logger.LogWarning("Unsupported or malformed external id: {ExternalId}", externalId);
                 failed.Add(externalId);
             }
         }
@@ -82,7 +85,7 @@ public sealed class IgdbProvider(
             catch (ProviderException ex)
             {
                 logger.LogWarning(ex, "IGDB lookup failed for a chunk of {Count} ids.", chunk.Length);
-                failed.AddRange(chunk);
+                failed.AddRange(chunk.Select(id => id.ExternalId));
             }
         }
 
@@ -90,19 +93,16 @@ public sealed class IgdbProvider(
     }
 
     private async Task ResolveChunkAsync(
-        string[] chunk, Dictionary<string, ExternalItem> found, CancellationToken ct)
+        LookupId[] chunk, Dictionary<string, ExternalItem> found, CancellationToken ct)
     {
         var byGameId = new Dictionary<long, List<string>>();
         var steamIds = chunk
-            .Where(id => id.StartsWith(SteamPrefix, StringComparison.Ordinal))
+            .Where(id => id.IsSteam)
             .ToArray();
 
-        foreach (var externalId in chunk.Where(id => id.StartsWith(IgdbPrefix, StringComparison.Ordinal)))
+        foreach (var externalId in chunk.Where(id => !id.IsSteam))
         {
-            if (long.TryParse(externalId[IgdbPrefix.Length..], CultureInfo.InvariantCulture, out var gameId))
-            {
-                Track(byGameId, gameId, externalId);
-            }
+            Track(byGameId, externalId.NumericId, externalId.ExternalId);
         }
 
         if (steamIds.Length > 0)
@@ -124,10 +124,8 @@ public sealed class IgdbProvider(
             $"{GameFields}\nwhere id = ({idList});\nlimit 500;",
             ct);
 
-        foreach (var game in games.EnumerateArray())
+        foreach (var item in MapGames(games))
         {
-            var item = IgdbMapper.ToExternalItem(game);
-
             if (!long.TryParse(item.ExternalId, CultureInfo.InvariantCulture, out var gameId)
                 || !byGameId.TryGetValue(gameId, out var externalIds))
             {
@@ -142,10 +140,12 @@ public sealed class IgdbProvider(
     }
 
     private async Task<IReadOnlyList<(long GameId, string ExternalId)>> ResolveSteamAsync(
-        string[] steamExternalIds, CancellationToken ct)
+        LookupId[] steamExternalIds, CancellationToken ct)
     {
         var uidToExternalId = steamExternalIds.ToDictionary(
-            id => id[SteamPrefix.Length..], id => id, StringComparer.Ordinal);
+            id => id.NumericId.ToString(CultureInfo.InvariantCulture),
+            id => id.ExternalId,
+            StringComparer.Ordinal);
         var uidList = string.Join(",", uidToExternalId.Keys.Select(uid => $"\"{uid}\""));
         var rows = await QueryAsync(
             "external_games",
@@ -153,20 +153,7 @@ public sealed class IgdbProvider(
             $"where external_game_source = {SteamExternalGameSource} & uid = ({uidList});\n" +
             "limit 500;",
             ct);
-        var resolved = new List<(long, string)>();
-
-        foreach (var row in rows.EnumerateArray())
-        {
-            if (row.TryGetProperty("uid", out var uid)
-                && uid.GetString() is { } uidValue
-                && uidToExternalId.TryGetValue(uidValue, out var externalId)
-                && row.TryGetProperty("game", out var game))
-            {
-                resolved.Add((game.GetInt64(), externalId));
-            }
-        }
-
-        return resolved;
+        return MapSteamRows(rows, uidToExternalId);
     }
 
     private static void Track(Dictionary<long, List<string>> byGameId, long gameId, string externalId)
@@ -177,6 +164,64 @@ public sealed class IgdbProvider(
         }
 
         list.Add(externalId);
+    }
+
+    private static bool TryParseNumericId(string externalId, string prefix, out long numericId)
+    {
+        numericId = default;
+
+        if (!externalId.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var suffix = externalId[prefix.Length..];
+
+        return suffix.Length > 0
+               && suffix.All(c => c is >= '0' and <= '9')
+               && long.TryParse(suffix, NumberStyles.None, CultureInfo.InvariantCulture, out numericId)
+               && numericId > 0;
+    }
+
+    private static IReadOnlyList<ExternalItem> MapGames(JsonElement games) =>
+        MapSchema("games", () => games.EnumerateArray().Select(IgdbMapper.ToExternalItem).ToArray());
+
+    private static IReadOnlyList<(long GameId, string ExternalId)> MapSteamRows(
+        JsonElement rows, IReadOnlyDictionary<string, string> uidToExternalId) =>
+        MapSchema("external_games", () =>
+        {
+            var resolved = new List<(long, string)>();
+
+            foreach (var row in rows.EnumerateArray())
+            {
+                var uid = row.GetProperty("uid").GetString()
+                    ?? throw new InvalidOperationException("IGDB external game uid was null.");
+                var gameId = row.GetProperty("game").GetInt64();
+
+                if (gameId <= 0)
+                {
+                    throw new InvalidOperationException("IGDB external game id was not positive.");
+                }
+
+                if (uidToExternalId.TryGetValue(uid, out var externalId))
+                {
+                    resolved.Add((gameId, externalId));
+                }
+            }
+
+            return (IReadOnlyList<(long GameId, string ExternalId)>)resolved;
+        });
+
+    private static T MapSchema<T>(string endpoint, Func<T> map)
+    {
+        try
+        {
+            return map();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException or FormatException)
+        {
+            throw new ProviderException(ProviderKey, $"IGDB {endpoint} response had an invalid schema: {ex.Message}", ex);
+        }
     }
 
     private async Task<JsonElement> QueryAsync(string endpoint, string body, CancellationToken ct)
@@ -237,10 +282,11 @@ public sealed class IgdbProvider(
     private static string Sanitize(string query)
     {
         var normalized = new string(query
-            .Select(c => c is '\n' or '\r' ? ' ' : c)
-            .Where(c => c is not ('"' or ';'))
+            .Select(c => c is '"' or ';' or '\n' or '\r' ? ' ' : c)
             .ToArray());
 
         return string.Join(' ', normalized.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
     }
+
+    private sealed record LookupId(string ExternalId, bool IsSteam, long NumericId);
 }

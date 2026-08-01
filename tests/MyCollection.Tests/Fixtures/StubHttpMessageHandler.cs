@@ -7,6 +7,8 @@ public sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponse
 {
     public List<Uri> Requests { get; } = [];
 
+    public List<string?> RequestBodies { get; } = [];
+
     /// <summary>最後一次請求的 body。IGDB 用 POST + APIcalypse 純文字查詢，斷言查詢內容需要它。</summary>
     public string? LastRequestBody { get; private set; }
 
@@ -35,6 +37,7 @@ public sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponse
         LastRequestBody = request.Content is null
             ? null
             : await request.Content.ReadAsStringAsync(cancellationToken);
+        RequestBodies.Add(LastRequestBody);
 
         return responder(request);
     }
