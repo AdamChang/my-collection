@@ -136,8 +136,20 @@ cd web && npm test -- --watch=false --browsers=ChromeHeadless # 35 個
 | `Storage` | `Provider`、`LocalRoot` | 第一版僅實作 `Local`；`IFileStorage` 介面預留了換成 GCS 的空間 |
 | `SecretProtection` | `Key` | Base64 的 32 bytes，加密外部帳號憑證 |
 | `Steam` | `BaseAddress`、`TimeoutSeconds` | |
+| `Igdb` | `ClientId`、`ClientSecret` | 選配，見下 |
 
 環境變數用雙底線對應階層：`Mongo__ConnectionString`、`Jwt__Key`。
+
+### IGDB 遊戲中繼資料（選配）
+
+設定 `IGDB_CLIENT_ID` 與 `IGDB_CLIENT_SECRET` 後，遊戲品類可以從 IGDB 搜尋建檔，
+也可以對 Steam 同步進來的品項批次補上開發商、發行商、發售日期、類型、平台與評分。
+
+走 Twitch 的 client credentials 流程（server-to-server），**不需要 HTTPS、不需要重新導向網址、
+不需要公開網域**。Twitch 註冊表單的 OAuth Redirect URL 欄位填 `http://localhost` 即可，
+該流程不會使用它。
+
+不設定就整組停用：provider 不註冊，前端不顯示相關入口。
 
 ---
 
@@ -157,6 +169,7 @@ cd web && npm test -- --watch=false --browsers=ChromeHeadless # 35 個
 | 分享 | `GET/POST /shares`、`DELETE /shares/{id}` | |
 | | `GET /public/{slug}` | 匿名 |
 | 匯入 | `GET /ingest/providers`、`POST /ingest/sync/steam`、`GET /ingest/jobs`、`POST /ingest/fetch` | |
+| | `GET /ingest/search`、`POST /ingest/enrich/{provider}` | 需設定 IGDB |
 | 外部帳號 | `GET/POST /external-accounts`、`DELETE /external-accounts/{provider}` | |
 | 健康檢查 | `GET /health` | 匿名 |
 
@@ -164,7 +177,7 @@ cd web && npm test -- --watch=false --browsers=ChromeHeadless # 35 個
 
 品項查詢支援依 schema 屬性篩選：`GET /items?attr.brand=GSC&attr.scale=1/8`。
 
-兩個 provider：`steam`（`POST /ingest/sync/steam`，需先在設定頁綁 API Key 與 SteamID）與 `opengraph`（`POST /ingest/fetch`，貼商品網址自動帶入名稱與描述，不支援批次同步）。分享頁的前端網址是 `/p/{slug}`。
+三個 provider：`steam`（`POST /ingest/sync/steam`，需先在設定頁綁 API Key 與 SteamID）、`opengraph`（`POST /ingest/fetch`，貼商品網址自動帶入名稱與描述，不支援批次同步），以及選配的 `igdb`（`GET /ingest/search` 關鍵字搜尋、`POST /ingest/enrich/igdb` 補完既有品項，不支援批次同步）。`GET /ingest/providers` 只列出實際註冊的 provider，前端據此決定顯示哪些入口。分享頁的前端網址是 `/p/{slug}`。
 
 錯誤一律回 RFC 9457 ProblemDetails，由單一 `IExceptionHandler` 產生，不在各處 try-catch。
 
