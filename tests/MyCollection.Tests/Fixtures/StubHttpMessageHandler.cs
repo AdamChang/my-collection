@@ -7,6 +7,11 @@ public sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponse
 {
     public List<Uri> Requests { get; } = [];
 
+    /// <summary>最後一次請求的 body。IGDB 用 POST + APIcalypse 純文字查詢，斷言查詢內容需要它。</summary>
+    public string? LastRequestBody { get; private set; }
+
+    public System.Net.Http.Headers.HttpRequestHeaders? LastRequestHeaders { get; private set; }
+
     public static StubHttpMessageHandler Json(string body, HttpStatusCode status = HttpStatusCode.OK) =>
         new(_ => new HttpResponseMessage(status)
         {
@@ -22,10 +27,16 @@ public sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponse
     public static StubHttpMessageHandler Status(HttpStatusCode status) =>
         new(_ => new HttpResponseMessage(status));
 
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    protected override async Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request, CancellationToken cancellationToken)
     {
         Requests.Add(request.RequestUri!);
-        return Task.FromResult(responder(request));
+        LastRequestHeaders = request.Headers;
+        LastRequestBody = request.Content is null
+            ? null
+            : await request.Content.ReadAsStringAsync(cancellationToken);
+
+        return responder(request);
     }
 
     public HttpClient CreateClient(string baseAddress) =>

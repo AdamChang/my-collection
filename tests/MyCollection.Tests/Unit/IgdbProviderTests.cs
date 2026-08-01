@@ -1,0 +1,245 @@
+using System.Net;
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
+using Moq;
+using MyCollection.Application.Ingestion;
+using MyCollection.Domain.Exceptions;
+using MyCollection.Infrastructure.Providers.Igdb;
+using MyCollection.Tests.Fixtures;
+
+namespace MyCollection.Tests.Unit;
+
+public class IgdbProviderTests
+{
+    private readonly Mock<ITwitchTokenProvider> _token = new();
+
+    public IgdbProviderTests() =>
+        _token.Setup(t => t.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync("token-1");
+
+    private static string Fixture(string name) =>
+        File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", name));
+
+    private static IgdbOptions Options() => new()
+    {
+        ClientId = "cid",
+        ClientSecret = "csecret",
+        MinRequestIntervalMs = 0,
+        LookupBatchSize = 10
+    };
+
+    private IgdbProvider CreateSut(StubHttpMessageHandler handler)
+    {
+        var options = Microsoft.Extensions.Options.Options.Create(Options());
+
+        return new IgdbProvider(
+            handler.CreateClient("https://api.igdb.com/v4/"),
+            _token.Object,
+            new IgdbRateLimiter(options, new FakeTimeProvider()),
+            options,
+            NullLogger<IgdbProvider>.Instance);
+    }
+
+    /// <summary>反查先打 external_games 取得 game id，再打 games 取詳情。</summary>
+    private static StubHttpMessageHandler LookupHandler() =>
+        new(request => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                request.RequestUri!.AbsolutePath.EndsWith("external_games", StringComparison.Ordinal)
+                    ? Fixture("igdb-external-steam.json")
+                    : Fixture("igdb-games-steam.json"),
+                System.Text.Encoding.UTF8,
+                "application/json")
+        });
+
+    [Fact]
+    public void Declares_search_capability_only()
+    {
+        var sut = CreateSut(StubHttpMessageHandler.Json("[]"));
+
+        sut.Key.Should().Be("igdb");
+        ProviderCapabilities.Of(sut).Should().Be(ProviderCapability.Search);
+        sut.MarkerAttributeKey.Should().Be("igdbId");
+        sut.RequiredFields.Select(f => f.Key).Should().Contain("igdbId");
+    }
+
+    [Fact]
+    public async Task Search_maps_every_result()
+    {
+        var sut = CreateSut(StubHttpMessageHandler.Json(Fixture("igdb-search-witcher.json")));
+
+        var items = await sut.SearchAsync("witcher 3", 20, CancellationToken.None);
+
+        items.Should().HaveCount(2);
+        items[0].ExternalId.Should().Be("1942");
+        items[0].Name.Should().Be("The Witcher 3: Wild Hunt");
+    }
+
+    [Fact]
+    public async Task Search_sends_the_credentials_as_headers_and_the_query_as_the_body()
+    {
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("[]", System.Text.Encoding.UTF8, "application/json")
+        });
+        var sut = CreateSut(handler);
+
+        await sut.SearchAsync("witcher 3", 5, CancellationToken.None);
+
+        handler.Requests.Single().AbsolutePath.Should().EndWith("/games");
+        handler.LastRequestBody.Should().Contain("search \"witcher 3\";");
+        handler.LastRequestBody.Should().Contain("limit 5;");
+        handler.LastRequestHeaders!.GetValues("Client-ID").Should().ContainSingle("cid");
+        handler.LastRequestHeaders.GetValues("Authorization").Should().ContainSingle("Bearer token-1");
+    }
+
+    [Theory]
+    [InlineData("wit\"cher; where id = 1", "witcher where id = 1")]
+    [InlineData("witcher\n3", "witcher 3")]
+    public async Task Search_strips_apicalypse_control_characters_from_user_input(string input, string expected)
+    {
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("[]", System.Text.Encoding.UTF8, "application/json")
+        });
+
+        await CreateSut(handler).SearchAsync(input, 5, CancellationToken.None);
+
+        handler.LastRequestBody.Should().Contain($"search \"{expected}\";");
+    }
+
+    [Fact]
+    public async Task Search_returns_empty_when_igdb_has_no_match()
+    {
+        var sut = CreateSut(StubHttpMessageHandler.Json("[]"));
+
+        (await sut.SearchAsync("zzzz", 20, CancellationToken.None)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Lookup_resolves_steam_appids_through_external_games()
+    {
+        var sut = CreateSut(LookupHandler());
+
+        var result = await sut.FetchByExternalIdsAsync(["steam:440", "steam:620"], CancellationToken.None);
+
+        result.Found["steam:440"].ExternalId.Should().Be("891");
+        result.Found["steam:440"].Name.Should().Be("Team Fortress 2");
+        result.Found["steam:620"].ExternalId.Should().Be("72");
+        result.Found["steam:620"].Name.Should().Be("Portal 2");
+        result.FailedIds.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Lookup_omits_ids_igdb_has_no_match_for_without_marking_them_failed()
+    {
+        var sut = CreateSut(LookupHandler());
+
+        var result = await sut.FetchByExternalIdsAsync(["steam:440", "steam:99999999"], CancellationToken.None);
+
+        result.Found.Keys.Should().BeEquivalentTo("steam:440");
+        result.FailedIds.Should().BeEmpty("查無對應不是失敗");
+    }
+
+    [Fact]
+    public async Task Lookup_of_an_igdb_id_skips_the_external_games_round_trip()
+    {
+        var handler = StubHttpMessageHandler.Json(Fixture("igdb-search-witcher.json"));
+        var sut = CreateSut(handler);
+
+        var result = await sut.FetchByExternalIdsAsync(["igdb:1942"], CancellationToken.None);
+
+        result.Found.Should().ContainKey("igdb:1942");
+        handler.Requests.Should().ContainSingle(uri => uri.AbsolutePath.EndsWith("/games"));
+    }
+
+    [Fact]
+    public async Task Lookup_marks_an_unknown_prefix_as_failed()
+    {
+        var sut = CreateSut(LookupHandler());
+
+        var result = await sut.FetchByExternalIdsAsync(["psn:CUSA123"], CancellationToken.None);
+
+        result.Found.Should().BeEmpty();
+        result.FailedIds.Should().BeEquivalentTo("psn:CUSA123");
+    }
+
+    [Fact]
+    public async Task Lookup_records_request_failures_as_failed_ids_rather_than_throwing()
+    {
+        var sut = CreateSut(StubHttpMessageHandler.Status(HttpStatusCode.InternalServerError));
+
+        var result = await sut.FetchByExternalIdsAsync(["steam:440", "steam:620"], CancellationToken.None);
+
+        result.Found.Should().BeEmpty();
+        result.FailedIds.Should().BeEquivalentTo("steam:440", "steam:620");
+    }
+
+    [Fact]
+    public async Task Retries_once_after_a_401_with_a_refreshed_token()
+    {
+        var responses = new Queue<HttpStatusCode>([HttpStatusCode.Unauthorized, HttpStatusCode.OK]);
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            var status = responses.Dequeue();
+            return new HttpResponseMessage(status)
+            {
+                Content = new StringContent(
+                    status is HttpStatusCode.OK ? Fixture("igdb-search-witcher.json") : "",
+                    System.Text.Encoding.UTF8,
+                    "application/json")
+            };
+        });
+
+        var items = await CreateSut(handler).SearchAsync("witcher 3", 20, CancellationToken.None);
+
+        items.Should().HaveCount(2);
+        handler.Requests.Should().HaveCount(2);
+        _token.Verify(t => t.Invalidate(), Times.Once);
+    }
+
+    [Fact]
+    public async Task Gives_up_after_a_second_401()
+    {
+        var sut = CreateSut(StubHttpMessageHandler.Status(HttpStatusCode.Unauthorized));
+
+        var act = () => sut.SearchAsync("witcher 3", 20, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<ProviderException>()).Which.ProviderKey.Should().Be("igdb");
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    public async Task Search_wraps_http_failures_in_ProviderException(HttpStatusCode status)
+    {
+        var sut = CreateSut(StubHttpMessageHandler.Status(status));
+
+        var act = () => sut.SearchAsync("witcher 3", 20, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<ProviderException>()).Which.ProviderKey.Should().Be("igdb");
+    }
+
+    [Fact]
+    public async Task Search_wraps_malformed_json_in_ProviderException()
+    {
+        var sut = CreateSut(StubHttpMessageHandler.Json("not json"));
+
+        var act = () => sut.SearchAsync("witcher 3", 20, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ProviderException>();
+    }
+
+    [Fact]
+    public async Task Search_propagates_caller_cancellation()
+    {
+        var sut = CreateSut(StubHttpMessageHandler.Json("[]"));
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        var act = () => sut.SearchAsync("witcher 3", 20, cancellation.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+}

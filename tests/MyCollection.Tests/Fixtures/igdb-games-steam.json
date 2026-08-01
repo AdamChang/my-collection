@@ -1,0 +1,52 @@
+[
+  {
+    "id": 72,
+    "cover": { "id": 82660, "image_id": "co1rs4" },
+    "first_release_date": 1303084800,
+    "genres": [
+      { "id": 8, "name": "Platform" },
+      { "id": 9, "name": "Puzzle" },
+      { "id": 31, "name": "Adventure" }
+    ],
+    "involved_companies": [
+      { "id": 265481, "company": { "id": 56, "name": "Valve" }, "developer": true, "publisher": true },
+      { "id": 265482, "company": { "id": 1, "name": "Electronic Arts" }, "developer": false, "publisher": true }
+    ],
+    "name": "Portal 2",
+    "platforms": [
+      { "id": 9, "abbreviation": "PS3" },
+      { "id": 3, "abbreviation": "Linux" },
+      { "id": 6, "abbreviation": "PC" },
+      { "id": 14, "abbreviation": "Mac" },
+      { "id": 12, "abbreviation": "X360" },
+      { "id": 130, "abbreviation": "Switch" }
+    ],
+    "summary": "Sequel to the acclaimed Portal (2007), Portal 2 pits the protagonist of the original game, Chell, and her new robot friend, Wheatley, against more puzzles conceived by GLaDOS, an A.I. with the sole purpose of testing the Portal Gun's mechanics and taking revenge on Chell for the events of Portal. As a result of several interactions and revelations, Chell once again pushes to escape Aperture Science Labs.",
+    "total_rating": 91.8688317904498,
+    "url": "https://www.igdb.com/games/portal-2"
+  },
+  {
+    "id": 891,
+    "cover": { "id": 316209, "image_id": "co6rzl" },
+    "first_release_date": 1191974400,
+    "genres": [
+      { "id": 5, "name": "Shooter" }
+    ],
+    "involved_companies": [
+      { "id": 279090, "company": { "id": 56, "name": "Valve" }, "developer": true, "publisher": false },
+      { "id": 279091, "company": { "id": 56, "name": "Valve" }, "developer": false, "publisher": true },
+      { "id": 265479, "company": { "id": 1, "name": "Electronic Arts" }, "developer": false, "publisher": true }
+    ],
+    "name": "Team Fortress 2",
+    "platforms": [
+      { "id": 9, "abbreviation": "PS3" },
+      { "id": 3, "abbreviation": "Linux" },
+      { "id": 6, "abbreviation": "PC" },
+      { "id": 14, "abbreviation": "Mac" },
+      { "id": 12, "abbreviation": "X360" }
+    ],
+    "summary": "One of the most popular online action games of all time, Team Fortress 2 delivers constant free updates—new game modes, maps, equipment and, most importantly, hats. Nine distinct classes provide a broad range of tactical abilities and personalities, and lend themselves to a variety of player skills.",
+    "total_rating": 81.40420040513405,
+    "url": "https://www.igdb.com/games/team-fortress-2"
+  }
+]
