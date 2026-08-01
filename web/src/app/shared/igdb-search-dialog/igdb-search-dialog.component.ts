@@ -115,9 +115,11 @@ export class IgdbSearchDialogComponent {
 
   /**
    * 少了這個，被放棄的請求回來時會把結果灌進下一輪，而使用者看到的搜尋框是空的——
-   * 他會以為那些結果是自己搜的。close() 與 onClose() 都會呼叫到，重複呼叫本身是安全的
-   * （重複呼叫安全的理由是 close 事件必定早於下一次使用者互動送達，不是「必無訂閱者」——
-   * 同一輪內 close() 之後又呼叫 search() 的話，遲到的 close 事件一樣會把新請求砍掉）。
+   * 他會以為那些結果是自己搜的。
+   *
+   * close() 與 onClose() 都會走到這裡，重複呼叫安全的理由是「close 事件必定早於下一次
+   * 使用者互動送達」，不是「必無訂閱者」——同一輪內 close() 之後立刻 search()，
+   * 遲到的 close 事件一樣會把新請求砍掉。那條路徑經 UI 不可達，但理由要寫對。
    */
   private reset(): void {
     this.closed.next();
