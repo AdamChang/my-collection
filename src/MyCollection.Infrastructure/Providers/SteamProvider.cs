@@ -12,13 +12,11 @@ namespace MyCollection.Infrastructure.Providers;
 public sealed class SteamProvider(
     HttpClient httpClient,
     ISecretProtector secretProtector,
-    ILogger<SteamProvider> logger) : IMetadataProvider
+    ILogger<SteamProvider> logger) : IBulkSyncProvider
 {
-    public const string ProviderKey = "steam";
+    public const string ProviderKey = ProviderKeys.Steam;
 
     public string Key => ProviderKey;
-
-    public ProviderCapability Capabilities => ProviderCapability.BulkSync;
 
     public async Task<IReadOnlyList<ExternalItem>> SyncAsync(ExternalAccount account, CancellationToken ct)
     {
@@ -56,10 +54,6 @@ public sealed class SteamProvider(
 
         return games.Select(ToExternalItem).ToArray();
     }
-
-    /// <summary>Steam 不提供由商店 URL 反查的公開 API。</summary>
-    public Task<ExternalItem?> FetchByUrlAsync(Uri url, CancellationToken ct) =>
-        Task.FromResult<ExternalItem?>(null);
 
     private static ExternalItem ToExternalItem(SteamGame game)
     {

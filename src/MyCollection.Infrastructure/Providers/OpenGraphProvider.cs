@@ -1,6 +1,5 @@
 using AngleSharp.Html.Parser;
 using MyCollection.Application.Ingestion;
-using MyCollection.Domain.Entities;
 using MyCollection.Domain.Exceptions;
 
 namespace MyCollection.Infrastructure.Providers;
@@ -8,18 +7,13 @@ namespace MyCollection.Infrastructure.Providers;
 /// <summary>
 /// 抓任意商品頁的 og:* 標籤。涵蓋多數手動建檔的填表痛苦，且不依賴任何官方 API。
 /// </summary>
-public sealed class OpenGraphProvider(HttpClient httpClient) : IMetadataProvider
+public sealed class OpenGraphProvider(HttpClient httpClient) : IUrlLookupProvider
 {
-    public const string ProviderKey = "opengraph";
+    public const string ProviderKey = ProviderKeys.OpenGraph;
 
     private static readonly HtmlParser Parser = new();
 
     public string Key => ProviderKey;
-
-    public ProviderCapability Capabilities => ProviderCapability.UrlLookup;
-
-    public Task<IReadOnlyList<ExternalItem>> SyncAsync(ExternalAccount account, CancellationToken ct) =>
-        throw new ProviderException(ProviderKey, "OpenGraph does not support bulk sync.");
 
     public async Task<ExternalItem?> FetchByUrlAsync(Uri url, CancellationToken ct)
     {

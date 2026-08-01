@@ -44,7 +44,7 @@ public class SteamProviderTests
         var sut = CreateSut(StubHttpMessageHandler.Json("{}"));
 
         sut.Key.Should().Be("steam");
-        sut.Capabilities.Should().Be(ProviderCapability.BulkSync);
+        ProviderCapabilities.Of(sut).Should().Be(ProviderCapability.BulkSync);
     }
 
     [Fact]
@@ -118,14 +118,5 @@ public class SteamProviderTests
         var act = () => sut.SyncAsync(Account(), CancellationToken.None);
 
         await act.Should().ThrowAsync<ProviderException>();
-    }
-
-    [Fact]
-    public async Task FetchByUrl_is_not_supported()
-    {
-        var sut = CreateSut(StubHttpMessageHandler.Json("{}"));
-
-        (await sut.FetchByUrlAsync(new Uri("https://store.steampowered.com/app/440"), CancellationToken.None))
-            .Should().BeNull();
     }
 }

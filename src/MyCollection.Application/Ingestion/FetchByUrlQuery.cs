@@ -37,7 +37,7 @@ public sealed class FetchByUrlQueryHandler(ProviderRegistry registry)
 {
     public async Task<FetchedMetadataDto> Handle(FetchByUrlQuery request, CancellationToken cancellationToken)
     {
-        var provider = registry.Require(request.Provider, ProviderCapability.UrlLookup);
+        var provider = registry.Require<IUrlLookupProvider>(request.Provider);
 
         var item = await provider.FetchByUrlAsync(new Uri(request.Url), cancellationToken)
                    ?? throw new NotFoundException("Metadata", request.Url);

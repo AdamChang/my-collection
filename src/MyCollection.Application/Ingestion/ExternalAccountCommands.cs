@@ -34,7 +34,7 @@ public sealed class LinkExternalAccountCommandHandler(
 {
     public async Task<ExternalAccountDto> Handle(LinkExternalAccountCommand request, CancellationToken cancellationToken)
     {
-        var provider = registry.Require(request.Provider, ProviderCapability.BulkSync);
+        var provider = registry.Require<IBulkSyncProvider>(request.Provider);
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
         var account = new ExternalAccount

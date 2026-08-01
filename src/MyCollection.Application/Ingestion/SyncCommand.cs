@@ -50,7 +50,7 @@ public sealed class SyncCommandHandler(
 
     public async Task<SyncJobDto> Handle(SyncCommand request, CancellationToken cancellationToken)
     {
-        var provider = registry.Require(request.Provider, ProviderCapability.BulkSync);
+        var provider = registry.Require<IBulkSyncProvider>(request.Provider);
 
         var account = await accounts.GetAsync(provider.Key, cancellationToken)
                       ?? throw new NotFoundException("ExternalAccount", provider.Key);

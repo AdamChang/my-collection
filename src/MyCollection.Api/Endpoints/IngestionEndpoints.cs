@@ -13,7 +13,7 @@ public static class IngestionEndpoints
             Results.Ok(registry.All.Select(p => new
             {
                 key = p.Key,
-                capabilities = p.Capabilities.ToString()
+                capabilities = ProviderCapabilities.Of(p).ToString()
             })));
 
         group.MapPost("/sync/{provider}", async (string provider, ISender sender, CancellationToken ct) =>

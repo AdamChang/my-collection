@@ -23,15 +23,16 @@ public sealed class ProviderRegistry(IEnumerable<IMetadataProvider> providers)
         return provider;
     }
 
-    public IMetadataProvider Require(string key, ProviderCapability capability)
+    /// <summary>
+    /// 解析並要求特定能力介面。回傳強型別，呼叫端不需再轉型，
+    /// 也不可能出現「旗標檢查過了但方法不存在」。
+    /// </summary>
+    public T Require<T>(string key) where T : class, IMetadataProvider
     {
         var provider = Require(key);
 
-        if (!provider.Capabilities.HasFlag(capability))
-        {
-            throw new ProviderException(provider.Key, $"Provider '{provider.Key}' does not support {capability}.");
-        }
-
-        return provider;
+        return provider as T
+               ?? throw new ProviderException(
+                   provider.Key, $"Provider '{provider.Key}' does not support {typeof(T).Name}.");
     }
 }

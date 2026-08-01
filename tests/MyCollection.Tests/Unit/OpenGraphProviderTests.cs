@@ -1,8 +1,6 @@
 using System.Net;
 using FluentAssertions;
-using MongoDB.Bson;
 using MyCollection.Application.Ingestion;
-using MyCollection.Domain.Entities;
 using MyCollection.Domain.Exceptions;
 using MyCollection.Infrastructure.Providers;
 using MyCollection.Tests.Fixtures;
@@ -21,7 +19,7 @@ public class OpenGraphProviderTests
         var sut = CreateSut(StubHttpMessageHandler.Html("<html></html>"));
 
         sut.Key.Should().Be("opengraph");
-        sut.Capabilities.Should().Be(ProviderCapability.UrlLookup);
+        ProviderCapabilities.Of(sut).Should().Be(ProviderCapability.UrlLookup);
     }
 
     [Fact]
@@ -92,20 +90,5 @@ public class OpenGraphProviderTests
         var act = () => sut.FetchByUrlAsync(ProductUrl, CancellationToken.None);
 
         (await act.Should().ThrowAsync<ProviderException>()).Which.ProviderKey.Should().Be("opengraph");
-    }
-
-    [Fact]
-    public async Task Sync_is_not_supported()
-    {
-        var sut = CreateSut(StubHttpMessageHandler.Html("<html></html>"));
-        var account = new ExternalAccount
-        {
-            Id = ObjectId.GenerateNewId(), OwnerId = ObjectId.GenerateNewId(),
-            Provider = "opengraph", ExternalUserId = "x", ProtectedApiKey = "x"
-        };
-
-        var act = () => sut.SyncAsync(account, CancellationToken.None);
-
-        await act.Should().ThrowAsync<ProviderException>();
     }
 }

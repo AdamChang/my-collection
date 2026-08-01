@@ -7,12 +7,11 @@ namespace MyCollection.Tests.Unit;
 
 public class FetchByUrlQueryTests
 {
-    private readonly Mock<IMetadataProvider> _opengraph = new();
+    private readonly Mock<IUrlLookupProvider> _opengraph = new();
 
     public FetchByUrlQueryTests()
     {
         _opengraph.SetupGet(p => p.Key).Returns("opengraph");
-        _opengraph.SetupGet(p => p.Capabilities).Returns(ProviderCapability.UrlLookup);
     }
 
     private FetchByUrlQueryHandler CreateSut() => new(new ProviderRegistry([_opengraph.Object]));

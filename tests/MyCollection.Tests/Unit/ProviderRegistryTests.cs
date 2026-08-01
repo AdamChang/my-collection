@@ -7,19 +7,29 @@ namespace MyCollection.Tests.Unit;
 
 public class ProviderRegistryTests
 {
-    private static IMetadataProvider Provider(string key, ProviderCapability capabilities)
+    private static IMetadataProvider BulkSync(string key)
     {
-        var mock = new Mock<IMetadataProvider>();
+        var mock = new Mock<IBulkSyncProvider>();
         mock.SetupGet(p => p.Key).Returns(key);
-        mock.SetupGet(p => p.Capabilities).Returns(capabilities);
         return mock.Object;
     }
 
-    private static ProviderRegistry CreateSut() => new(
-    [
-        Provider("steam", ProviderCapability.BulkSync),
-        Provider("opengraph", ProviderCapability.UrlLookup)
-    ]);
+    private static IMetadataProvider UrlLookup(string key)
+    {
+        var mock = new Mock<IUrlLookupProvider>();
+        mock.SetupGet(p => p.Key).Returns(key);
+        return mock.Object;
+    }
+
+    private static IMetadataProvider Search(string key)
+    {
+        var mock = new Mock<ISearchProvider>();
+        mock.SetupGet(p => p.Key).Returns(key);
+        return mock.Object;
+    }
+
+    private static ProviderRegistry CreateSut() =>
+        new([BulkSync("steam"), UrlLookup("opengraph"), Search("igdb")]);
 
     [Fact]
     public void Resolves_provider_by_key_case_insensitively()
@@ -36,25 +46,52 @@ public class ProviderRegistryTests
     }
 
     [Fact]
-    public void RequireCapability_throws_when_provider_lacks_it()
+    public void Generic_Require_returns_the_provider_when_the_capability_interface_matches()
     {
-        var act = () => CreateSut().Require("opengraph", ProviderCapability.BulkSync);
+        CreateSut().Require<ISearchProvider>("igdb").Key.Should().Be("igdb");
+    }
+
+    [Fact]
+    public void Generic_Require_throws_ProviderException_when_the_interface_does_not_match()
+    {
+        var act = () => CreateSut().Require<IBulkSyncProvider>("opengraph");
 
         act.Should().Throw<ProviderException>()
             .Which.ProviderKey.Should().Be("opengraph");
     }
 
     [Fact]
-    public void RequireCapability_passes_when_supported()
+    public void Generic_Require_still_throws_NotFoundException_for_an_unknown_key()
     {
-        CreateSut().Require("opengraph", ProviderCapability.UrlLookup).Key.Should().Be("opengraph");
+        var act = () => CreateSut().Require<ISearchProvider>("psn");
+
+        act.Should().Throw<NotFoundException>();
     }
 
     [Fact]
-    public void Lists_all_registered_providers_with_capabilities()
+    public void Lists_all_registered_providers()
     {
-        var all = CreateSut().All;
+        CreateSut().All.Select(p => p.Key).Should().BeEquivalentTo("steam", "opengraph", "igdb");
+    }
 
-        all.Select(p => p.Key).Should().BeEquivalentTo("steam", "opengraph");
+    [Theory]
+    [InlineData("steam", ProviderCapability.BulkSync)]
+    [InlineData("opengraph", ProviderCapability.UrlLookup)]
+    [InlineData("igdb", ProviderCapability.Search)]
+    public void Derives_capabilities_from_the_implemented_interfaces(string key, ProviderCapability expected)
+    {
+        ProviderCapabilities.Of(CreateSut().Require(key)).Should().Be(expected);
+    }
+
+    [Fact]
+    public void Derives_combined_capabilities_when_one_provider_implements_two_interfaces()
+    {
+        var mock = new Mock<IMetadataProvider>();
+        mock.SetupGet(p => p.Key).Returns("hybrid");
+        mock.As<IBulkSyncProvider>();
+        mock.As<IUrlLookupProvider>();
+
+        ProviderCapabilities.Of(mock.Object).Should()
+            .Be(ProviderCapability.BulkSync | ProviderCapability.UrlLookup);
     }
 }

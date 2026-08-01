@@ -20,9 +20,8 @@ public class ExternalAccountCommandTests
     {
         _protector.Setup(p => p.Protect("real-key")).Returns("protected-key");
 
-        var steam = new Mock<IMetadataProvider>();
+        var steam = new Mock<IBulkSyncProvider>();
         steam.SetupGet(p => p.Key).Returns("steam");
-        steam.SetupGet(p => p.Capabilities).Returns(ProviderCapability.BulkSync);
         _registry = new ProviderRegistry([steam.Object]);
     }
 

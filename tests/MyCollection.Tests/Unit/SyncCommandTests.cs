@@ -15,7 +15,7 @@ public class SyncCommandTests
     private readonly Mock<ISyncJobRepository> _jobs = new();
     private readonly Mock<IItemSyncWriter> _writer = new();
     private readonly Mock<ICategoryRepository> _categories = new();
-    private readonly Mock<IMetadataProvider> _steam = new();
+    private readonly Mock<IBulkSyncProvider> _steam = new();
     private readonly Mock<Application.Common.IUserContext> _userContext = new();
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 7, 25, 3, 0, 0, TimeSpan.Zero));
 
@@ -29,7 +29,6 @@ public class SyncCommandTests
         _userContext.SetupGet(c => c.UserId).Returns(Owner);
 
         _steam.SetupGet(p => p.Key).Returns("steam");
-        _steam.SetupGet(p => p.Capabilities).Returns(ProviderCapability.BulkSync);
         _steam.Setup(p => p.SyncAsync(It.IsAny<ExternalAccount>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([new ExternalItem("440", "TF2", null, null, new Dictionary<string, object?>())]);
 
@@ -232,7 +231,6 @@ public class SyncCommandTests
     {
         var opengraph = new Mock<IMetadataProvider>();
         opengraph.SetupGet(p => p.Key).Returns("opengraph");
-        opengraph.SetupGet(p => p.Capabilities).Returns(ProviderCapability.UrlLookup);
 
         var sut = new SyncCommandHandler(
             new ProviderRegistry([opengraph.Object]),
