@@ -81,7 +81,12 @@ public sealed class SystemCategorySeederTests(MongoFixture fixture) : IAsyncLife
             Field("releaseDate", "發售日期", FieldType.Date),
             Field("productCode", "產品編號", FieldType.Text, searchable: true),
             Field("barcode", "條碼", FieldType.Text, searchable: true),
-            Field("condition", "保存狀況", FieldType.Select, ["全新", "近全新", "良好", "普通", "需修復"], true)
+            Field("condition", "保存狀況", FieldType.Select, ["全新", "近全新", "良好", "普通", "需修復"], true),
+            Field("igdbId", "IGDB ID", FieldType.Number),
+            Field("genres", "類型", FieldType.Text, searchable: true),
+            Field("platforms", "發行平台", FieldType.Text, searchable: true),
+            Field("igdbRating", "IGDB 評分", FieldType.Number),
+            Field("coverUrl", "IGDB 封面網址", FieldType.Url)
         ]);
         AssertCategory(actual[1], "000000000000000000000002", "數位遊戲", "gamepad-2", CategoryKind.Digital,
         [
@@ -92,7 +97,12 @@ public sealed class SystemCategorySeederTests(MongoFixture fixture) : IAsyncLife
             Field("productCode", "產品編號", FieldType.Text, searchable: true),
             Field("playtimeForever", "遊玩時數（分鐘）", FieldType.Number, showOnCard: true),
             Field("headerUrl", "封面圖網址", FieldType.Url),
-            Field("iconUrl", "圖示網址", FieldType.Url)
+            Field("iconUrl", "圖示網址", FieldType.Url),
+            Field("igdbId", "IGDB ID", FieldType.Number),
+            Field("genres", "類型", FieldType.Text, searchable: true),
+            Field("platforms", "發行平台", FieldType.Text, searchable: true),
+            Field("igdbRating", "IGDB 評分", FieldType.Number),
+            Field("coverUrl", "IGDB 封面網址", FieldType.Url)
         ]);
         AssertCategory(actual[2], "000000000000000000000003", "音樂專輯", "disc-3", CategoryKind.Physical,
         [

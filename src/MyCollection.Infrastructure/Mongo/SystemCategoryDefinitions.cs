@@ -1,5 +1,6 @@
 using MongoDB.Bson;
 using MyCollection.Domain.Entities;
+using MyCollection.Infrastructure.Providers.Igdb;
 
 namespace MyCollection.Infrastructure.Mongo;
 
@@ -23,7 +24,14 @@ public static class SystemCategoryDefinitions
             Date("releaseDate", "發售日期"),
             Text("productCode", "產品編號", searchable: true),
             Text("barcode", "條碼", searchable: true),
-            Select("condition", "保存狀況", ["全新", "近全新", "良好", "普通", "需修復"], true)
+            Select("condition", "保存狀況", ["全新", "近全新", "良好", "普通", "需修復"], true),
+            // 以下為 IGDB 補完寫入的欄位。developer / publisher / releaseDate 上方已宣告。
+            // 定義來源是 IgdbFields，這裡只列出上方尚未出現的 key。
+            Number(IgdbFields.MarkerKey, "IGDB ID"),
+            Text("genres", "類型", searchable: true),
+            Text("platforms", "發行平台", searchable: true),
+            Number("igdbRating", "IGDB 評分"),
+            Url("coverUrl", "IGDB 封面網址")
         ]),
         Category(DigitalGameId, "數位遊戲", "gamepad-2", CategoryKind.Digital, now,
         [
@@ -34,7 +42,13 @@ public static class SystemCategoryDefinitions
             Text("productCode", "產品編號", searchable: true),
             Number("playtimeForever", "遊玩時數（分鐘）", showOnCard: true),
             Url("headerUrl", "封面圖網址"),
-            Url("iconUrl", "圖示網址")
+            Url("iconUrl", "圖示網址"),
+            // 同上：IGDB 補完欄位
+            Number(IgdbFields.MarkerKey, "IGDB ID"),
+            Text("genres", "類型", searchable: true),
+            Text("platforms", "發行平台", searchable: true),
+            Number("igdbRating", "IGDB 評分"),
+            Url("coverUrl", "IGDB 封面網址")
         ]),
         Category(MusicAlbumId, "音樂專輯", "disc-3", CategoryKind.Physical, now,
         [
