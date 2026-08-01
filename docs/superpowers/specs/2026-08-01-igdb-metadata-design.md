@@ -73,14 +73,26 @@ public interface IUrlLookupProvider : IMetadataProvider
 
 public interface ISearchProvider : IMetadataProvider
 {
-    Task<IReadOnlyList<ExternalItem>> SearchAsync(string query, int limit, CancellationToken ct);
-
-    /// <summary>以 "steam:440" 形式的外部識別碼反查。查無對應時回傳 null。</summary>
-    Task<ExternalItem?> FetchByExternalIdAsync(string externalId, CancellationToken ct);
+    /// <summary>標記「此品項已綁定本 provider」的 attribute key，也是批次補完的篩選依據。</summary>
+    string MarkerAttributeKey { get; }
 
     /// <summary>此 provider 寫入 attributes 時，目標品類必須宣告的欄位。</summary>
     IReadOnlyList<CategoryField> RequiredFields { get; }
+
+    Task<IReadOnlyList<ExternalItem>> SearchAsync(string query, int limit, CancellationToken ct);
+
+    /// <summary>
+    /// 以 "steam:440" / "igdb:1942" 形式的外部識別碼批次反查，內部自行分塊與節流。
+    /// 查無對應者不出現在 Found；請求層級失敗者列入 FailedIds（與「查無」語意不同）。
+    /// </summary>
+    Task<ExternalLookupResult> FetchByExternalIdsAsync(
+        IReadOnlyList<string> externalIds, CancellationToken ct);
 }
+
+/// <summary>Found 的 key 是傳入的 externalId。三種結果互斥：命中、查無、請求失敗。</summary>
+public record ExternalLookupResult(
+    IReadOnlyDictionary<string, ExternalItem> Found,
+    IReadOnlyList<string> FailedIds);
 ```
 
 `ProviderCapability` 旗標**不再由 provider 自行宣告**，改由介面推導。留著 `Capabilities` 屬性等於同一個事實有兩處來源，遲早出現「旗標說支援、方法卻沒實作」；推導後這個 bug 類別在型別層面消失：
@@ -135,15 +147,19 @@ internal interface ITwitchTokenProvider
 }
 ```
 
-### 3.5 品類欄位改為明確確認，不自動追加
+### 3.5 系統品類內建 IGDB 欄位，不做執行期追加
 
 `AttributeValidator` 會擋掉品類未宣告的 attribute key，所以寫入前必須確保目標品類宣告了 IGDB 那組欄位。
 
-既有的 `SyncCommandHandler.EnsureDigitalCategoryAsync` 採自動建立，但它同時帶有 `OrderBy(x => x.OwnerId is null)` 的邏輯——品類可以是系統層級（`OwnerId == null`）的共用品類。後端安靜地往系統品類塞欄位會影響所有使用者的 schema，這是使用者沒同意過的變更。
+「實體遊戲」與「數位遊戲」都是**系統品類**（`SystemCategoryDefinitions`，固定 ObjectId，`OwnerId == null`），而 `MongoCategoryRepository.UpdateAsync` 對系統品類擲 `ForbiddenException`——任何執行期的「追加欄位」端點都會在最需要它的兩個品類上失敗。
 
-改為明確確認（端點見 §4.3）。使用者拒絕時功能降級而非中斷：只填品類已宣告的欄位，其餘丟棄。
+因此 IGDB 欄位直接寫進 `SystemCategoryDefinitions`。`SystemCategorySeeder` 每次啟動以 `$set` 覆寫整份 `Fields`，既有部署重啟即自動補齊，不需要遷移腳本。系統品類的 schema 本來就由程式定義、使用者不可編輯，這與「品類即 schema」並不衝突——不可編輯是刻意的設計。
 
-欄位定義由 provider 自己透過 `ISearchProvider.RequiredFields` 提供，不散落在 handler 裡，因此 `missing-fields` 端點對任何 `ISearchProvider` 都成立，不必為 IGDB 特化。
+兩個品類**已宣告** `developer`、`publisher`、`releaseDate`（標籤為「發售日期」），只需新增 `igdbId`、`genres`、`platforms`、`igdbRating`、`coverUrl` 五個 key。沿用既有標籤，不另立同義欄位。
+
+自訂品類不在此列。使用者若在自訂品類使用 IGDB，功能**優雅降級**：只填該品類已宣告的欄位，其餘丟棄；要完整資料就自行在品類編輯器加欄位。執行期的 `missing-fields` / `ensure-fields` 端點列為可選（§4.3）。
+
+欄位定義由 provider 透過 `ISearchProvider.RequiredFields` 提供，`SystemCategoryDefinitions` 與該屬性共用同一份靜態定義，不散落兩處。
 
 ### 3.6 補完沿用 SyncJob，新增 Skipped 計數
 
@@ -178,9 +194,9 @@ POST /ingest/enrich/igdb   { itemIds?: string[], limit?: number }   →  SyncJob
 
 1. 取得 IGDB id：
    - 品項 attributes 已有 `igdbId`（搜尋建檔而來，或先前補完過）→ **直接使用**，不查 Steam
-   - 否則以 `item.ExternalRef.ExternalId` 作為 Steam appid → `FetchByExternalIdAsync("steam:440")` 反查
+   - 否則以 `item.ExternalRef.ExternalId` 作為 Steam appid → `"steam:440"`
    - 兩者皆無（手動建檔且未綁定過）→ `Skipped++`。這類品項應走搜尋建檔綁定，補完不猜
-2. 以 IGDB id 取詳情
+2. 整批送進 `FetchByExternalIdsAsync`，由 provider 分塊（每塊 10 筆）與節流
 3. 映射成 attributes（見 §5）
 4. `$set` 只寫 IGDB 擁有的 key。**不碰** `name`（Steam 的名稱是使用者在庫裡認得的那個）、**不碰** `tags` / `isShowcased` / `acquisition` / `images` / `createdAt`
 5. `description` **僅在目前為空時**寫入 IGDB `summary`——使用者寫過的心得不該被英文簡介蓋掉
@@ -190,17 +206,18 @@ POST /ingest/enrich/igdb   { itemIds?: string[], limit?: number }   →  SyncJob
 
 批次為**逐筆容錯**：單一批次請求失敗只影響該批的 10 筆，記入 `Failed`，其餘照跑。與 Steam 同步「單次 `BulkWrite` 部分成功如實記錄」的既有作法一致。
 
-### 4.3 品類欄位確認
+### 4.3 自訂品類的欄位補齊（可選）
+
+系統的「實體遊戲」與「數位遊戲」已內建 IGDB 欄位（§3.5），兩條主要流程都不需要這組端點。以下僅服務「使用者自訂品類 + 想用 IGDB」這個尚未出現的情境：
 
 ```http
 GET  /categories/{id}/missing-fields?provider=igdb  →  CategoryField[]
 POST /categories/{id}/ensure-fields  { provider: "igdb" }  →  CategoryDto
 ```
 
-- **搜尋建檔**：使用者挑定 IGDB 結果後，前端先問 `missing-fields`。有缺則跳一次確認「『實體遊戲』要加入這 8 個 IGDB 欄位嗎？」，按下才改品類。
-- **批次補完**：執行前對「數位遊戲」品類做同一次檢查與確認。一個對話框，之後不再問。
+`ensure-fields` 只追加缺少的 key，**不覆寫使用者改過的 `Label`**，也不重複加已存在的欄位；對系統品類回傳 403（由 `ICategoryRepository.UpdateAsync` 既有守衛負責）。
 
-`ensure-fields` 只追加缺少的 key，**不覆寫使用者改過的 `Label`**，也不重複加已存在的欄位。
+**此項為可選範圍**，不做也不影響 §4.1 與 §4.2。
 
 ## 5. 欄位映射
 
@@ -209,13 +226,17 @@ POST /categories/{id}/ensure-fields  { provider: "igdb" }  →  CategoryDto
 | `igdbId` | IGDB ID | Number | `id`。綁定用，UI 隱藏 |
 | `developer` | 開發商 | Text | `involved_companies` 中 `developer == true` 的第一筆 `company.name` |
 | `publisher` | 發行商 | Text | 同上，`publisher == true` |
-| `releaseDate` | 發行日 | Date | `first_release_date`（Unix 秒 → `DateTime`） |
+| `releaseDate` | 發售日期 | Date | `first_release_date`（Unix 秒 → `DateTime`） |
 | `genres` | 類型 | Text | `genres.name` 逗號串接，如「角色扮演, 冒險」 |
-| `platforms` | 平台 | Text | `platforms.abbreviation` 逗號串接 |
+| `platforms` | 發行平台 | Text | `platforms.abbreviation` 逗號串接 |
 | `igdbRating` | IGDB 評分 | Number | `total_rating`，0–100 |
-| `coverUrl` | 封面 | Url | `https://images.igdb.com/igdb/image/upload/t_cover_big/{cover.image_id}.jpg` |
+| `coverUrl` | IGDB 封面網址 | Url | `https://images.igdb.com/igdb/image/upload/t_cover_big/{cover.image_id}.jpg` |
 
 `summary` 寫進 `Item.Description`，不佔 attribute。**內容為英文**——IGDB 的中文資料極少，已確認接受。
+
+`developer`、`publisher`、`releaseDate` 三個 key 兩個系統遊戲品類**已經宣告**，沿用其既有標籤（「發售日期」而非「發行日」），不另立同義欄位。
+
+`platforms`（IGDB 的「這款遊戲發行於哪些平台」）與系統品類既有的 `platform`（「我這一份收藏在哪個平台／商店」）語意不同，兩者並存，標籤分別為「發行平台」與「平台」／「平台／商店」。
 
 `genres` 與 `platforms` 維持逗號串接的 Text，**不寫入 `Item.Tags`**。`Tags` 是使用者擁有的欄位（受 `$setOnInsert` 保護），provider 不該碰它。
 
@@ -264,7 +285,9 @@ fields name, external.steam, …; where external.steam = ("440","620");
 | `ProviderRegistryTests` | Unit | `Require<T>` 型別相符回實例、不符擲 `ProviderException`；`ProviderCapabilities.Of` 推導正確 |
 | `EnrichCommandHandlerTests` | Unit（Moq 假 provider） | `Skipped` 計數、不覆寫 `name`、`description` 僅在空時寫、`itemIds` 與批次兩條路徑 |
 | `MongoItemEnrichWriterTests` | Integration（Testcontainers 真 Mongo） | `$set` 只碰 IGDB 欄位；`tags` / `isShowcased` / `acquisition` / `images` / `createdAt` 原封不動 |
-| `EnsureCategoryFieldsTests` | Unit | 缺欄位偵測、已存在欄位不重複加、不覆寫使用者改過的 `Label` |
+| `IgdbRateLimiterTests` | Unit（`FakeTimeProvider`） | 首次立即放行、未達間隔時擋住、時間推進後放行 |
+| `SystemCategoryDefinitionsTests` | Unit | 兩個遊戲品類宣告了 `IgdbFields` 的全部 key |
+| `EnsureCategoryFieldsTests` | Unit（可選） | 缺欄位偵測、已存在欄位不重複加、不覆寫使用者改過的 `Label` |
 
 新增 fixture：`igdb-search-witcher.json`、`igdb-external-steam.json`、`twitch-token.json`。沿用既有 `Fixtures/*.json` + `CopyToOutputDirectory` 作法，使用**真實錄下的回應**而非手寫。
 
@@ -290,7 +313,10 @@ fields name, external.steam, …; where external.steam = ("440","620");
 | `Application/Ingestion/SearchQuery.cs` | **新**：`GET /ingest/search` |
 | `Application/Ingestion/EnrichCommand.cs` | **新**：批次／單筆補完編排 |
 | `Application/Ingestion/IItemEnrichWriter.cs` | **新**：只寫 provider 欄位的 bulk update |
-| `Application/Categories/EnsureProviderFieldsCommand.cs` | **新**：`missing-fields` 與 `ensure-fields` |
+| `Application/Categories/EnsureProviderFieldsCommand.cs` | **新**（可選）：`missing-fields` 與 `ensure-fields` |
+| `Infrastructure/Mongo/SystemCategoryDefinitions.cs` | **改**：兩個遊戲品類加 5 個 IGDB 欄位 |
+| `Infrastructure/Providers/Igdb/IgdbFields.cs` | **新**：IGDB 欄位的唯一定義來源 |
+| `Infrastructure/Providers/Igdb/IgdbRateLimiter.cs` | **新**：程序層級最小請求間隔 |
 | `Infrastructure/Providers/Igdb/IgdbOptions.cs` | **新** |
 | `Infrastructure/Providers/Igdb/TwitchTokenProvider.cs` | **新**：token 快取與 single-flight |
 | `Infrastructure/Providers/Igdb/IgdbProvider.cs` | **新**：`ISearchProvider` 實作 |
@@ -301,7 +327,7 @@ fields name, external.steam, …; where external.steam = ("440","620");
 | `Application/Ingestion/SyncCommand.cs` | **改**：`Require<IBulkSyncProvider>` |
 | `Application/Ingestion/FetchByUrlQuery.cs` | **改**：`Require<IUrlLookupProvider>` |
 | `Api/Endpoints/IngestionEndpoints.cs` | **改**：`/search`、`/enrich/igdb`；`/providers` 改用 `ProviderCapabilities.Of` |
-| `Api/Endpoints/CategoryEndpoints.cs` | **改**：`missing-fields`、`ensure-fields` |
+| `Api/Endpoints/CategoryEndpoints.cs` | **改**（可選）：`missing-fields`、`ensure-fields` |
 | `Domain/Entities/SyncJob.cs` | **改**：新增 `Skipped` |
 | `web/…/item-form` | **改**：IGDB 搜尋 modal 與欄位確認對話框 |
 | `web/…/settings.component.ts` | **改**：批次補完按鈕 |
