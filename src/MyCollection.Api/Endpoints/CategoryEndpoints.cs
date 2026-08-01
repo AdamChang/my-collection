@@ -27,6 +27,16 @@ public static class CategoryEndpoints
             return Results.NoContent();
         });
 
+        group.MapGet("/{id}/missing-fields", async (
+            string id, string provider, ISender sender, CancellationToken ct) =>
+            Results.Ok(await sender.Send(new MissingProviderFieldsQuery(id, provider), ct)));
+
+        group.MapPost("/{id}/ensure-fields", async (
+            string id, EnsureFieldsRequest body, ISender sender, CancellationToken ct) =>
+            Results.Ok(await sender.Send(new EnsureProviderFieldsCommand(id, body.Provider), ct)));
+
         return app;
     }
+
+    public record EnsureFieldsRequest(string Provider);
 }
