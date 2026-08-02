@@ -111,6 +111,22 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
         }
       }
 
+      @if (itemId() && igdbAvailable()) {
+        <section class="detail__panel mc-panel" data-item-igdb>
+          <div class="mc-eyebrow">IGDB</div>
+          @if (igdbAddressable()) {
+            <button type="button" (click)="refetchFromIgdb()" [disabled]="busy()" data-igdb-refetch>
+              {{ enriching() ? '抓取中…' : '重新從 IGDB 抓取' }}
+            </button>
+          } @else {
+            <button type="button" (click)="openIgdbSearch()" [disabled]="busy()" data-igdb-bind>
+              從 IGDB 搜尋並綁定
+            </button>
+            <span class="hint">這筆品項還沒有對應的 IGDB 條目，綁定後才能自動更新。</span>
+          }
+        </section>
+      }
+
       @if (itemId(); as id) {
         <section class="detail__panel mc-panel">
           <h2>圖片</h2>
@@ -131,6 +147,7 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
     .detail__header { display: flex; justify-content: space-between; align-items: center; }
     .detail__actions { display: flex; gap: 0.5rem; }
     .detail__panel { display: grid; gap: 1rem; }
+    .detail__panel .hint { color: var(--mc-text-muted); font-size: 0.85rem; }
     .detail label { display: grid; gap: 0.25rem; }
     .detail__checkbox { display: flex !important; gap: 0.5rem; align-items: center; }
     .detail__fetch { display: flex; gap: 0.5rem; align-items: center; }
@@ -173,6 +190,7 @@ export class ItemDetailComponent {
   readonly saving = signal(false);
   readonly removing = signal(false);
   readonly fetching = signal(false);
+  readonly enriching = signal(false);
 
   /** 對話框在模板根、不在任何 `@if` 內，必定存在。required 讓「有人把它搬進 @if」直接爆而不是靜默沒反應。 */
   private readonly searchDialog = viewChild.required(IgdbSearchDialogComponent);
@@ -180,8 +198,24 @@ export class ItemDetailComponent {
   /** IGDB 未設定時後端不會註冊它，整組入口不渲染。 */
   readonly igdbAvailable = computed(() => this.providers.supports(IGDB_PROVIDER_KEY, 'Search'));
 
+  /**
+   * 後端 ExternalIdFor 的規則：先看 marker，再退回 externalRef。
+   * 必須檢查 provider === 'steam'——OpenGraph 品項也有 externalRef，
+   * 但後端會組出 opengraph:xxx 這種 IGDB 反查不了的識別碼，結果只會是略過。
+   */
+  readonly igdbAddressable = computed(() => {
+    const item = this.item();
+
+    return (
+      item != null &&
+      (item.attributes['igdbId'] != null || item.externalRef?.provider === 'steam')
+    );
+  });
+
   /** 任一改寫動作進行中就鎖住全部按鈕：同一筆品項不該有並行的改寫。 */
-  readonly busy = computed(() => this.saving() || this.removing() || this.fetching());
+  readonly busy = computed(
+    () => this.saving() || this.removing() || this.fetching() || this.enriching(),
+  );
 
   categoryId = '';
   name = '';
@@ -261,6 +295,32 @@ export class ItemDetailComponent {
     this.attributes.set(merged);
 
     this.notifications.success('已帶入資料，請確認後儲存。');
+  }
+
+  refetchFromIgdb(): void {
+    const id = this.itemId();
+
+    if (!id || this.busy()) {
+      return;
+    }
+
+    this.enriching.set(true);
+    this.ingestion
+      .enrich(IGDB_PROVIDER_KEY, [id])
+      .pipe(finalize(() => this.enriching.set(false)))
+      .subscribe({
+        next: (job) => {
+          // 誠實比樂觀重要：查無對應時什麼都沒變，說「完成」會讓使用者以為資料已更新。
+          if (job.updated === 0 && job.skipped > 0) {
+            this.notifications.error('IGDB 查無對應，未變更任何欄位。');
+            return;
+          }
+
+          this.notifications.success('已從 IGDB 更新。');
+          this.reloadItem(id);
+        },
+        error: IGNORE_HANDLED_BY_INTERCEPTOR,
+      });
   }
 
   /**

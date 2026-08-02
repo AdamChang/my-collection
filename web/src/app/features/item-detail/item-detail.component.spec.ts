@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { Subject, of, throwError } from 'rxjs';
 import { CatalogService } from '../../core/api/catalog.service';
@@ -6,7 +7,8 @@ import { CategoryService } from '../../core/api/category.service';
 import { IngestionService } from '../../core/api/ingestion.service';
 import { IGDB_PROVIDER_KEY, ProviderService } from '../../core/api/provider.service';
 import { NotificationService } from '../../core/notification.service';
-import { CategoryDto, FetchedMetadataDto } from '../../core/models';
+import { CategoryDto, FetchedMetadataDto, ItemDto, SyncJobDto } from '../../core/models';
+import { IgdbSearchDialogComponent } from '../../shared/igdb-search-dialog/igdb-search-dialog.component';
 import { ItemDetailComponent } from './item-detail.component';
 
 describe('ItemDetailComponent', () => {
@@ -284,6 +286,18 @@ describe('ItemDetailComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-igdb-open]')).toBeNull();
   });
 
+  /**
+   * `@if` 只擋觸發按鈕，不擋對話框——後者刻意無條件渲染。
+   * 包進 `@if` 的話內容要等下一次變更偵測才具現化，而 IgdbSearchDialogComponent 內部用的是
+   * `viewChild.required`：「翻開關 + 在同一個 handler 裡呼叫 open()」會炸 NG0951。
+   * 它在 showModal() 之前不佔任何視覺空間，無條件渲染零成本。
+   */
+  it('renders the dialog unconditionally even when the entry points are hidden', async () => {
+    const fixture = await createNewItemWithIgdb(false);
+
+    expect(fixture.nativeElement.querySelector('dialog')).toBeTruthy();
+  });
+
   /** 品類決定哪些欄位能寫。沒選品類就搜尋，等於不知道要把結果放進哪個 schema。 */
   it('disables the igdb button until a category is chosen', async () => {
     const fixture = await createNewItemWithIgdb(true);
@@ -412,5 +426,156 @@ describe('ItemDetailComponent', () => {
     expect(fixture.componentInstance.name).toBe('The Witcher 3: Wild Hunt');
     expect(fixture.componentInstance.description).toBe('A story-driven adventure.');
     expect(Object.keys(fixture.componentInstance.attributes()).sort()).toEqual(['developer', 'igdbId']);
+  });
+
+  const steamItem: ItemDto = {
+    id: '65b0000000000000000000aa',
+    categoryId: 'physical-games',
+    name: 'Team Fortress 2',
+    description: null,
+    images: [],
+    tags: [],
+    isShowcased: false,
+    source: 'Steam',
+    externalRef: { provider: 'steam', externalId: '440', url: null, lastSyncedAt: '2026-07-01T00:00:00Z' },
+    acquisition: null,
+    locationId: null,
+    attributes: {},
+    createdAt: '2026-07-01T00:00:00Z',
+    updatedAt: '2026-07-01T00:00:00Z',
+  };
+
+  async function createExistingItem(item: ItemDto) {
+    await TestBed.configureTestingModule({
+      imports: [ItemDetailComponent],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => item.id } } } },
+        { provide: CategoryService, useValue: { list: () => of([igdbCategory]) } },
+        { provide: CatalogService, useValue: { get: () => of(item) } },
+        { provide: IngestionService, useValue: { search: () => of([]) } },
+        { provide: NotificationService, useValue: { success: () => undefined, error: () => undefined } },
+        {
+          provide: ProviderService,
+          useValue: {
+            supports: (key: string, capability: string) =>
+              key === IGDB_PROVIDER_KEY && capability === 'Search',
+          },
+        },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(ItemDetailComponent);
+    fixture.detectChanges();
+
+    return fixture;
+  }
+
+  it('offers a refetch button for a steam-synced item', async () => {
+    const fixture = await createExistingItem(steamItem);
+
+    expect(fixture.nativeElement.querySelector('[data-igdb-refetch]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-igdb-bind]')).toBeNull();
+  });
+
+  it('offers a bind button for an item with no usable external id', async () => {
+    const fixture = await createExistingItem({ ...steamItem, source: 'Manual', externalRef: null });
+
+    expect(fixture.nativeElement.querySelector('[data-igdb-bind]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-igdb-refetch]')).toBeNull();
+  });
+
+  /**
+   * OpenGraph 品項也有 externalRef，但後端會組出 opengraph:xxx 這種 IGDB 反查不了的識別碼，
+   * 結果是略過。把它當成可定址，就是給使用者一顆按了沒反應的按鈕。
+   */
+  it('does not treat an opengraph reference as addressable', async () => {
+    const fixture = await createExistingItem({
+      ...steamItem,
+      source: 'OpenGraph',
+      externalRef: { provider: 'opengraph', externalId: 'https://shop/x', url: null, lastSyncedAt: '2026-07-01T00:00:00Z' },
+    });
+
+    expect(fixture.nativeElement.querySelector('[data-igdb-bind]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-igdb-refetch]')).toBeNull();
+  });
+
+  it('treats an item that already carries the marker as addressable', async () => {
+    const fixture = await createExistingItem({
+      ...steamItem,
+      source: 'Manual',
+      externalRef: null,
+      attributes: { igdbId: 1942 },
+    });
+
+    expect(fixture.nativeElement.querySelector('[data-igdb-refetch]')).toBeTruthy();
+  });
+
+  /** 說「完成」會讓使用者以為資料已更新。查無對應時什麼都沒變。 */
+  it('reports a lookup miss instead of claiming success', async () => {
+    const messages: string[] = [];
+    const job: SyncJobDto = {
+      id: 'j1', provider: 'igdb', status: 'Succeeded',
+      created: 0, updated: 0, failed: 0, skipped: 1,
+      error: null, startedAt: '2026-08-01T03:00:00Z', finishedAt: '2026-08-01T03:00:01Z',
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [ItemDetailComponent],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => steamItem.id } } } },
+        { provide: CategoryService, useValue: { list: () => of([igdbCategory]) } },
+        { provide: CatalogService, useValue: { get: () => of(steamItem) } },
+        { provide: IngestionService, useValue: { search: () => of([]), enrich: () => of(job) } },
+        {
+          provide: NotificationService,
+          useValue: {
+            success: (m: string) => messages.push(m),
+            error: (m: string) => messages.push(m),
+          },
+        },
+        {
+          provide: ProviderService,
+          useValue: {
+            supports: (key: string, capability: string) =>
+              key === IGDB_PROVIDER_KEY && capability === 'Search',
+          },
+        },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(ItemDetailComponent);
+    fixture.detectChanges();
+
+    fixture.nativeElement.querySelector('[data-igdb-refetch]').click();
+    fixture.detectChanges();
+
+    expect(messages.join()).toContain('查無對應');
+  });
+
+  /**
+   * 按鈕與對話框的接線只有真的按下去才會驗到。把 <app-igdb-search-dialog> 包進 @if
+   * 看起來像合理的最佳化，卻會讓 viewChild.required 在使用者按下按鈕的那一刻才炸。
+   */
+  it('opens the dialog when the bind button is clicked', async () => {
+    const fixture = await createExistingItem({ ...steamItem, source: 'Manual', externalRef: null });
+
+    fixture.nativeElement.querySelector('[data-igdb-bind]').click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('dialog').open).toBeTrue();
+  });
+
+  /** 既有品項走 bind，模板的三元運算若寫死 'prefill'，使用者的品名就會被英文原名蓋掉。 */
+  it('binds instead of prefilling when the dialog reports a pick on an existing item', async () => {
+    const fixture = await createExistingItem({ ...steamItem, source: 'Manual', externalRef: null });
+
+    const dialog = fixture.debugElement.query(By.directive(IgdbSearchDialogComponent))
+      .componentInstance as IgdbSearchDialogComponent;
+    dialog.select.emit(witcher);
+
+    expect(fixture.componentInstance.name).toBe('Team Fortress 2');
+    expect(fixture.componentInstance.attributes()['igdbId']).toBe(1942);
   });
 });
