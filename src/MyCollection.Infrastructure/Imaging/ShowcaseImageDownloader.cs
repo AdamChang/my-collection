@@ -101,9 +101,13 @@ public sealed class ShowcaseImageDownloader(
         logger.LogInformation("Downloaded showcase image for item {ItemId}.", itemId);
     }
 
-    private static Uri? ResolveSourceUrl(Item item)
+    /// <summary>
+    /// Resolves the preferred remote image: Steam header first, then the IGDB game cover,
+    /// and finally the icon. Public to directly test this stateless pure function.
+    /// </summary>
+    public static Uri? ResolveSourceUrl(Item item)
     {
-        foreach (var key in (string[])["headerUrl", "iconUrl"])
+        foreach (var key in (string[])["headerUrl", "coverUrl", "iconUrl"])
         {
             if (item.Attributes.TryGetValue(key, out var value)
                 && value.IsString
