@@ -1,11 +1,13 @@
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { Subject, of } from 'rxjs';
 import { IngestionService } from '../../core/api/ingestion.service';
-import { ProviderService } from '../../core/api/provider.service';
+import { IGDB_PROVIDER_KEY, ProviderService } from '../../core/api/provider.service';
 import { ShareService } from '../../core/api/share.service';
 import { TransferService } from '../../core/api/transfer.service';
 import { NotificationService } from '../../core/notification.service';
 import { SyncJobDto } from '../../core/models';
+import { IgdbEnrichComponent } from './igdb-enrich.component';
 import { SettingsComponent } from './settings.component';
 
 describe('SettingsComponent', () => {
@@ -120,7 +122,58 @@ describe('SettingsComponent', () => {
       (td) => (td as HTMLElement).textContent,
     );
 
-    expect(headers).toContain('略過');
-    expect(cells).toContain('7');
+    expect(headers).toEqual(['時間', '來源', '狀態', '新增', '更新', '略過', '失敗']);
+    expect(cells).toEqual(['2026-08-01 11:00', 'igdb', 'Succeeded', '0', '12', '7', '1']);
+  });
+
+  it('uses seven cells for an empty sync log row', async () => {
+    await TestBed.configureTestingModule({
+      imports: [SettingsComponent],
+      providers: [
+        { provide: IngestionService, useValue: { accounts: () => of([]), jobs: () => of([]) } },
+        { provide: ShareService, useValue: { list: () => of([]) } },
+        { provide: TransferService, useValue: {} },
+        { provide: NotificationService, useValue: { success: () => undefined } },
+        { provide: ProviderService, useValue: { supports: () => false } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(SettingsComponent);
+    fixture.detectChanges();
+
+    const emptyCell: HTMLTableCellElement = fixture.nativeElement.querySelector('tbody td');
+    expect(emptyCell.textContent).toContain('尚無同步紀錄。');
+    expect(emptyCell.colSpan).toBe(7);
+  });
+
+  it('reloads sync jobs when the enrich panel completes', async () => {
+    const jobs = jasmine.createSpy('jobs').and.returnValue(of([]));
+
+    await TestBed.configureTestingModule({
+      imports: [SettingsComponent],
+      providers: [
+        { provide: IngestionService, useValue: { accounts: () => of([]), jobs } },
+        { provide: ShareService, useValue: { list: () => of([]) } },
+        { provide: TransferService, useValue: {} },
+        { provide: NotificationService, useValue: { success: () => undefined } },
+        {
+          provide: ProviderService,
+          useValue: {
+            supports: (key: string, capability: string) =>
+              key === IGDB_PROVIDER_KEY && capability === 'Search',
+          },
+        },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(SettingsComponent);
+    fixture.detectChanges();
+
+    const enrich = fixture.debugElement.query(By.directive(IgdbEnrichComponent)).componentInstance;
+    expect(enrich).toBeInstanceOf(IgdbEnrichComponent);
+
+    enrich.completed.emit();
+
+    expect(jobs).toHaveBeenCalledTimes(2);
   });
 });
