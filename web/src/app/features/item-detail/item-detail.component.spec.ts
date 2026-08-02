@@ -554,6 +554,42 @@ describe('ItemDetailComponent', () => {
     expect(messages.join()).toContain('查無對應');
   });
 
+  /** 沒有這道鎖，連點三下就是三個 enrich 請求。與儲存那道鎖是同一個理由。 */
+  it('keeps the refetch button locked while the enrich request is in flight', async () => {
+    const enrich = new Subject<SyncJobDto>();
+
+    await TestBed.configureTestingModule({
+      imports: [ItemDetailComponent],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => steamItem.id } } } },
+        { provide: CategoryService, useValue: { list: () => of([igdbCategory]) } },
+        { provide: CatalogService, useValue: { get: () => of(steamItem) } },
+        { provide: IngestionService, useValue: { search: () => of([]), enrich: () => enrich } },
+        { provide: NotificationService, useValue: { success: () => undefined, error: () => undefined } },
+        {
+          provide: ProviderService,
+          useValue: {
+            supports: (key: string, capability: string) =>
+              key === IGDB_PROVIDER_KEY && capability === 'Search',
+          },
+        },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(ItemDetailComponent);
+    fixture.detectChanges();
+
+    const button: HTMLButtonElement = fixture.nativeElement.querySelector('[data-igdb-refetch]');
+    expect(button.disabled).toBeFalse();
+
+    button.click();
+    fixture.detectChanges();
+
+    expect(button.disabled).toBeTrue();
+    expect(button.textContent).toContain('抓取中');
+  });
+
   /**
    * 按鈕與對話框的接線只有真的按下去才會驗到。把 <app-igdb-search-dialog> 包進 @if
    * 看起來像合理的最佳化，卻會讓 viewChild.required 在使用者按下按鈕的那一刻才炸。
