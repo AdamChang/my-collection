@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { Subject, of } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { IngestionService } from '../../core/api/ingestion.service';
 import { ProviderService } from '../../core/api/provider.service';
 import { NotificationService } from '../../core/notification.service';
@@ -61,6 +61,18 @@ describe('IgdbEnrichComponent', () => {
     expect(completed).toBe(1);
   });
 
+  /** 後端補完失敗時同樣會寫下一筆 job，所以失敗這條路徑也得叫呼叫端重載。 */
+  it('signals completion even when the run fails', async () => {
+    const fixture = await create(true, { enrich: () => throwError(() => new Error('x')) });
+
+    let completed = 0;
+    fixture.componentInstance.completed.subscribe(() => (completed += 1));
+
+    fixture.nativeElement.querySelector('[data-igdb-enrich-run]').click();
+
+    expect(completed).toBe(1);
+  });
+
   it('locks the button while the run is in flight', async () => {
     const pending = new Subject<SyncJobDto>();
     const fixture = await create(true, { enrich: () => pending });
@@ -71,5 +83,21 @@ describe('IgdbEnrichComponent', () => {
 
     expect(button.disabled).toBeTrue();
     expect(button.textContent).toContain('補完中');
+  });
+
+  it('unlocks the button once the run finishes', async () => {
+    const pending = new Subject<SyncJobDto>();
+    const fixture = await create(true, { enrich: () => pending });
+
+    const button: HTMLButtonElement = fixture.nativeElement.querySelector('[data-igdb-enrich-run]');
+    button.click();
+    fixture.detectChanges();
+
+    pending.next(job);
+    pending.complete();
+    fixture.detectChanges();
+
+    expect(button.disabled).toBeFalse();
+    expect(button.textContent).toContain('批次補完');
   });
 });
