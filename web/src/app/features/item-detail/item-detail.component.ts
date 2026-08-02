@@ -1,20 +1,28 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { finalize } from 'rxjs';
 import { CatalogService, ItemWritePayload } from '../../core/api/catalog.service';
 import { CategoryService } from '../../core/api/category.service';
 import { IngestionService } from '../../core/api/ingestion.service';
+import { IGDB_PROVIDER_KEY, ProviderService } from '../../core/api/provider.service';
 import { IGNORE_HANDLED_BY_INTERCEPTOR } from '../../core/error.interceptor';
 import { NotificationService } from '../../core/notification.service';
-import { CategoryDto, ItemDto } from '../../core/models';
+import { CategoryDto, FetchedMetadataDto, ItemDto } from '../../core/models';
 import { DynamicFormComponent } from '../../shared/dynamic-form/dynamic-form.component';
+import { IgdbSearchDialogComponent } from '../../shared/igdb-search-dialog/igdb-search-dialog.component';
 import { ImageUploaderComponent } from '../../shared/image-uploader/image-uploader.component';
 import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
 
 @Component({
   selector: 'app-item-detail',
-  imports: [FormsModule, DynamicFormComponent, ImageUploaderComponent, TagInputComponent],
+  imports: [
+    FormsModule,
+    DynamicFormComponent,
+    IgdbSearchDialogComponent,
+    ImageUploaderComponent,
+    TagInputComponent,
+  ],
   template: `
     <form class="detail" (ngSubmit)="save()">
       <header class="detail__header">
@@ -42,6 +50,21 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
             {{ fetching() ? '擷取中…' : '擷取' }}
           </button>
         </fieldset>
+
+        @if (igdbAvailable()) {
+          <div class="detail__igdb mc-panel">
+            <button
+              type="button"
+              (click)="openIgdbSearch()"
+              [disabled]="!categoryId || busy()"
+              [title]="categoryId ? '' : '請先選擇品類'"
+              data-igdb-open
+            >
+              從 IGDB 搜尋遊戲
+            </button>
+            <span class="hint">先選好上方的品類，搜尋結果才知道要填進哪些欄位。</span>
+          </div>
+        }
       }
 
       <section class="detail__panel mc-panel" data-item-core>
@@ -100,6 +123,8 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
         </section>
       }
     </form>
+
+    <app-igdb-search-dialog (select)="applyMetadata($event, itemId() ? 'bind' : 'prefill')" />
   `,
   styles: `
     .detail { display: grid; gap: 1rem; max-width: 46rem; }
@@ -109,6 +134,8 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
     .detail label { display: grid; gap: 0.25rem; }
     .detail__checkbox { display: flex !important; gap: 0.5rem; align-items: center; }
     .detail__fetch { display: flex; gap: 0.5rem; align-items: center; }
+    .detail__igdb { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+    .detail__igdb .hint { color: var(--mc-text-muted); font-size: 0.85rem; }
     .detail__acquisition { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; }
     @media (max-width: 42rem) {
       .detail__fetch { display: grid; grid-template-columns: 1fr; align-items: stretch; }
@@ -120,6 +147,7 @@ export class ItemDetailComponent {
   private readonly catalog = inject(CatalogService);
   private readonly categoryApi = inject(CategoryService);
   private readonly ingestion = inject(IngestionService);
+  private readonly providers = inject(ProviderService);
   private readonly notifications = inject(NotificationService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -144,6 +172,11 @@ export class ItemDetailComponent {
   readonly saving = signal(false);
   readonly removing = signal(false);
   readonly fetching = signal(false);
+
+  private readonly searchDialog = viewChild(IgdbSearchDialogComponent);
+
+  /** IGDB 未設定時後端不會註冊它，整組入口不渲染。 */
+  readonly igdbAvailable = computed(() => this.providers.supports(IGDB_PROVIDER_KEY, 'Search'));
 
   /** 任一改寫動作進行中就鎖住全部按鈕：同一筆品項不該有並行的改寫。 */
   readonly busy = computed(() => this.saving() || this.removing() || this.fetching());
@@ -184,6 +217,10 @@ export class ItemDetailComponent {
     this.attributes.set({});
   }
 
+  openIgdbSearch(): void {
+    this.searchDialog()?.open();
+  }
+
   fetchMetadata(): void {
     if (this.busy()) {
       return;
@@ -195,13 +232,43 @@ export class ItemDetailComponent {
       .fetchByUrl(this.fetchUrl)
       .pipe(finalize(() => this.fetching.set(false)))
       .subscribe({
-        next: (metadata) => {
-          this.name = metadata.name;
-          this.description = metadata.description ?? '';
-          this.notifications.success('已從網址帶入資料，請確認後儲存。');
-        },
+        next: (metadata) => this.applyMetadata(metadata, 'prefill'),
         error: IGNORE_HANDLED_BY_INTERCEPTOR,
       });
+  }
+
+  /**
+   * 兩個外部來源（OpenGraph 網址、IGDB 搜尋）共用的唯一套用路徑。
+   *
+   * prefill 用於新增品項——名稱與描述本來就是空的，覆寫沒有損失。
+   * bind 用於既有品項——名稱是使用者在庫裡認得的那個，描述可能是他自己寫的心得，都不動。
+   */
+  applyMetadata(metadata: FetchedMetadataDto, mode: 'prefill' | 'bind'): void {
+    if (mode === 'prefill') {
+      this.name = metadata.name;
+      this.description = metadata.description ?? '';
+    }
+
+    const merged = { ...this.attributes(), ...this.declaredOnly(metadata.attributes) };
+
+    this.initialAttributes.set(merged);
+    this.attributes.set(merged);
+
+    this.notifications.success('已帶入資料，請確認後儲存。');
+  }
+
+  /**
+   * 品類沒宣告的 key 會被後端 AttributeValidator 擋掉，整筆儲存回 400。
+   *
+   * 不能倚賴 DynamicFormComponent 代為過濾：表單重建不會觸發 valueChanges，
+   * 使用者若套用後直接儲存、中途沒編輯任何欄位，attributes 送出的就是這裡設進去的原值。
+   *
+   * 這條規則與後端 EnrichCommandHandler.ToEnrichment 是同一份政策，兩處要一起改。
+   */
+  private declaredOnly(source: Record<string, unknown>): Record<string, unknown> {
+    const declared = new Set(this.selectedCategory()?.fields.map((f) => f.key) ?? []);
+
+    return Object.fromEntries(Object.entries(source).filter(([key]) => declared.has(key)));
   }
 
   save(): void {
