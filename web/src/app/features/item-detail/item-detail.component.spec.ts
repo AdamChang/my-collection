@@ -4,7 +4,7 @@ import { Subject, of, throwError } from 'rxjs';
 import { CatalogService } from '../../core/api/catalog.service';
 import { CategoryService } from '../../core/api/category.service';
 import { IngestionService } from '../../core/api/ingestion.service';
-import { ProviderService } from '../../core/api/provider.service';
+import { IGDB_PROVIDER_KEY, ProviderService } from '../../core/api/provider.service';
 import { NotificationService } from '../../core/notification.service';
 import { CategoryDto, FetchedMetadataDto } from '../../core/models';
 import { ItemDetailComponent } from './item-detail.component';
@@ -262,7 +262,13 @@ describe('ItemDetailComponent', () => {
         { provide: CatalogService, useValue: {} },
         { provide: IngestionService, useValue: { search: () => of([]) } },
         { provide: NotificationService, useValue: { success: () => undefined, error: () => undefined } },
-        { provide: ProviderService, useValue: { supports: () => available } },
+        {
+          provide: ProviderService,
+          useValue: {
+            supports: (key: string, capability: string) =>
+              available && key === IGDB_PROVIDER_KEY && capability === 'Search',
+          },
+        },
       ],
     }).compileComponents();
 
@@ -290,6 +296,19 @@ describe('ItemDetailComponent', () => {
     fixture.detectChanges();
 
     expect(button.disabled).toBeFalse();
+  });
+
+  /** 已經有一個改寫進行中就不該讓使用者再開搜尋——同一筆品項不該有並行的改寫。 */
+  it('keeps the igdb button locked while another write is in flight', async () => {
+    const fixture = await createNewItemWithIgdb(true);
+    fixture.componentInstance.categoryId = igdbCategory.id;
+    fixture.componentInstance.onCategoryChanged();
+    fixture.componentInstance.fetching.set(true);
+    fixture.detectChanges();
+
+    const button: HTMLButtonElement = fixture.nativeElement.querySelector('[data-igdb-open]');
+
+    expect(button.disabled).toBeTrue();
   });
 
   /**
@@ -331,5 +350,67 @@ describe('ItemDetailComponent', () => {
     expect(fixture.componentInstance.name).toBe('巫師三');
     expect(fixture.componentInstance.description).toBe('我自己寫的心得');
     expect(fixture.componentInstance.attributes()['igdbId']).toBe(1942);
+  });
+
+  /**
+   * 屬性的政策與 name/description 相反：綁定就是要用外部來源刷新遊戲事實，
+   * 既有值該被蓋掉而不是保留。合併方向寫反了不會有任何測試變紅，只會靜默留著舊資料。
+   */
+  it('lets the fetched attributes overwrite the existing ones in bind mode', async () => {
+    const fixture = await createNewItemWithIgdb(true);
+    fixture.componentInstance.categoryId = igdbCategory.id;
+    fixture.componentInstance.onCategoryChanged();
+    fixture.componentInstance.attributes.set({ igdbId: 999, developer: '舊的開發商' });
+
+    fixture.componentInstance.applyMetadata(witcher, 'bind');
+
+    expect(fixture.componentInstance.attributes()['igdbId']).toBe(1942);
+    expect(fixture.componentInstance.attributes()['developer']).toBe('CD Projekt RED');
+  });
+
+  /** 套用結果要讓使用者看得見。只有送出的 payload 對、畫面卻空白，等於沒套用。 */
+  it('shows the applied attributes in the rendered schema form', async () => {
+    const fixture = await createNewItemWithIgdb(true);
+    fixture.componentInstance.categoryId = igdbCategory.id;
+    fixture.componentInstance.onCategoryChanged();
+    fixture.detectChanges();
+
+    fixture.componentInstance.applyMetadata(witcher, 'prefill');
+    fixture.detectChanges();
+
+    const input: HTMLInputElement = fixture.nativeElement.querySelector('[data-field="igdbId"]');
+    expect(input.value).toBe('1942');
+  });
+
+  /**
+   * 網址擷取與 IGDB 搜尋共用 applyMetadata。這條路徑不是純重構——
+   * 舊碼把 metadata.attributes 整個丟掉，現在它也會帶入品類宣告的屬性。
+   */
+  it('applies url-fetched metadata through the shared path', async () => {
+    await TestBed.configureTestingModule({
+      imports: [ItemDetailComponent],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => null } } } },
+        { provide: CategoryService, useValue: { list: () => of([igdbCategory]) } },
+        { provide: CatalogService, useValue: {} },
+        { provide: IngestionService, useValue: { fetchByUrl: () => of(witcher) } },
+        { provide: NotificationService, useValue: { success: () => undefined, error: () => undefined } },
+        { provide: ProviderService, useValue: { supports: () => false } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(ItemDetailComponent);
+    fixture.detectChanges();
+    fixture.componentInstance.categoryId = igdbCategory.id;
+    fixture.componentInstance.onCategoryChanged();
+    fixture.componentInstance.fetchUrl = 'https://example.com/p/1';
+    fixture.detectChanges();
+
+    fixture.nativeElement.querySelector('.detail__fetch button').click();
+
+    expect(fixture.componentInstance.name).toBe('The Witcher 3: Wild Hunt');
+    expect(fixture.componentInstance.description).toBe('A story-driven adventure.');
+    expect(Object.keys(fixture.componentInstance.attributes()).sort()).toEqual(['developer', 'igdbId']);
   });
 });

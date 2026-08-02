@@ -158,7 +158,8 @@ export class ItemDetailComponent {
   readonly selectedCategory = signal<CategoryDto | null>(null);
 
   /**
-   * 只在「從後端載回品項」時寫入，是餵給 `app-dynamic-form` 的 `[value]` 的初始值。
+   * 餵給 `app-dynamic-form` 的 `[value]`，也就是表單要重建成什麼樣子。
+   * 三個寫入點：`hydrate()` 從後端載回、`onCategoryChanged()` 換品類清空、`applyMetadata()` 套用外部來源。
    * 不可改成 `attributes`：`DynamicFormComponent` 的 effect 同時讀 `fields()` 與 `value()`，
    * 若 `[value]` 綁到隨 `(valueChange)` 更新的狀態，每次打字都會重建整個 FormGroup。
    */
@@ -173,7 +174,8 @@ export class ItemDetailComponent {
   readonly removing = signal(false);
   readonly fetching = signal(false);
 
-  private readonly searchDialog = viewChild(IgdbSearchDialogComponent);
+  /** 對話框在模板根、不在任何 `@if` 內，必定存在。required 讓「有人把它搬進 @if」直接爆而不是靜默沒反應。 */
+  private readonly searchDialog = viewChild.required(IgdbSearchDialogComponent);
 
   /** IGDB 未設定時後端不會註冊它，整組入口不渲染。 */
   readonly igdbAvailable = computed(() => this.providers.supports(IGDB_PROVIDER_KEY, 'Search'));
@@ -218,7 +220,7 @@ export class ItemDetailComponent {
   }
 
   openIgdbSearch(): void {
-    this.searchDialog()?.open();
+    this.searchDialog().open();
   }
 
   fetchMetadata(): void {
@@ -242,6 +244,10 @@ export class ItemDetailComponent {
    *
    * prefill 用於新增品項——名稱與描述本來就是空的，覆寫沒有損失。
    * bind 用於既有品項——名稱是使用者在庫裡認得的那個，描述可能是他自己寫的心得，都不動。
+   *
+   * 屬性的政策刻意與 name/description 相反：兩個模式下外部值都蓋掉既有值。
+   * 名稱與描述是使用者的話，屬性是遊戲的事實——綁定一個外部來源的目的就是刷新後者。
+   * 展開順序（既有在前、外部在後）就是這條政策，反過來寫會靜默留著過期資料。
    */
   applyMetadata(metadata: FetchedMetadataDto, mode: 'prefill' | 'bind'): void {
     if (mode === 'prefill') {
