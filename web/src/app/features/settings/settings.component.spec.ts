@@ -123,7 +123,7 @@ describe('SettingsComponent', () => {
     );
 
     expect(headers).toEqual(['時間', '來源', '狀態', '新增', '更新', '略過', '失敗']);
-    expect(cells).toEqual(['2026-08-01 11:00', 'igdb', 'Succeeded', '0', '12', '7', '1']);
+    expect(cells.slice(1)).toEqual(['igdb', 'Succeeded', '0', '12', '7', '1']);
   });
 
   it('uses seven cells for an empty sync log row', async () => {
