@@ -8,10 +8,11 @@ import { IGNORE_HANDLED_BY_INTERCEPTOR } from '../../core/error.interceptor';
 import { NotificationService } from '../../core/notification.service';
 import { ExternalAccountDto, ShareLinkDto, SyncJobDto } from '../../core/models';
 import { DataTransferComponent } from './data-transfer.component';
+import { IgdbEnrichComponent } from './igdb-enrich.component';
 
 @Component({
   selector: 'app-settings',
-  imports: [FormsModule, DatePipe, DataTransferComponent],
+  imports: [FormsModule, DatePipe, DataTransferComponent, IgdbEnrichComponent],
   template: `
     <header class="settings__header">
       <div class="mc-eyebrow">CONNECTIONS / CONTROL DECK</div>
@@ -46,7 +47,7 @@ import { DataTransferComponent } from './data-transfer.component';
       <div class="settings__table-scroll">
         <table>
           <thead>
-            <tr><th>時間</th><th>來源</th><th>狀態</th><th>新增</th><th>更新</th><th>失敗</th></tr>
+            <tr><th>時間</th><th>來源</th><th>狀態</th><th>新增</th><th>更新</th><th>略過</th><th>失敗</th></tr>
           </thead>
           <tbody>
             @for (job of jobs(); track job.id) {
@@ -66,15 +67,18 @@ import { DataTransferComponent } from './data-transfer.component';
                 </td>
                 <td>{{ job.created }}</td>
                 <td>{{ job.updated }}</td>
+                <td>{{ job.skipped }}</td>
                 <td>{{ job.failed }}</td>
               </tr>
             } @empty {
-              <tr><td colspan="6">尚無同步紀錄。</td></tr>
+              <tr><td colspan="7">尚無同步紀錄。</td></tr>
             }
           </tbody>
         </table>
       </div>
     </section>
+
+    <app-igdb-enrich (completed)="reloadJobs()" />
 
     <section class="settings__panel mc-panel" data-settings-panel>
       <div class="mc-eyebrow">PUBLIC ACCESS</div>
@@ -259,7 +263,7 @@ export class SettingsComponent {
     );
   }
 
-  private reloadJobs(): void {
+  protected reloadJobs(): void {
     this.ingestion.jobs().subscribe((jobs) => this.jobs.set(jobs));
   }
 

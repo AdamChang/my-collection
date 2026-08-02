@@ -1,9 +1,11 @@
 import { TestBed } from '@angular/core/testing';
 import { Subject, of } from 'rxjs';
 import { IngestionService } from '../../core/api/ingestion.service';
+import { ProviderService } from '../../core/api/provider.service';
 import { ShareService } from '../../core/api/share.service';
 import { TransferService } from '../../core/api/transfer.service';
 import { NotificationService } from '../../core/notification.service';
+import { SyncJobDto } from '../../core/models';
 import { SettingsComponent } from './settings.component';
 
 describe('SettingsComponent', () => {
@@ -18,6 +20,7 @@ describe('SettingsComponent', () => {
         { provide: ShareService, useValue: { list: () => of([]) } },
         { provide: TransferService, useValue: {} },
         { provide: NotificationService, useValue: { success: () => undefined } },
+        { provide: ProviderService, useValue: { supports: () => false } },
       ],
     }).compileComponents();
 
@@ -41,6 +44,7 @@ describe('SettingsComponent', () => {
         { provide: ShareService, useValue: { list: () => of([]) } },
         { provide: TransferService, useValue: {} },
         { provide: NotificationService, useValue: { success: () => undefined } },
+        { provide: ProviderService, useValue: { supports: () => false } },
       ],
     }).compileComponents();
 
@@ -70,6 +74,7 @@ describe('SettingsComponent', () => {
         { provide: ShareService, useValue: { list: () => of([]), create: () => create } },
         { provide: TransferService, useValue: {} },
         { provide: NotificationService, useValue: { success: () => undefined } },
+        { provide: ProviderService, useValue: { supports: () => false } },
       ],
     }).compileComponents();
 
@@ -85,5 +90,37 @@ describe('SettingsComponent', () => {
     fixture.detectChanges();
 
     expect(share.disabled).toBeFalse();
+  });
+
+  it('shows the skipped count in the sync log', async () => {
+    const job: SyncJobDto = {
+      id: 'j1', provider: 'igdb', status: 'Succeeded',
+      created: 0, updated: 12, failed: 1, skipped: 7,
+      error: null, startedAt: '2026-08-01T03:00:00Z', finishedAt: '2026-08-01T03:00:09Z',
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [SettingsComponent],
+      providers: [
+        { provide: IngestionService, useValue: { accounts: () => of([]), jobs: () => of([job]) } },
+        { provide: ShareService, useValue: { list: () => of([]) } },
+        { provide: TransferService, useValue: {} },
+        { provide: NotificationService, useValue: { success: () => undefined } },
+        { provide: ProviderService, useValue: { supports: () => false } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(SettingsComponent);
+    fixture.detectChanges();
+
+    const headers = Array.from(fixture.nativeElement.querySelectorAll('th')).map(
+      (th) => (th as HTMLElement).textContent,
+    );
+    const cells = Array.from(fixture.nativeElement.querySelectorAll('tbody td')).map(
+      (td) => (td as HTMLElement).textContent,
+    );
+
+    expect(headers).toContain('略過');
+    expect(cells).toContain('7');
   });
 });
