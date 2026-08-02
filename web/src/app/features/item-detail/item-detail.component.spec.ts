@@ -653,6 +653,21 @@ describe('ItemDetailComponent', () => {
     expect(h.gets.count).toBe(1);
   });
 
+  /**
+   * 全零是「找到了遊戲，但沒有任何欄位可寫」——後端 MongoItemEnrichWriter.ApplyAsync
+   * 在 enrichment 被濾空時直接 return 0（品類沒宣告任何 IGDB key、且品項描述非空）。
+   * 條件若只認 skipped，這個組合會掉回「已從 IGDB 更新。」並多打一次 GET。
+   */
+  it('reports no updated fields instead of claiming success on an empty result', async () => {
+    const h = await createRefetchable(of(enrichJob({})));
+
+    h.fixture.nativeElement.querySelector('[data-igdb-refetch]').click();
+
+    expect(h.successes).toEqual([]);
+    expect(h.errors).toEqual(['IGDB 查無對應，未變更任何欄位。']);
+    expect(h.gets.count).toBe(1);
+  });
+
   it('reports the update and reloads the item when the lookup succeeds', async () => {
     const h = await createRefetchable(of(enrichJob({ updated: 1 })));
 
