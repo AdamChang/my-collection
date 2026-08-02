@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { Subject, of, throwError } from 'rxjs';
 import { IngestionService } from '../../core/api/ingestion.service';
-import { ProviderService } from '../../core/api/provider.service';
+import { IGDB_PROVIDER_KEY, ProviderService } from '../../core/api/provider.service';
 import { NotificationService } from '../../core/notification.service';
 import { SyncJobDto } from '../../core/models';
 import { IgdbEnrichComponent } from './igdb-enrich.component';
@@ -9,7 +9,7 @@ import { IgdbEnrichComponent } from './igdb-enrich.component';
 describe('IgdbEnrichComponent', () => {
   const job: SyncJobDto = {
     id: 'j1', provider: 'igdb', status: 'Succeeded',
-    created: 0, updated: 12, failed: 0, skipped: 3,
+    created: 0, updated: 12, failed: 1, skipped: 3,
     error: null, startedAt: '2026-08-01T03:00:00Z', finishedAt: '2026-08-01T03:00:09Z',
   };
 
@@ -19,7 +19,13 @@ describe('IgdbEnrichComponent', () => {
       imports: [IgdbEnrichComponent],
       providers: [
         { provide: IngestionService, useValue: ingestion },
-        { provide: ProviderService, useValue: { supports: () => available } },
+        {
+          provide: ProviderService,
+          useValue: {
+            supports: (key: string, capability: string) =>
+              available && key === IGDB_PROVIDER_KEY && capability === 'Search',
+          },
+        },
         { provide: NotificationService, useValue: notifications },
       ],
     }).compileComponents();
@@ -36,20 +42,30 @@ describe('IgdbEnrichComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-igdb-enrich]')).toBeNull();
   });
 
-  it('reports how many items were updated, skipped and failed', async () => {
+  it('asks igdb for a batch run and reports updated, skipped and failed', async () => {
     const messages: string[] = [];
-    const fixture = await create(true, { enrich: () => of(job) }, {
-      success: (m: string) => messages.push(m),
-    });
+    const enrichCalls: unknown[][] = [];
+    const fixture = await create(
+      true,
+      {
+        enrich: (...args: unknown[]) => {
+          enrichCalls.push(args);
+          return of(job);
+        },
+      },
+      { success: (m: string) => messages.push(m) },
+    );
 
     fixture.nativeElement.querySelector('[data-igdb-enrich-run]').click();
 
+    // 補完是批次寫入，一次最多動 50 筆——provider key 送錯不是顯示問題。
+    expect(enrichCalls).toEqual([[IGDB_PROVIDER_KEY]]);
     expect(messages[0]).toContain('更新 12');
     expect(messages[0]).toContain('略過 3');
-    expect(messages[0]).toContain('失敗 0');
+    expect(messages[0]).toContain('失敗 1');
   });
 
-  /** 失敗的補完也會留下一筆 job 紀錄，設定頁兩條路徑都要重載那張表。 */
+  /** 失敗若發生在 job 建立之後就會留下紀錄，設定頁兩條路徑都要重載那張表。 */
   it('signals completion so the caller can reload the job table', async () => {
     const fixture = await create(true, { enrich: () => of(job) });
 
@@ -61,7 +77,7 @@ describe('IgdbEnrichComponent', () => {
     expect(completed).toBe(1);
   });
 
-  /** 後端補完失敗時同樣會寫下一筆 job，所以失敗這條路徑也得叫呼叫端重載。 */
+  /** 失敗發生在 job 建立之後就會寫下紀錄，所以失敗這條路徑也得叫呼叫端重載。 */
   it('signals completion even when the run fails', async () => {
     const fixture = await create(true, { enrich: () => throwError(() => new Error('x')) });
 

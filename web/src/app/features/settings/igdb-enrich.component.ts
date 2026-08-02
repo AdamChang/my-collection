@@ -41,7 +41,10 @@ export class IgdbEnrichComponent {
   private readonly providers = inject(ProviderService);
   private readonly notifications = inject(NotificationService);
 
-  /** 成功與失敗都要發：失敗的補完同樣會在後端留下一筆 job 紀錄。 */
+  /**
+   * 成功與失敗都要發：失敗若發生在 job 建立之後，後端同樣會留下一筆紀錄。
+   * 更早的失敗（provider 未註冊、驗證 400、401、連線失敗）沒有 job 可看，重載無害。
+   */
   readonly completed = output<void>();
 
   protected readonly running = signal(false);
