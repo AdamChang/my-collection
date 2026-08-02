@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, provideRouter } from '@angular/router';
-import { Subject, of, throwError } from 'rxjs';
+import { Observable, Subject, of, throwError } from 'rxjs';
 import { CatalogService } from '../../core/api/catalog.service';
 import { CategoryService } from '../../core/api/category.service';
 import { IngestionService } from '../../core/api/ingestion.service';
@@ -486,8 +486,8 @@ describe('ItemDetailComponent', () => {
   });
 
   /**
-   * OpenGraph 品項也有 externalRef，但後端會組出 opengraph:xxx 這種 IGDB 反查不了的識別碼，
-   * 結果是略過。把它當成可定址，就是給使用者一顆按了沒反應的按鈕。
+   * OpenGraph 品項也有 externalRef，但後端會組出 opengraph:xxx 這種 IGDB 兩個前綴都
+   * parse 不了的識別碼，結果是進 failed。把它當成可定址，就是給使用者一顆按了只會失敗的按鈕。
    */
   it('does not treat an opengraph reference as addressable', async () => {
     const fixture = await createExistingItem({
@@ -511,61 +511,19 @@ describe('ItemDetailComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-igdb-refetch]')).toBeTruthy();
   });
 
-  /** 說「完成」會讓使用者以為資料已更新。查無對應時什麼都沒變。 */
-  it('reports a lookup miss instead of claiming success', async () => {
-    const messages: string[] = [];
-    const job: SyncJobDto = {
-      id: 'j1', provider: 'igdb', status: 'Succeeded',
-      created: 0, updated: 0, failed: 0, skipped: 1,
-      error: null, startedAt: '2026-08-01T03:00:00Z', finishedAt: '2026-08-01T03:00:01Z',
-    };
-
+  /**
+   * itemId() 來自路由，第一次變更偵測就是真值；item() 卻要等 catalog.get() 回來。
+   * 正式環境那是一段真實的非同步視窗，少了 null 檢查整頁在視窗內直接炸。
+   */
+  it('renders while the item has not loaded yet', async () => {
     await TestBed.configureTestingModule({
       imports: [ItemDetailComponent],
       providers: [
         provideRouter([]),
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => steamItem.id } } } },
         { provide: CategoryService, useValue: { list: () => of([igdbCategory]) } },
-        { provide: CatalogService, useValue: { get: () => of(steamItem) } },
-        { provide: IngestionService, useValue: { search: () => of([]), enrich: () => of(job) } },
-        {
-          provide: NotificationService,
-          useValue: {
-            success: (m: string) => messages.push(m),
-            error: (m: string) => messages.push(m),
-          },
-        },
-        {
-          provide: ProviderService,
-          useValue: {
-            supports: (key: string, capability: string) =>
-              key === IGDB_PROVIDER_KEY && capability === 'Search',
-          },
-        },
-      ],
-    }).compileComponents();
-
-    const fixture = TestBed.createComponent(ItemDetailComponent);
-    fixture.detectChanges();
-
-    fixture.nativeElement.querySelector('[data-igdb-refetch]').click();
-    fixture.detectChanges();
-
-    expect(messages.join()).toContain('查無對應');
-  });
-
-  /** 沒有這道鎖，連點三下就是三個 enrich 請求。與儲存那道鎖是同一個理由。 */
-  it('keeps the refetch button locked while the enrich request is in flight', async () => {
-    const enrich = new Subject<SyncJobDto>();
-
-    await TestBed.configureTestingModule({
-      imports: [ItemDetailComponent],
-      providers: [
-        provideRouter([]),
-        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => steamItem.id } } } },
-        { provide: CategoryService, useValue: { list: () => of([igdbCategory]) } },
-        { provide: CatalogService, useValue: { get: () => of(steamItem) } },
-        { provide: IngestionService, useValue: { search: () => of([]), enrich: () => enrich } },
+        { provide: CatalogService, useValue: { get: () => new Subject<ItemDto>() } },
+        { provide: IngestionService, useValue: { search: () => of([]) } },
         { provide: NotificationService, useValue: { success: () => undefined, error: () => undefined } },
         {
           provide: ProviderService,
@@ -580,11 +538,143 @@ describe('ItemDetailComponent', () => {
     const fixture = TestBed.createComponent(ItemDetailComponent);
     fixture.detectChanges();
 
-    const button: HTMLButtonElement = fixture.nativeElement.querySelector('[data-igdb-refetch]');
+    expect(fixture.nativeElement.querySelector('[data-igdb-bind]')).toBeTruthy();
+  });
+
+  /** 這兩顆是既有品項專屬的。漏到新增頁的話，bind 那顆不要求先選品類，正好繞過該規則。 */
+  it('keeps the existing-item entry points off the new item page', async () => {
+    const fixture = await createNewItemWithIgdb(true);
+
+    expect(fixture.nativeElement.querySelector('[data-igdb-refetch]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-igdb-bind]')).toBeNull();
+  });
+
+  it('keeps the bind button locked while another write is in flight', async () => {
+    const fixture = await createExistingItem({ ...steamItem, source: 'Manual', externalRef: null });
+    fixture.componentInstance.saving.set(true);
+    fixture.detectChanges();
+
+    const button: HTMLButtonElement = fixture.nativeElement.querySelector('[data-igdb-bind]');
+
+    expect(button.disabled).toBeTrue();
+  });
+
+  function enrichJob(outcome: Partial<SyncJobDto>): SyncJobDto {
+    return {
+      id: 'j1', provider: 'igdb', status: 'Succeeded',
+      created: 0, updated: 0, failed: 0, skipped: 0,
+      error: null, startedAt: '2026-08-01T03:00:00Z', finishedAt: '2026-08-01T03:00:01Z',
+      ...outcome,
+    };
+  }
+
+  /**
+   * 通報通道分開收集：把 error 換成 success 訊息文字不會變，只有通道會變。
+   * enrich 的參數也記下來——不給 itemIds 會變成批次補完 50 筆使用者沒選的品項。
+   */
+  async function createRefetchable(response: Observable<SyncJobDto>) {
+    const successes: string[] = [];
+    const errors: string[] = [];
+    const enrichCalls: unknown[][] = [];
+    const gets = { count: 0 };
+
+    await TestBed.configureTestingModule({
+      imports: [ItemDetailComponent],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => steamItem.id } } } },
+        { provide: CategoryService, useValue: { list: () => of([igdbCategory]) } },
+        {
+          provide: CatalogService,
+          useValue: {
+            get: () => {
+              gets.count++;
+              return of(steamItem);
+            },
+          },
+        },
+        {
+          provide: IngestionService,
+          useValue: {
+            search: () => of([]),
+            enrich: (...args: unknown[]) => {
+              enrichCalls.push(args);
+              return response;
+            },
+          },
+        },
+        {
+          provide: NotificationService,
+          useValue: {
+            success: (m: string) => successes.push(m),
+            error: (m: string) => errors.push(m),
+          },
+        },
+        {
+          provide: ProviderService,
+          useValue: {
+            supports: (key: string, capability: string) =>
+              key === IGDB_PROVIDER_KEY && capability === 'Search',
+          },
+        },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(ItemDetailComponent);
+    fixture.detectChanges();
+
+    return { fixture, successes, errors, enrichCalls, gets };
+  }
+
+  /** 說「完成」會讓使用者以為資料已更新。查無對應時什麼都沒變。 */
+  it('reports a lookup miss instead of claiming success', async () => {
+    const h = await createRefetchable(of(enrichJob({ skipped: 1 })));
+
+    h.fixture.nativeElement.querySelector('[data-igdb-refetch]').click();
+
+    expect(h.errors).toEqual(['IGDB 查無對應，未變更任何欄位。']);
+    expect(h.successes).toEqual([]);
+    // 少了 return 會多打一次 GET，把使用者未儲存的編輯洗掉。
+    expect(h.gets.count).toBe(1);
+  });
+
+  /**
+   * IGDB 限流、憑證過期、服務中斷都會讓後端把整個 chunk 記成 failed，
+   * 而 job.Status 仍是 Succeeded——走的是 next 不是 error，errorInterceptor 不會出手。
+   * 這種情況該叫使用者稍後重試，不是告訴他已經更新完成。
+   */
+  it('reports a failed lookup as a failure, not an update', async () => {
+    const h = await createRefetchable(of(enrichJob({ failed: 1 })));
+
+    h.fixture.nativeElement.querySelector('[data-igdb-refetch]').click();
+
+    expect(h.errors).toEqual(['IGDB 查詢失敗，請稍後再試。']);
+    expect(h.successes).toEqual([]);
+    expect(h.gets.count).toBe(1);
+  });
+
+  it('reports the update and reloads the item when the lookup succeeds', async () => {
+    const h = await createRefetchable(of(enrichJob({ updated: 1 })));
+
+    h.fixture.nativeElement.querySelector('[data-igdb-refetch]').click();
+
+    expect(h.successes).toEqual(['已從 IGDB 更新。']);
+    expect(h.errors).toEqual([]);
+    // 不重載的話畫面停在舊資料，使用者看不到剛抓回來的欄位。
+    expect(h.gets.count).toBe(2);
+    // 不給 itemIds 就會變成批次補完使用者沒選的品項。
+    expect(h.enrichCalls).toEqual([[IGDB_PROVIDER_KEY, [steamItem.id]]]);
+  });
+
+  /** 沒有這道鎖，連點三下就是三個 enrich 請求。與儲存那道鎖是同一個理由。 */
+  it('keeps the refetch button locked while the enrich request is in flight', async () => {
+    const h = await createRefetchable(new Subject<SyncJobDto>());
+
+    const button: HTMLButtonElement = h.fixture.nativeElement.querySelector('[data-igdb-refetch]');
     expect(button.disabled).toBeFalse();
 
     button.click();
-    fixture.detectChanges();
+    h.fixture.detectChanges();
 
     expect(button.disabled).toBeTrue();
     expect(button.textContent).toContain('抓取中');

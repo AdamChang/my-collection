@@ -147,12 +147,11 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
     .detail__header { display: flex; justify-content: space-between; align-items: center; }
     .detail__actions { display: flex; gap: 0.5rem; }
     .detail__panel { display: grid; gap: 1rem; }
-    .detail__panel .hint { color: var(--mc-text-muted); font-size: 0.85rem; }
     .detail label { display: grid; gap: 0.25rem; }
+    .detail .hint { color: var(--mc-text-muted); font-size: 0.85rem; }
     .detail__checkbox { display: flex !important; gap: 0.5rem; align-items: center; }
     .detail__fetch { display: flex; gap: 0.5rem; align-items: center; }
     .detail__igdb { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
-    .detail__igdb .hint { color: var(--mc-text-muted); font-size: 0.85rem; }
     .detail__acquisition { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; }
     @media (max-width: 42rem) {
       .detail__fetch { display: grid; grid-template-columns: 1fr; align-items: stretch; }
@@ -201,7 +200,8 @@ export class ItemDetailComponent {
   /**
    * 後端 ExternalIdFor 的規則：先看 marker，再退回 externalRef。
    * 必須檢查 provider === 'steam'——OpenGraph 品項也有 externalRef，
-   * 但後端會組出 opengraph:xxx 這種 IGDB 反查不了的識別碼，結果只會是略過。
+   * 但後端會組出 opengraph:xxx 這種 IGDB 兩個前綴都 parse 不了的識別碼，
+   * 結果是進 failed（不是 skipped），而 job.Status 仍為 Succeeded。
    */
   readonly igdbAddressable = computed(() => {
     const item = this.item();
@@ -310,8 +310,16 @@ export class ItemDetailComponent {
       .pipe(finalize(() => this.enriching.set(false)))
       .subscribe({
         next: (job) => {
-          // 誠實比樂觀重要：查無對應時什麼都沒變，說「完成」會讓使用者以為資料已更新。
-          if (job.updated === 0 && job.skipped > 0) {
+          // 誠實比樂觀重要：什麼都沒變時說「完成」，使用者會以為資料已更新。
+          // failed 與 skipped 要分開講——一個是該重試，一個是重試也沒用。
+          // 注意 job.Status 在這兩種情況下都還是 Succeeded（provider 內部接住了
+          // ProviderException），所以 errorInterceptor 不會出手，只能靠這裡判斷。
+          if (job.failed > 0) {
+            this.notifications.error('IGDB 查詢失敗，請稍後再試。');
+            return;
+          }
+
+          if (job.updated === 0) {
             this.notifications.error('IGDB 查無對應，未變更任何欄位。');
             return;
           }
