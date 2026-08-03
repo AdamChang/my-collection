@@ -76,6 +76,8 @@ openssl rand -base64 32
 [Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Max 256 }))
 ```
 
+若要啟用 IGDB 遊戲中繼資料，同一份 `.env` 也可填入 `IGDB_CLIENT_ID`、`IGDB_CLIENT_SECRET`（選配，留空即停用，申請步驟見下方「IGDB 遊戲中繼資料」章節）。
+
 然後：
 
 ```bash
