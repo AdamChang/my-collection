@@ -3,59 +3,45 @@ import { finalize } from 'rxjs';
 import { TransferService } from '../../core/api/transfer.service';
 import { IGNORE_HANDLED_BY_INTERCEPTOR } from '../../core/error.interceptor';
 import { NotificationService } from '../../core/notification.service';
-import { ImportResultDto } from '../../core/models';
+import { ImageImportResultDto } from '../../core/models';
 
 @Component({
-  selector: 'app-data-transfer',
+  selector: 'app-image-transfer',
   template: `
     <section class="transfer mc-panel" data-settings-panel>
-      <div class="mc-eyebrow">DATA TRANSFER</div>
-      <h2>匯出／匯入收藏</h2>
+      <div class="mc-eyebrow">IMAGE TRANSFER</div>
+      <h2>匯出／匯入圖片</h2>
 
       <p class="hint">
-        匯出會產生一個含品類、手建品項與圖片的 ZIP。Steam 同步來的品項不在其中，
-        另一台機器重跑一次同步即可取得。
+        收藏資料存在共用的資料庫，每台機器看到的本來就是同一份；只有圖片存在各自的本地儲存區，
+        需要手動搬一次。匯出會產生一個 ZIP，內含所有圖片的原圖、卡片圖與縮圖。
       </p>
 
       <button type="button" (click)="exportArchive()" [disabled]="busy()" data-export>
-        {{ exporting() ? '匯出中…' : '匯出封存檔' }}
+        {{ exporting() ? '匯出中…' : '匯出圖片封存檔' }}
       </button>
 
       <hr />
 
       <label class="transfer__file">
-        選擇封存檔
+        選擇圖片封存檔
         <input type="file" accept=".zip" (change)="pick($event)" [disabled]="busy()" />
       </label>
 
       @if (selected(); as file) {
         <p>已選擇：<code>{{ file.name }}</code></p>
-        <button type="button" (click)="confirming.set(true)" [disabled]="busy()">匯入…</button>
-      }
-
-      @if (confirming()) {
-        <div class="mc-panel transfer__danger" role="alertdialog" aria-labelledby="import-warning">
-          <h3 id="import-warning">這會覆蓋這台機器上的收藏</h3>
-          <ul>
-            <li>刪除所有手建品項與其圖片（Steam 同步來的品項會保留）</li>
-            <li>刪除所有自訂品類與公開分享連結</li>
-            <li>以封存檔的內容重新寫入</li>
-          </ul>
-          <p>
-            系統會在動手前自動備份到伺服器的 <code>data/backups</code>。
-            但匯入過程無法回滾，中途失敗會留下不完整的資料，需要用備份還原。
-          </p>
-          <button type="button" (click)="importArchive()" [disabled]="busy()" data-confirm-import>
-            {{ importing() ? '匯入中…' : '確定覆蓋' }}
-          </button>
-          <button type="button" (click)="confirming.set(false)" [disabled]="busy()">取消</button>
-        </div>
+        <p class="hint">
+          匯入只會補上這台機器還沒有的圖檔，不會覆蓋既有檔案，也不會改動任何收藏資料。
+        </p>
+        <button type="button" (click)="importArchive()" [disabled]="busy()" data-import>
+          {{ importing() ? '匯入中…' : '開始匯入' }}
+        </button>
       }
 
       @if (result(); as summary) {
         <div class="mc-panel transfer__result">
           <h3>匯入完成</h3>
-          <p>品類 {{ summary.categories }} 個、品項 {{ summary.items }} 筆、圖片 {{ summary.images }} 張。</p>
+          <p>寫入 {{ summary.written }} 個圖檔，略過 {{ summary.skipped }} 個（這台機器上已經有了）。</p>
           @if (summary.warnings.length) {
             <ul>
               @for (warning of summary.warnings; track warning) {
@@ -74,8 +60,6 @@ import { ImportResultDto } from '../../core/models';
     .hint { color: var(--mc-text-muted); font-size: 0.85rem; }
     hr { width: 100%; margin: 0; border: 0; border-top: 1px solid var(--mc-border); }
     .transfer__file { display: grid; gap: 0.35rem; justify-items: start; }
-    .transfer__danger { border-color: var(--mc-danger); display: grid; gap: 0.5rem; justify-items: start; }
-    .transfer__danger h3 { color: var(--mc-danger); }
     .transfer__result { display: grid; gap: 0.5rem; justify-items: start; }
     ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.25rem; font-size: 0.85rem; }
     @media (max-width: 520px) {
@@ -83,15 +67,14 @@ import { ImportResultDto } from '../../core/models';
     }
   `,
 })
-export class DataTransferComponent {
+export class ImageTransferComponent {
   private readonly transfer = inject(TransferService);
   private readonly notifications = inject(NotificationService);
 
   protected readonly exporting = signal(false);
   protected readonly importing = signal(false);
-  protected readonly confirming = signal(false);
   protected readonly selected = signal<File | null>(null);
-  protected readonly result = signal<ImportResultDto | null>(null);
+  protected readonly result = signal<ImageImportResultDto | null>(null);
 
   protected readonly busy = computed(() => this.exporting() || this.importing());
 
@@ -128,12 +111,7 @@ export class DataTransferComponent {
 
     this.transfer
       .import(file)
-      .pipe(
-        finalize(() => {
-          this.importing.set(false);
-          this.confirming.set(false);
-        }),
-      )
+      .pipe(finalize(() => this.importing.set(false)))
       .subscribe({
         next: (summary) => {
           this.result.set(summary);
@@ -150,7 +128,7 @@ export class DataTransferComponent {
     const anchor = document.createElement('a');
 
     anchor.href = url;
-    anchor.download = `mycollection-${new Date().toISOString().slice(0, 10)}.zip`;
+    anchor.download = `mycollection-images-${new Date().toISOString().slice(0, 10)}.zip`;
     anchor.click();
 
     // 立刻 revoke 會讓部分瀏覽器在下載真正開始前就失去這個 URL，隔一個 tick 才安全。

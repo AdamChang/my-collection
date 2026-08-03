@@ -36,15 +36,13 @@ public static class DependencyInjection
         services.AddScoped<ICategoryRepository, MongoCategoryRepository>();
         services.AddScoped<IItemRepository, MongoItemRepository>();
         services.AddScoped<IShareLinkRepository, MongoShareLinkRepository>();
-        services.AddScoped<ITransferRepository, MongoTransferRepository>();
-        services.AddScoped<ArchiveWriter>();
-        services.AddScoped<ArchiveValidator>();
+        services.AddScoped<IImageArchiveRepository, MongoImageArchiveRepository>();
+        services.AddScoped<ImageArchiveWriter>();
         services.AddScoped<IPublicCatalogReader, MongoPublicCatalogReader>();
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
         services.AddSingleton<ITokenService, JwtTokenService>();
         services.AddSingleton<IAttributeValidator, AttributeValidator>();
         services.AddSingleton<IFileStorage, LocalFileStorage>();
-        services.AddSingleton<IBackupStore, LocalBackupStore>();
         services.AddSingleton<IImageProcessor, ImageSharpProcessor>();
 
         services.AddSingleton<ISecretProtector, AesGcmSecretProtector>();

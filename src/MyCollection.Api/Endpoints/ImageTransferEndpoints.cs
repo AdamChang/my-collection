@@ -3,21 +3,23 @@ using MyCollection.Application.Transfer;
 
 namespace MyCollection.Api.Endpoints;
 
-public static class TransferEndpoints
+public static class ImageTransferEndpoints
 {
-    public static IEndpointRouteBuilder MapTransferEndpoints(this IEndpointRouteBuilder app)
+    public static IEndpointRouteBuilder MapImageTransferEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/").WithTags("Transfer").RequireAuthorization();
+        // 刻意不掛在 /media 底下：那個前綴上有一個 AllowAnonymous 的 catch-all，
+        // 讓需要授權的路由緊鄰它只會讓人看錯。
+        var group = app.MapGroup("/images").WithTags("Transfer").RequireAuthorization();
 
         group.MapGet("/export", async (HttpContext http, ISender sender, TimeProvider time, CancellationToken ct) =>
         {
-            var fileName = $"mycollection-{time.GetUtcNow():yyyyMMdd-HHmmss}.zip";
+            var fileName = $"mycollection-images-{time.GetUtcNow():yyyyMMdd-HHmmss}.zip";
 
             http.Response.ContentType = "application/zip";
             http.Response.Headers.ContentDisposition = $"attachment; filename=\"{fileName}\"";
 
             // 串流開始後就無法再改 status code，中途失敗只能斷線。
-            await sender.Send(new ExportArchiveCommand(http.Response.Body), ct);
+            await sender.Send(new ExportImageArchiveCommand(http.Response.Body), ct);
         });
 
         group.MapPost("/import", async (IFormFile file, ISender sender, CancellationToken ct) =>
@@ -39,7 +41,7 @@ public static class TransferEndpoints
                     }
 
                     await using var archive = File.OpenRead(tempPath);
-                    var result = await sender.Send(new ImportArchiveCommand(archive), ct);
+                    var result = await sender.Send(new ImportImageArchiveCommand(archive), ct);
 
                     return Results.Ok(result);
                 }

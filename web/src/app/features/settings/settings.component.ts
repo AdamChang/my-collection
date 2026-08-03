@@ -7,12 +7,12 @@ import { ShareService } from '../../core/api/share.service';
 import { IGNORE_HANDLED_BY_INTERCEPTOR } from '../../core/error.interceptor';
 import { NotificationService } from '../../core/notification.service';
 import { ExternalAccountDto, ShareLinkDto, SyncJobDto } from '../../core/models';
-import { DataTransferComponent } from './data-transfer.component';
+import { ImageTransferComponent } from './image-transfer.component';
 import { IgdbEnrichComponent } from './igdb-enrich.component';
 
 @Component({
   selector: 'app-settings',
-  imports: [FormsModule, DatePipe, DataTransferComponent, IgdbEnrichComponent],
+  imports: [FormsModule, DatePipe, ImageTransferComponent, IgdbEnrichComponent],
   template: `
     <header class="settings__header">
       <div class="mc-eyebrow">CONNECTIONS / CONTROL DECK</div>
@@ -106,7 +106,7 @@ import { IgdbEnrichComponent } from './igdb-enrich.component';
       </ul>
     </section>
 
-    <app-data-transfer />
+    <app-image-transfer />
   `,
   styles: `
     .settings__header { margin: 0 0 1.5rem; }

@@ -14,14 +14,12 @@ services:
       SecretProtection__Key: ${SECRET_PROTECTION_KEY:?SECRET_PROTECTION_KEY is required}
       Storage__Provider: Local
       Storage__LocalRoot: /app/data/media
-      Storage__BackupRoot: /app/data/backups
       # IGDB 為選配：留空即停用整組功能，前端會隱藏搜尋入口。
       # 走 Twitch client credentials（server-to-server），不需要 HTTPS 或重新導向網址。
       Igdb__ClientId: ${IGDB_CLIENT_ID:-}
       Igdb__ClientSecret: ${IGDB_CLIENT_SECRET:-}
     volumes:
       - ./data/media:/app/data/media
-      - ./data/backups:/app/data/backups
 
   web:
     build:

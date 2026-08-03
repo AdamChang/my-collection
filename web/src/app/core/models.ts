@@ -142,9 +142,8 @@ export interface ProblemDetails {
 }
 
 /** 匯入完成後的摘要。warnings 是可容忍的降級（缺圖、slug 被占用等），不是錯誤。 */
-export interface ImportResultDto {
-  categories: number;
-  items: number;
-  images: number;
+export interface ImageImportResultDto {
+  written: number;
+  skipped: number;
   warnings: string[];
 }

@@ -5,36 +5,25 @@ using MyCollection.Domain.Entities;
 namespace MyCollection.Application.Transfer;
 
 /// <summary>
-/// 匯出核心。寫入任意 Stream，因此匯出端點（HttpResponse.Body）與
-/// 匯入前的自動備份（備份檔）可以共用同一份邏輯。
+/// 匯出核心。zip 內的 entry 名就是 storage 的相對路徑，三種尺寸原樣打包，
+/// 因此匯入端只要把 entry 寫回同一個路徑就完成還原——不需要重壓圖片，
+/// 也不需要知道任何語意。
 ///
-/// 圖片一次一張串流讀寫，不會同時把多張圖片放進記憶體；manifest 中繼資料
-/// 的量則跟收藏規模成正比（<see cref="ArchiveManifest.Items"/> 本身就是
-/// List&lt;T&gt;）。另外為了繞過 <see cref="SyncSafeBufferedStream"/> 要處理的
-/// 同步 I/O 限制，額外多墊了最多一個 entry 大小的緩衝。
+/// 圖片一次一張串流讀寫，不會同時把多張圖片放進記憶體。另外為了繞過
+/// <see cref="SyncSafeBufferedStream"/> 要處理的同步 I/O 限制，額外多墊了
+/// 最多一個 entry 大小的緩衝。
 /// </summary>
-public sealed class ArchiveWriter(
-    ITransferRepository repository,
+public sealed class ImageArchiveWriter(
+    IImageArchiveRepository repository,
     IFileStorage storage,
+    IUserContext userContext,
     TimeProvider timeProvider)
 {
     public async Task WriteAsync(Stream destination, CancellationToken ct)
     {
-        // 這三次讀取沒有 transaction（單機 MongoDB 沒有），中間若有並發編輯
-        // （例如另一個分頁刪掉品類），archive 可能出現「品項指向 archive 內
-        // 不存在的品類」。自我觸發的匯出時間窗很短，這裡選擇記錄這個取捨，
-        // 而不是為了這個邊角案例引入 transaction 或多讀一次校驗。
-        var categories = await repository.ListOwnCategoriesAsync(ct);
-        var items = await repository.ListExportableItemsAsync(ct);
-        var shareLinks = await repository.ListOwnShareLinksAsync(ct);
-
-        var manifest = new ArchiveManifest
-        {
-            ExportedAt = timeProvider.GetUtcNow().UtcDateTime,
-            Categories = [.. categories.Select(ArchiveMapper.ToArchive)],
-            Items = [.. items.Select(ArchiveMapper.ToArchive)],
-            ShareLinks = [.. shareLinks.Select(ArchiveMapper.ToArchive)]
-        };
+        var items = await repository.ListItemsWithImagesAsync(ct);
+        var missing = new List<MissingImageFile>();
+        var fileCount = 0;
 
         // ZipArchiveEntry 的寫入串流（內部的 WrappedStream）沒有覆寫 DisposeAsync，
         // 就算全程用 OpenAsync／await using，關閉一個 entry 時還是會落回同步 Dispose，
@@ -50,30 +39,44 @@ public sealed class ArchiveWriter(
 
         await using (var archive = new ZipArchive(buffered, ZipArchiveMode.Create, leaveOpen: true))
         {
-            await using (var manifestEntry = await archive.CreateEntry(ArchiveManifest.FileName).OpenAsync(ct))
-            {
-                await ArchiveManifestSerializer.WriteAsync(manifestEntry, manifest, ct);
-            }
-            await buffered.FlushBufferedAsync(ct);
-
             foreach (var item in items)
             {
-                foreach (var image in item.Images)
+                foreach (var path in item.Images.SelectMany(StoredPaths))
                 {
-                    // 檔案遺失不由匯出端處理：manifest 照 DB 寫，zip 內少一個 entry，
-                    // 由匯入端偵測並降級為 warning。這讓匯出維持單趟串流，
-                    // 不必為了預檢而把每個檔案開兩次。
-                    await using var source = await storage.OpenReadAsync(image.Path, ct);
+                    await using var source = await storage.OpenReadAsync(path, ct);
+
                     if (source is null)
                     {
+                        missing.Add(new MissingImageFile { ItemName = item.Name, Path = path });
                         continue;
                     }
 
-                    await using var entry = await archive.CreateEntry(ArchivePaths.Image(item.Id, image.Id)).OpenAsync(ct);
-                    await source.CopyToAsync(entry, ct);
+                    await using (var entry = await archive.CreateEntry(path).OpenAsync(ct))
+                    {
+                        await source.CopyToAsync(entry, ct);
+                    }
+
                     await buffered.FlushBufferedAsync(ct);
+                    fileCount++;
                 }
             }
+
+            // manifest 刻意寫在最後：到這裡才知道實際帶走幾個檔、少了哪些。
+            // zip 的 entry 順序是自由的，匯入端靠中央目錄定址，讀得到就好。
+            var manifest = new ImageArchiveManifest
+            {
+                ExportedAt = timeProvider.GetUtcNow().UtcDateTime,
+                OwnerId = userContext.UserId.ToString(),
+                FileCount = fileCount,
+                Missing = missing
+            };
+
+            await using (var entry = await archive.CreateEntry(ImageArchiveManifest.FileName).OpenAsync(ct))
+            {
+                await ImageArchiveManifestSerializer.WriteAsync(entry, manifest, ct);
+            }
+
+            await buffered.FlushBufferedAsync(ct);
         }
 
         // ZipArchive.DisposeAsync 本身有正確覆寫（負責寫中央目錄），但一樣是先
@@ -81,6 +84,9 @@ public sealed class ArchiveWriter(
         // 這一定要在 buffered 被釋放之前執行完，否則中央目錄永遠出不去。
         await buffered.FlushBufferedAsync(ct);
     }
+
+    private static IEnumerable<string> StoredPaths(ItemImage image) =>
+        [image.Path, image.CardPath, image.ThumbPath];
 
     /// <summary>
     /// 見 <see cref="WriteAsync"/> 內的說明：只吸收 ZipArchiveEntry 內部在關閉

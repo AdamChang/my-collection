@@ -14,6 +14,8 @@
 
 **公開分享頁用投影白名單。** `MongoPublicCatalogReader` 以 `$project` 明確列出可公開的欄位，`acquisition`（購入價格、通路）在資料庫層就被擋掉，不依賴 DTO 記得不要序列化它。
 
+**資料在雲端，圖片在本地。** MongoDB 由 Atlas 託管，每台機器看到的收藏資料本來就是同一份，不需要搬運；但上傳的圖片存在各自的本地儲存區，換一台機器就是一堆破圖。所以 `/images/export`、`/images/import` 只搬圖檔：zip 內的 entry 名就是 storage 相對路徑，匯入端把檔案寫回同一個位置就完成還原，全程不碰資料庫，也因此沒有破壞性——只補上缺的檔案，永不覆蓋、永不刪除。
+
 **同步是冪等的。** Steam 同步以 `(ownerId, provider, externalId)` 為鍵做單次 `BulkWrite` upsert：provider 擁有的欄位用 `$set`，使用者擁有的欄位（Showcase 旗標、標籤、購入資訊）用 `$setOnInsert`。重跑同步不會蓋掉你的手動編輯。
 
 ---
@@ -84,7 +86,7 @@ openssl rand -base64 32
 docker compose up -d --build
 ```
 
-開 <http://localhost:8080>。三個容器：`mongo`（資料存 `./data/mongo`）、`api`、`web`（nginx，靜態檔 + 反代 `/api`）。上傳的圖片存在 `./data/media`。
+開 <http://localhost:8080>。兩個容器：`api` 與 `web`（nginx，靜態檔 + 反代 `/api`）；MongoDB 由 `MONGO_CONNECTION_STRING` 指向的 Atlas 叢集提供。上傳的圖片存在 `./data/media`，這是唯一不會跟著雲端資料庫走的東西，換機器時用設定頁的「匯出／匯入圖片」搬。
 
 `.env` 已被 `.gitignore` 排除，不會進版控。
 
@@ -167,6 +169,7 @@ cd web && npm test -- --watch=false --browsers=ChromeHeadless # 35 個
 | 品項 | `GET /items`、`GET /items/tags`、`GET/PUT/DELETE /items/{id}`、`POST /items` | |
 | 圖片 | `POST /items/{itemId}/images`、`DELETE .../{imageId}`、`POST .../{imageId}/primary` | |
 | 媒體 | `GET /media/{**path}` | 匿名 |
+| 圖片搬運 | `GET /images/export`、`POST /images/import` | |
 | Showcase | `GET /showcase` | |
 | 分享 | `GET/POST /shares`、`DELETE /shares/{id}` | |
 | | `GET /public/{slug}` | 匿名 |

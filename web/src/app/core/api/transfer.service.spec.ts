@@ -22,23 +22,24 @@ describe('TransferService', () => {
   it('requests the export as a blob', () => {
     service.export().subscribe();
 
-    const request = controller.expectOne('/api/export');
+    const request = controller.expectOne('/api/images/export');
     expect(request.request.method).toBe('GET');
     expect(request.request.responseType).toBe('blob');
     request.flush(new Blob(['zip']));
   });
 
   it('posts the archive as multipart form data named file', async () => {
-    const archive = new File(['zip'], 'archive.zip', { type: 'application/zip' });
+    const archive = new File(['zip'], 'images.zip', { type: 'application/zip' });
     const result = firstValueFrom(service.import(archive));
 
-    const request = controller.expectOne('/api/import');
+    const request = controller.expectOne('/api/images/import');
     expect(request.request.method).toBe('POST');
     expect(request.request.body instanceof FormData).toBe(true);
     expect((request.request.body as FormData).get('file')).toBe(archive);
 
-    request.flush({ categories: 1, items: 2, images: 3, warnings: [] });
+    request.flush({ written: 3, skipped: 1, warnings: [] });
 
-    expect((await result).items).toBe(2);
+    expect((await result).written).toBe(3);
+    expect((await result).skipped).toBe(1);
   });
 });
