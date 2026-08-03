@@ -48,7 +48,7 @@ web/
   src/app/features/             showcase、catalog、item-detail、categories、settings、public
 docs/
   superpowers/specs/            設計文件
-  superpowers/plans/            5 份實作計畫
+  superpowers/plans/            實作計畫
 ```
 
 相依方向是 `Domain ← Application ← Infrastructure ← Api`，內層不認識外層。
@@ -61,12 +61,15 @@ docs/
 cp .env.example .env
 ```
 
-填入兩把金鑰：
+填入一條連線字串與兩把金鑰，三個都是必填——`MONGO_CONNECTION_STRING` 沒填，`docker compose up` 會直接拒絕啟動：
 
 ```dotenv
+MONGO_CONNECTION_STRING=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?appName=mycollection
 JWT_KEY=<任意足夠長的字串>
 SECRET_PROTECTION_KEY=<能解碼成 32 bytes 的 Base64>
 ```
+
+資料庫用 MongoDB Atlas。填本機的 `mongodb://localhost:27017` 也能跑，只是那樣就沒有跨機器共用資料這件事了。
 
 `SECRET_PROTECTION_KEY` **必須**是 32 bytes，它是加密使用者 Steam API Key 的 AES-GCM 金鑰，長度不對 API 啟動就會失敗。產生方式：
 
@@ -94,7 +97,15 @@ docker compose up -d --build
 
 ## 本機開發
 
-需要一個跑著的 MongoDB。API 啟動時會建立索引，連不上就會 fail-fast 而不是延後到第一次查詢才爆。
+需要一個連得上的 MongoDB。API 啟動時會建立索引，連不上就會 fail-fast 而不是延後到第一次查詢才爆。
+
+`appsettings.json` 的預設值是 `mongodb://localhost:27017`，所以什麼都不設就是連本機。要接 Atlas（開發環境目前的做法）就覆寫連線字串再啟動：
+
+```powershell
+$env:Mongo__ConnectionString = 'mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?appName=mycollection'
+```
+
+想跑本機單機的話：
 
 ```bash
 docker run -d --name mycollection-dev-mongo -p 27017:27017 mongo:8.0
@@ -121,8 +132,8 @@ API 文件在 <http://localhost:5080/openapi/v1.json>（僅 Development）。
 ## 測試
 
 ```bash
-dotnet test                                                  # 259 個
-cd web && npm test -- --watch=false --browsers=ChromeHeadless # 35 個
+dotnet test                                                  # 437 個
+cd web && npm test -- --watch=false --browsers=ChromeHeadless # 135 個
 ```
 
 整合測試用 Testcontainers 起真的 `mongo:8.0`，第一次跑會拉映像。需要 Docker 在跑。前端測試需要 Chrome。
@@ -135,7 +146,7 @@ cd web && npm test -- --watch=false --browsers=ChromeHeadless # 35 個
 
 | 區段 | 鍵 | 說明 |
 |---|---|---|
-| `Mongo` | `ConnectionString`、`Database` | |
+| `Mongo` | `ConnectionString`、`Database` | Atlas 或本機皆可；預設值指向 `localhost:27017` |
 | `Jwt` | `Key`、`Issuer`、`Audience`、`AccessTokenMinutes`、`RefreshTokenDays` | `Key` 是 HMAC 簽章金鑰 |
 | `Storage` | `Provider`、`LocalRoot` | 第一版僅實作 `Local`；`IFileStorage` 介面預留了換成 GCS 的空間 |
 | `SecretProtection` | `Key` | Base64 的 32 bytes，加密外部帳號憑證 |
@@ -159,7 +170,7 @@ cd web && npm test -- --watch=false --browsers=ChromeHeadless # 35 個
 
 ## API 概觀
 
-所有端點都不帶 `/api` 前綴（由 proxy／nginx 補上）。預設需要 Bearer token，匿名端點只有四個：`POST /auth/register`、`POST /auth/login`、`POST /auth/refresh`、`GET /media/{**path}`、`GET /public/{slug}`、`GET /health`。
+所有端點都不帶 `/api` 前綴（由 proxy／nginx 補上）。預設需要 Bearer token，匿名端點只有六個：`POST /auth/register`、`POST /auth/login`、`POST /auth/refresh`、`GET /media/{**path}`、`GET /public/{slug}`、`GET /health`。
 
 | 群組 | 端點 | |
 |---|---|---|
@@ -198,4 +209,4 @@ cd web && npm test -- --watch=false --browsers=ChromeHeadless # 35 個
 
 設計決策與資料模型見 `docs/superpowers/specs/2026-07-25-mycollection-design.md`。
 
-實作過程拆成 5 份計畫放在 `docs/superpowers/plans/`，執行中發現的環境陷阱與計畫錯誤都已回填進去（例如 nginx `location` 的比對優先序、Angular 測試中 promise 與 observable 銜接需要等待 microtask、`DynamicFormComponent` 的 `[value]` 不可綁動態狀態）。要改動對應區域前值得先讀。
+實作過程拆成多份計畫放在 `docs/superpowers/plans/`，執行中發現的環境陷阱與計畫錯誤都已回填進去（例如 nginx `location` 的比對優先序、Angular 測試中 promise 與 observable 銜接需要等待 microtask、`DynamicFormComponent` 的 `[value]` 不可綁動態狀態）。要改動對應區域前值得先讀。
