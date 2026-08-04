@@ -2,6 +2,7 @@ using MongoDB.Bson;
 using MyCollection.Domain.Entities;
 using MyCollection.Infrastructure.Providers;
 using MyCollection.Infrastructure.Providers.Igdb;
+using MyCollection.Infrastructure.Providers.Psn;
 
 namespace MyCollection.Infrastructure.Mongo;
 
@@ -59,7 +60,8 @@ public static class SystemCategoryDefinitions
             // steamAppId 是識別碼來源（IGDB 反查時也會寫），
             // steamStoreUpdatedAt 是完成標記（只有商店補完會寫）。
             Number(SteamFields.AppIdKey, "Steam App ID"),
-            Date(SteamFields.StoreUpdatedAtKey, "Steam 資料更新時間")
+            Date(SteamFields.StoreUpdatedAtKey, "Steam 資料更新時間"),
+            ..PsnFields.Create()
         ]),
         Category(MusicAlbumId, "音樂專輯", "disc-3", CategoryKind.Physical, now,
         [
