@@ -67,14 +67,18 @@ public class IgdbProviderTests
         });
 
     [Fact]
-    public void Declares_search_capability_only()
+    public void Declares_search_and_enrich_capabilities()
     {
         var sut = CreateSut(StubHttpMessageHandler.Json("[]"));
 
         sut.Key.Should().Be("igdb");
-        ProviderCapabilities.Of(sut).Should().Be(ProviderCapability.Search);
-        sut.MarkerAttributeKey.Should().Be("igdbId");
+        ProviderCapabilities.Of(sut).Should()
+            .Be(ProviderCapability.Search | ProviderCapability.Enrich);
+        sut.ExternalIdAttributeKey.Should().Be("igdbId");
+        sut.CompletionMarkerKey.Should().Be(
+            "igdbId", "只有 IGDB 補完會寫 igdbId，所以有值同時代表查得到與補過了");
         sut.RequiredFields.Select(f => f.Key).Should().Contain("igdbId");
+        sut.PrefersBackgroundExecution.Should().BeFalse();
     }
 
     [Fact]

@@ -1,6 +1,8 @@
 using System.Net;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using MongoDB.Bson;
 using Moq;
 using MyCollection.Application.Common;
@@ -30,21 +32,40 @@ public class SteamProviderTests
         UpdatedAt = DateTime.UtcNow
     };
 
-    private SteamProvider CreateSut(StubHttpMessageHandler handler) =>
+    private SteamProvider CreateSut(
+        StubHttpMessageHandler handler, StubHttpMessageHandler? storeHandler = null) =>
         new(handler.CreateClient("https://api.steampowered.com/"),
+            StoreClient(storeHandler ?? StubHttpMessageHandler.Json("null")),
             _protector.Object,
+            new FakeTimeProvider(new DateTimeOffset(2026, 8, 4, 3, 0, 0, TimeSpan.Zero)),
             NullLogger<SteamProvider>.Instance);
+
+    /// <summary>節流間隔設為 0：測試不該真的等 1.5 秒。</summary>
+    private static SteamStoreClient StoreClient(StubHttpMessageHandler handler)
+    {
+        var options = Options.Create(new SteamOptions { StoreMinRequestIntervalMs = 0 });
+
+        return new SteamStoreClient(
+            handler.CreateClient("https://store.steampowered.com/"),
+            new SteamStoreRateLimiter(options, TimeProvider.System),
+            options);
+    }
 
     private static string Fixture() =>
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "steam-getownedgames.json"));
 
     [Fact]
-    public void Declares_bulk_sync_capability_only()
+    public void Declares_bulk_sync_and_enrich_capabilities()
     {
         var sut = CreateSut(StubHttpMessageHandler.Json("{}"));
 
         sut.Key.Should().Be("steam");
-        ProviderCapabilities.Of(sut).Should().Be(ProviderCapability.BulkSync);
+        ProviderCapabilities.Of(sut).Should()
+            .Be(ProviderCapability.BulkSync | ProviderCapability.Enrich);
+        sut.ExternalIdAttributeKey.Should().Be("steamAppId");
+        sut.CompletionMarkerKey.Should().Be(
+            "steamStoreUpdatedAt", "IGDB 也會寫 steamAppId，用它當完成標記會讓品項被永久跳過");
+        sut.PrefersBackgroundExecution.Should().BeTrue();
     }
 
     [Fact]

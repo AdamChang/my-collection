@@ -1,5 +1,6 @@
 using MongoDB.Bson;
 using MyCollection.Domain.Entities;
+using MyCollection.Infrastructure.Providers;
 using MyCollection.Infrastructure.Providers.Igdb;
 
 namespace MyCollection.Infrastructure.Mongo;
@@ -31,7 +32,12 @@ public static class SystemCategoryDefinitions
             Text("genres", "類型", searchable: true),
             Text("platforms", "發行平台", searchable: true),
             Number("igdbRating", "IGDB 評分"),
-            Url("coverUrl", "IGDB 封面網址")
+            Url("coverUrl", "IGDB 封面網址"),
+            // Steam 商店的繁體中文補完欄位。genres 上方已宣告，兩者指的是同一個欄位。
+            // steamAppId 是識別碼來源（IGDB 反查時也會寫），
+            // steamStoreUpdatedAt 是完成標記（只有商店補完會寫）。
+            Number(SteamFields.AppIdKey, "Steam App ID"),
+            Date(SteamFields.StoreUpdatedAtKey, "Steam 資料更新時間")
         ]),
         Category(DigitalGameId, "數位遊戲", "gamepad-2", CategoryKind.Digital, now,
         [
@@ -48,7 +54,12 @@ public static class SystemCategoryDefinitions
             Text("genres", "類型", searchable: true),
             Text("platforms", "發行平台", searchable: true),
             Number("igdbRating", "IGDB 評分"),
-            Url("coverUrl", "IGDB 封面網址")
+            Url("coverUrl", "IGDB 封面網址"),
+            // Steam 商店的繁體中文補完欄位。genres 上方已宣告，兩者指的是同一個欄位。
+            // steamAppId 是識別碼來源（IGDB 反查時也會寫），
+            // steamStoreUpdatedAt 是完成標記（只有商店補完會寫）。
+            Number(SteamFields.AppIdKey, "Steam App ID"),
+            Date(SteamFields.StoreUpdatedAtKey, "Steam 資料更新時間")
         ]),
         Category(MusicAlbumId, "音樂專輯", "disc-3", CategoryKind.Physical, now,
         [

@@ -10,6 +10,7 @@ using MyCollection.Application.Sharing;
 using MyCollection.Application.Showcase;
 using MyCollection.Application.Transfer;
 using MyCollection.Infrastructure.Imaging;
+using MyCollection.Infrastructure.Ingestion;
 using MyCollection.Infrastructure.Mongo;
 using MyCollection.Infrastructure.Providers;
 using MyCollection.Infrastructure.Providers.Igdb;
@@ -77,10 +78,24 @@ public static class DependencyInjection
             })
             .AddStandardResilienceHandler();
 
+        // 商店與 Web API 不同源，所以是第二個用戶端。刻意不掛韌性層的重試：
+        // 這支端點的懲罰是撞上速率限制後整段時間被擋，自動重打只會加深懲罰，
+        // 節流交給 SteamStoreRateLimiter，失敗就記為該筆失敗。
+        services.AddHttpClient<SteamStoreClient>(client =>
+        {
+            client.BaseAddress = new Uri(steam.StoreBaseAddress);
+            client.Timeout = TimeSpan.FromSeconds(steam.TimeoutSeconds);
+        });
+
+        services.AddSingleton<SteamStoreRateLimiter>();
+
         services.AddHttpClient(ShowcaseImageDownloader.HttpClientName, client =>
             client.Timeout = TimeSpan.FromSeconds(30));
 
         services.AddHostedService<ShowcaseImageDownloader>();
+
+        services.AddSingleton<IEnrichJobQueue, EnrichJobQueue>();
+        services.AddHostedService<EnrichJobWorker>();
 
         services.AddScoped<IMetadataProvider>(sp => sp.GetRequiredService<SteamProvider>());
         services.AddScoped<IMetadataProvider>(sp => sp.GetRequiredService<OpenGraphProvider>());

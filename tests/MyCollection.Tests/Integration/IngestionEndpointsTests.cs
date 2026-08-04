@@ -90,6 +90,23 @@ public class IngestionEndpointsTests(MongoFixture mongo) : IAsyncLifetime
         jobs.GetArrayLength().Should().Be(0);
     }
 
+    /// <summary>
+    /// Steam 商店補完是背景作業：端點回應時工作還沒開始，狀態必須是 Running，
+    /// 進度靠 /ingest/jobs 輪詢。若哪天它回 Succeeded，代表工作被搬回請求內，
+    /// 數百款遊戲的補完會讓 HTTP 請求逾時。
+    /// </summary>
+    [Fact]
+    public async Task Enriching_via_steam_returns_a_running_job_without_waiting_for_the_work()
+    {
+        var response = await _client.PostAsJsonAsync("/ingest/enrich/steam", new { limit = 5 });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var job = await response.Content.ReadFromJsonAsync<JsonElement>();
+        job.GetProperty("provider").GetString().Should().Be("steam");
+        job.GetProperty("status").GetString().Should().Be("Running");
+    }
+
     [Fact]
     public async Task Unlinking_removes_the_account()
     {

@@ -24,7 +24,15 @@ builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<IUserContext, HttpUserContext>();
+
+// 背景作業在自己的 scope 裡先設定 BackgroundUserContext，其餘情況照舊讀 HTTP 身分。
+// 兩者都是 scoped，所以互不干擾。
+builder.Services.AddScoped<BackgroundUserContext>();
+builder.Services.AddScoped<HttpUserContext>();
+builder.Services.AddScoped<IUserContext>(sp =>
+    sp.GetRequiredService<BackgroundUserContext>().UserId is { } userId
+        ? new FixedUserContext(userId)
+        : sp.GetRequiredService<HttpUserContext>());
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();

@@ -8,11 +8,11 @@ import { IGNORE_HANDLED_BY_INTERCEPTOR } from '../../core/error.interceptor';
 import { NotificationService } from '../../core/notification.service';
 import { ExternalAccountDto, ShareLinkDto, SyncJobDto } from '../../core/models';
 import { ImageTransferComponent } from './image-transfer.component';
-import { IgdbEnrichComponent } from './igdb-enrich.component';
+import { ProviderEnrichComponent } from './provider-enrich.component';
 
 @Component({
   selector: 'app-settings',
-  imports: [FormsModule, DatePipe, ImageTransferComponent, IgdbEnrichComponent],
+  imports: [FormsModule, DatePipe, ImageTransferComponent, ProviderEnrichComponent],
   template: `
     <header class="settings__header">
       <div class="mc-eyebrow">CONNECTIONS / CONTROL DECK</div>
@@ -78,7 +78,19 @@ import { IgdbEnrichComponent } from './igdb-enrich.component';
       </div>
     </section>
 
-    <app-igdb-enrich (completed)="reloadJobs()" />
+    <app-provider-enrich
+      provider="igdb"
+      heading="IGDB 補完"
+      description="替 Steam 同步進來、還沒有 IGDB 資料的遊戲補上開發商、發行商、發售日期、類型、平台與評分。既有的標籤、精選狀態與購入資訊都不會被改動。"
+      (completed)="reloadJobs()"
+    />
+
+    <app-provider-enrich
+      provider="steam"
+      heading="Steam 繁體中文補完"
+      description="向 Steam 商店取得繁體中文的品名、簡介與類型，覆蓋既有的英文內容。沒有官方繁中版的遊戲會維持原文。作業在背景進行，可以離開此頁。"
+      (completed)="reloadJobs()"
+    />
 
     <section class="settings__panel mc-panel" data-settings-panel>
       <div class="mc-eyebrow">PUBLIC ACCESS</div>

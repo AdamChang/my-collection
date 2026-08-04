@@ -30,7 +30,9 @@ public class IgdbOptionsTests
     {
         IgdbFields.All.Select(f => f.Key).Should().BeEquivalentTo(
             "igdbId", "developer", "publisher", "releaseDate",
-            "genres", "platforms", "igdbRating", "coverUrl");
+            "genres", "platforms", "igdbRating", "coverUrl",
+            // IGDB 反查到 Steam 對應時也會寫，好讓沒有 externalRef 的品項能被商店補完定址
+            "steamAppId");
     }
 
     [Fact]

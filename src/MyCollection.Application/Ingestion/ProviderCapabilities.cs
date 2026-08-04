@@ -9,5 +9,6 @@ public static class ProviderCapabilities
     public static ProviderCapability Of(IMetadataProvider provider) =>
         (provider is IBulkSyncProvider ? ProviderCapability.BulkSync : ProviderCapability.None)
         | (provider is IUrlLookupProvider ? ProviderCapability.UrlLookup : ProviderCapability.None)
-        | (provider is ISearchProvider ? ProviderCapability.Search : ProviderCapability.None);
+        | (provider is ISearchProvider ? ProviderCapability.Search : ProviderCapability.None)
+        | (provider is IExternalIdLookupProvider ? ProviderCapability.Enrich : ProviderCapability.None);
 }

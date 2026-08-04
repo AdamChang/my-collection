@@ -16,7 +16,7 @@ public sealed class MongoItemEnrichWriter(MongoContext context) : IItemEnrichWri
         CancellationToken ct)
     {
         var models = enrichments
-            .Where(e => e.Attributes.Count > 0 || e.Description is not null)
+            .Where(e => e.Attributes.Count > 0 || e.Name is not null || e.Description is not null)
             .Select(e => BuildModel(ownerId, e, enrichedAt))
             .ToArray();
 
@@ -55,6 +55,11 @@ public sealed class MongoItemEnrichWriter(MongoContext context) : IItemEnrichWri
             Builders<Item>.Filter.Eq(x => x.Id, enrichment.ItemId));
 
         var set = new BsonDocument { { "updatedAt", enrichedAt } };
+
+        if (enrichment.Name is not null)
+        {
+            set["name"] = enrichment.Name;
+        }
 
         if (enrichment.Description is not null)
         {
