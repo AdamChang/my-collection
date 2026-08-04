@@ -47,7 +47,7 @@ public sealed class SyncCommandHandler(
     IUserContext userContext,
     TimeProvider timeProvider) : IRequestHandler<SyncCommand, SyncJobDto>
 {
-    /// <summary>數位品項同步的目標品類；不存在時自動建立。</summary>
+    /// <summary>數位品項同步的目標品類，由啟動時的系統品類 seed 建立。</summary>
     private const string DigitalCategoryName = "數位遊戲";
 
     public async Task<SyncJobDto> Handle(SyncCommand request, CancellationToken cancellationToken)
@@ -71,7 +71,7 @@ public sealed class SyncCommandHandler(
         try
         {
             var externalItems = await provider.SyncAsync(account, cancellationToken);
-            var category = await EnsureDigitalCategoryAsync(now, cancellationToken);
+            var category = await GetDigitalCategoryAsync(cancellationToken);
 
             var outcome = await writer.UpsertAsync(
                 userContext.UserId,
@@ -103,45 +103,14 @@ public sealed class SyncCommandHandler(
         return SyncJobMapper.ToDto(job);
     }
 
-    private async Task<Category> EnsureDigitalCategoryAsync(DateTime now, CancellationToken ct)
+    private async Task<Category> GetDigitalCategoryAsync(CancellationToken ct)
     {
         var existing = (await categories.ListAsync(ct))
             .Where(x => string.Equals(x.Name, DigitalCategoryName, StringComparison.Ordinal))
             .OrderBy(x => x.OwnerId is null)
             .FirstOrDefault();
-        if (existing is not null)
-        {
-            return existing;
-        }
-
-        var category = new Category
-        {
-            Id = ObjectId.GenerateNewId(),
-            Name = DigitalCategoryName,
-            Icon = "gamepad-2",
-            Kind = CategoryKind.Digital,
-            Fields = DigitalCategoryFields(),
-            CreatedAt = now,
-            UpdatedAt = now
-        };
-
-        await categories.InsertAsync(category, ct);
-
-        return category;
+        return existing ?? throw new NotFoundException("Category", DigitalCategoryName);
     }
-
-    /// <summary>
-    /// 自動建立的品類必須宣告 provider 會寫入的 attributes key，
-    /// 否則 AttributeValidator 會讓使用者之後任何一次更新都失敗（含「設為精選」）。
-    /// 這些 key 對應 SteamProvider.ToExternalItem 的輸出；iconUrl 不設 Required，
-    /// 因為只有 Steam 回傳 img_icon_url 時才會產生這個欄位。
-    /// </summary>
-    private static List<CategoryField> DigitalCategoryFields() =>
-    [
-        new() { Key = "playtimeForever", Label = "遊玩時數（分鐘）", Type = FieldType.Number, ShowOnCard = true },
-        new() { Key = "headerUrl", Label = "封面圖網址", Type = FieldType.Url },
-        new() { Key = "iconUrl", Label = "圖示網址", Type = FieldType.Url }
-    ];
 
     private static ItemSource ToSource(string providerKey) =>
         Enum.TryParse<ItemSource>(providerKey, ignoreCase: true, out var source) ? source : ItemSource.Manual;

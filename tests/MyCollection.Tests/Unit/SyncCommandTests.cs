@@ -102,39 +102,22 @@ public class SyncCommandTests
     }
 
     [Fact]
-    public async Task Creates_the_digital_category_when_missing()
+    public async Task Missing_digital_category_marks_the_job_failed_and_throws_without_creating_one()
     {
         _categories.Setup(r => r.ListAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
-
-        Category? created = null;
-        _categories.Setup(r => r.InsertAsync(It.IsAny<Category>(), It.IsAny<CancellationToken>()))
-            .Callback<Category, CancellationToken>((c, _) => created = c)
-            .Returns(Task.CompletedTask);
-
-        await CreateSut().Handle(new SyncCommand("steam"), CancellationToken.None);
-
-        created.Should().NotBeNull();
-        created!.Name.Should().Be("數位遊戲");
-        created.Kind.Should().Be(CategoryKind.Digital);
-    }
-
-    [Fact]
-    public async Task Auto_created_category_declares_the_fields_steam_produces()
-    {
-        _categories.Setup(r => r.ListAsync(It.IsAny<CancellationToken>()))
+        _steam.Setup(p => p.SyncAsync(It.IsAny<ExternalAccount>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
 
-        Category? created = null;
-        _categories.Setup(r => r.InsertAsync(It.IsAny<Category>(), It.IsAny<CancellationToken>()))
-            .Callback<Category, CancellationToken>((c, _) => created = c)
-            .Returns(Task.CompletedTask);
+        var act = () => CreateSut().Handle(new SyncCommand("steam"), CancellationToken.None);
 
-        await CreateSut().Handle(new SyncCommand("steam"), CancellationToken.None);
-
-        created!.Fields.Select(f => f.Key).Should()
-            .Contain(["playtimeForever", "headerUrl", "iconUrl"],
-                "同步寫入的 attributes 必須通過品類 schema 驗證，否則使用者一更新該品項就會 400");
+        var exception = await act.Should().ThrowAsync<NotFoundException>();
+        exception.Which.Resource.Should().Be("Category");
+        exception.Which.Key.Should().Be("數位遊戲");
+        _savedJobs.Should().ContainSingle().Which.Status.Should().Be(SyncStatus.Failed);
+        _categories.Verify(
+            x => x.InsertAsync(It.IsAny<Category>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

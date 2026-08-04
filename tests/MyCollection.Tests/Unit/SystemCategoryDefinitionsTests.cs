@@ -1,7 +1,9 @@
 using FluentAssertions;
 using MongoDB.Bson;
+using MyCollection.Domain.Entities;
 using MyCollection.Infrastructure.Mongo;
 using MyCollection.Infrastructure.Providers.Igdb;
+using MyCollection.Infrastructure.Providers.Psn;
 
 namespace MyCollection.Tests.Unit;
 
@@ -53,6 +55,33 @@ public class SystemCategoryDefinitionsTests
     {
         KeysOf(SystemCategoryDefinitions.MusicAlbumId).Should().NotContain(IgdbFields.MarkerKey);
         KeysOf(SystemCategoryDefinitions.MovieDiscId).Should().NotContain(IgdbFields.MarkerKey);
+    }
+
+    [Fact]
+    public void Digital_game_declares_optional_psn_trophy_fields_with_their_schema()
+    {
+        var fields = SystemCategoryDefinitions.Create(Now)
+            .Single(c => c.Id == SystemCategoryDefinitions.DigitalGameId)
+            .Fields;
+
+        var progress = fields.Single(f => f.Key == "psnProgress");
+        progress.Type.Should().Be(FieldType.Number);
+        progress.Required.Should().BeFalse();
+
+        var lastPlayedAt = fields.Single(f => f.Key == "psnLastPlayedAt");
+        lastPlayedAt.Type.Should().Be(FieldType.Date);
+        lastPlayedAt.Required.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Psn_field_instances_are_not_shared_between_create_calls()
+    {
+        var first = PsnFields.Create();
+        var second = PsnFields.Create();
+
+        first.Single(f => f.Key == "psnProgress").Label = "changed";
+
+        second.Single(f => f.Key == "psnProgress").Label.Should().Be("PSN 獎盃完成度");
     }
 
     public static TheoryData<ObjectId> GameCategoryIds() =>
