@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
@@ -43,6 +44,10 @@ public sealed class PsnProvider(
         {
             throw;
         }
+        catch (CryptographicException)
+        {
+            throw new ProviderException(ProviderKey, "PSN credential decryption failed.");
+        }
         catch (Exception ex) when (ex is HttpRequestException
                                    or JsonException
                                    or InvalidOperationException
@@ -61,6 +66,7 @@ public sealed class PsnProvider(
         var accessToken = await ExchangeCodeAsync(authorizationCode, ct);
         var items = new List<ExternalItem>();
         var offset = 0;
+        int? knownTotal = null;
 
         while (true)
         {
@@ -73,16 +79,31 @@ public sealed class PsnProvider(
                 throw InvalidSchema("a page contained more items than the requested limit.");
             }
 
+            if (page.TotalItemCount is < 0)
+            {
+                throw InvalidSchema("totalItemCount was negative.");
+            }
+
+            if (page.TotalItemCount is { } pageTotal)
+            {
+                if (knownTotal is { } existingTotal && pageTotal != existingTotal)
+                {
+                    throw InvalidSchema("totalItemCount changed between pages.");
+                }
+
+                knownTotal ??= pageTotal;
+            }
+
             items.AddRange(titles.Select(ToExternalItem));
 
-            if (page.TotalItemCount is < 0 || page.TotalItemCount is { } total && items.Count > total)
+            if (knownTotal is { } total && items.Count > total)
             {
                 throw InvalidSchema("totalItemCount was inconsistent with the returned items.");
             }
 
             var pageIsShort = titles.Count < _options.TrophyTitlePageSize;
-            var totalReached = page.TotalItemCount is { } totalCount && items.Count >= totalCount;
-            if (totalReached || pageIsShort && page.TotalItemCount is null)
+            var totalReached = knownTotal is { } totalCount && items.Count >= totalCount;
+            if (totalReached || pageIsShort && knownTotal is null)
             {
                 break;
             }
@@ -143,7 +164,7 @@ public sealed class PsnProvider(
         }
 
         var location = response.Headers.Location ?? throw ExpiredNpsso();
-        var code = ParseQueryValue(location.Query, "code");
+        var code = ParseLocationQueryValue(location, "code");
 
         return !string.IsNullOrWhiteSpace(code)
             ? code
@@ -205,9 +226,10 @@ public sealed class PsnProvider(
                ?? throw new InvalidOperationException("PSN Trophy response was empty.");
     }
 
-    private static ExternalItem ToExternalItem(TrophyTitle title)
+    private static ExternalItem ToExternalItem(TrophyTitle? title)
     {
-        if (string.IsNullOrWhiteSpace(title.NpCommunicationId)
+        if (title is null
+            || string.IsNullOrWhiteSpace(title.NpCommunicationId)
             || string.IsNullOrWhiteSpace(title.TrophyTitleName)
             || string.IsNullOrWhiteSpace(title.TrophyTitleIconUrl)
             || string.IsNullOrWhiteSpace(title.TrophyTitlePlatform)
@@ -265,6 +287,25 @@ public sealed class PsnProvider(
         return null;
     }
 
+    private static string? ParseLocationQueryValue(Uri location, string key)
+    {
+        var locationText = location.OriginalString;
+        var queryStart = locationText.IndexOf('?', StringComparison.Ordinal);
+        if (queryStart < 0)
+        {
+            return null;
+        }
+
+        var query = locationText[(queryStart + 1)..];
+        var fragmentStart = query.IndexOf('#', StringComparison.Ordinal);
+        if (fragmentStart >= 0)
+        {
+            query = query[..fragmentStart];
+        }
+
+        return ParseQueryValue(query, key);
+    }
+
     private static bool IsExpiredCredentialStatus(HttpStatusCode status) =>
         status is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden;
 
@@ -278,10 +319,9 @@ public sealed class PsnProvider(
         new(ProviderKey, $"PSN Trophy response had an invalid schema: {detail}");
 
     private sealed record TrophyTitlesPage(
-        [property: JsonPropertyName("trophyTitles")] IReadOnlyList<TrophyTitle>? TrophyTitles,
+        [property: JsonPropertyName("trophyTitles")] IReadOnlyList<TrophyTitle?>? TrophyTitles,
         [property: JsonPropertyName("totalItemCount")] int? TotalItemCount,
-        [property: JsonPropertyName("nextOffset")] int? NextOffset,
-        [property: JsonPropertyName("previousOffset")] int? PreviousOffset);
+        [property: JsonPropertyName("nextOffset")] int? NextOffset);
 
     private sealed record TrophyTitle(
         [property: JsonPropertyName("npCommunicationId")] string? NpCommunicationId,
