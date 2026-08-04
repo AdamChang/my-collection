@@ -67,10 +67,12 @@ public class SystemCategoryDefinitionsTests
         var progress = fields.Single(f => f.Key == "psnProgress");
         progress.Type.Should().Be(FieldType.Number);
         progress.Required.Should().BeFalse();
+        progress.ShowOnCard.Should().BeTrue();
 
         var lastPlayedAt = fields.Single(f => f.Key == "psnLastPlayedAt");
         lastPlayedAt.Type.Should().Be(FieldType.Date);
         lastPlayedAt.Required.Should().BeFalse();
+        lastPlayedAt.ShowOnCard.Should().BeFalse();
     }
 
     [Fact]

@@ -20,7 +20,14 @@ public static class PsnFields
     /// </summary>
     public static List<CategoryField> Create() =>
     [
-        new() { Key = ProgressKey, Label = "PSN 獎盃完成度", Type = FieldType.Number, Required = false },
+        new()
+        {
+            Key = ProgressKey,
+            Label = "PSN 獎盃完成度",
+            Type = FieldType.Number,
+            Required = false,
+            ShowOnCard = true
+        },
         new() { Key = LastPlayedAtKey, Label = "PSN 最後遊玩時間", Type = FieldType.Date, Required = false }
     ];
 }

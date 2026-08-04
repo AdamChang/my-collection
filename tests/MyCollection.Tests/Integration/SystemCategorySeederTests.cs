@@ -107,7 +107,7 @@ public sealed class SystemCategorySeederTests(MongoFixture fixture) : IAsyncLife
             Field("coverUrl", "IGDB 封面網址", FieldType.Url),
             Field("steamAppId", "Steam App ID", FieldType.Number),
             Field("steamStoreUpdatedAt", "Steam 資料更新時間", FieldType.Date),
-            Field("psnProgress", "PSN 獎盃完成度", FieldType.Number, required: false),
+            Field("psnProgress", "PSN 獎盃完成度", FieldType.Number, showOnCard: true, required: false),
             Field("psnLastPlayedAt", "PSN 最後遊玩時間", FieldType.Date, required: false)
         ]);
         AssertCategory(actual[2], "000000000000000000000003", "音樂專輯", "disc-3", CategoryKind.Physical,

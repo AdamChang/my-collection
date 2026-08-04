@@ -65,12 +65,20 @@ export class ItemCardComponent {
   /** 所屬品類的 fields。只有 showOnCard 的欄位會出現在卡片上。 */
   readonly cardFields = input<CategoryFieldDto[]>([]);
 
-  readonly cardAttributes = computed(() =>
-    this.cardFields()
+  readonly cardAttributes = computed(() => {
+    const attributes = this.cardFields()
       .filter((f) => f.showOnCard)
-      .map((f) => ({ label: f.label, value: this.item().attributes[f.key] }))
-      .filter((entry) => entry.value !== null && entry.value !== undefined && entry.value !== ''),
-  );
+      .map((f) => ({ key: f.key, label: f.label, value: this.item().attributes[f.key] }))
+      .filter((entry) => this.isPopulated(entry.value));
+
+    return attributes.some((entry) => entry.key === 'playtimeForever')
+      ? attributes.filter((entry) => entry.key !== 'psnProgress')
+      : attributes;
+  });
+
+  private isPopulated(value: unknown): boolean {
+    return value !== null && value !== undefined && value !== '';
+  }
 
   /**
    * 本地圖片優先；同步進來但尚未被設為 Showcase 的品項還沒下載圖片，
