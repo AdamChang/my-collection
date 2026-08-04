@@ -1,0 +1,24 @@
+{
+  "trophyTitles": [
+    {
+      "npCommunicationId": "NPWR12345_00",
+      "trophyTitleName": "Astro's Fake Adventure",
+      "trophyTitleDetail": "Representative public-shaped fixture data.",
+      "trophyTitleIconUrl": "https://image.api.playstation.com/fake/NPWR12345_00.png",
+      "trophyTitlePlatform": "PS5,PS4",
+      "progress": 42,
+      "lastUpdatedDateTime": "2026-07-30T13:45:12Z"
+    },
+    {
+      "npCommunicationId": "NPWR67890_00",
+      "trophyTitleName": "Sample Karting",
+      "trophyTitleIconUrl": "https://image.api.playstation.com/fake/NPWR67890_00.png",
+      "trophyTitlePlatform": "PS5",
+      "progress": 7,
+      "lastUpdatedDateTime": "2026-07-31T01:02:03+08:00"
+    }
+  ],
+  "totalItemCount": 2,
+  "nextOffset": 2,
+  "previousOffset": null
+}

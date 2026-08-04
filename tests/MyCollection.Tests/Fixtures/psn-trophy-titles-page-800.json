@@ -1,0 +1,16 @@
+{
+  "trophyTitles": [
+    {
+      "npCommunicationId": "NPWR99999_00",
+      "trophyTitleName": "Final Sample Title",
+      "trophyTitleDetail": null,
+      "trophyTitleIconUrl": "https://image.api.playstation.com/fake/NPWR99999_00.png",
+      "trophyTitlePlatform": "PS4",
+      "progress": 100,
+      "lastUpdatedDateTime": "2026-08-01T00:00:00Z"
+    }
+  ],
+  "totalItemCount": 801,
+  "nextOffset": null,
+  "previousOffset": 0
+}
