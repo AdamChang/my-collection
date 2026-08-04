@@ -6,8 +6,11 @@ import { IngestionService } from './ingestion.service';
 /** 對應後端的 ProviderKeys.Igdb。 */
 export const IGDB_PROVIDER_KEY = 'igdb';
 
+/** 對應後端的 ProviderKeys.Steam。 */
+export const STEAM_PROVIDER_KEY = 'steam';
+
 /** 對應後端 ProviderCapability 這個 [Flags] enum 的成員名稱。 */
-export type ProviderCapability = 'BulkSync' | 'UrlLookup' | 'Search';
+export type ProviderCapability = 'BulkSync' | 'UrlLookup' | 'Search' | 'Enrich';
 
 @Injectable({ providedIn: 'root' })
 export class ProviderService {

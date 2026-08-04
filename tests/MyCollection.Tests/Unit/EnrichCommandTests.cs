@@ -17,19 +17,22 @@ public class EnrichCommandTests
     private static readonly ObjectId CategoryId = ObjectId.GenerateNewId();
 
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 8, 1, 3, 0, 0, TimeSpan.Zero));
-    private readonly Mock<ISearchProvider> _provider = new();
+    private readonly Mock<IExternalIdLookupProvider> _provider = new();
     private readonly Mock<IItemRepository> _items = new();
     private readonly Mock<ICategoryRepository> _categories = new();
     private readonly Mock<ISyncJobRepository> _jobs = new();
     private readonly Mock<IItemEnrichWriter> _writer = new();
     private readonly Mock<IUserContext> _userContext = new();
+    private readonly StubEnrichJobQueue _queue = new();
 
     private readonly List<ItemEnrichment> _written = [];
 
     public EnrichCommandTests()
     {
         _provider.SetupGet(p => p.Key).Returns(ProviderKeys.Igdb);
-        _provider.SetupGet(p => p.MarkerAttributeKey).Returns("igdbId");
+        _provider.SetupGet(p => p.ExternalIdAttributeKey).Returns("igdbId");
+        _provider.SetupGet(p => p.CompletionMarkerKey).Returns("igdbId");
+        _provider.SetupGet(p => p.PrefersBackgroundExecution).Returns(false);
         _userContext.SetupGet(c => c.UserId).Returns(Owner);
 
         _categories.Setup(c => c.ListAsync(It.IsAny<CancellationToken>()))
@@ -54,7 +57,8 @@ public class EnrichCommandTests
         }).ToList()
     };
 
-    private static Item SteamItem(string appId, string name = "TF2", string? description = null) => new()
+    private static Item SteamItem(
+        string appId, string name = "TF2", string? description = null, BsonDocument? attributes = null) => new()
     {
         Id = ObjectId.GenerateNewId(),
         OwnerId = Owner,
@@ -66,7 +70,7 @@ public class EnrichCommandTests
         {
             Provider = ProviderKeys.Steam, ExternalId = appId, LastSyncedAt = DateTime.UtcNow
         },
-        Attributes = []
+        Attributes = attributes ?? []
     };
 
     private static Item BoundItem(long igdbId) => new()
@@ -78,7 +82,7 @@ public class EnrichCommandTests
         Attributes = new BsonDocument { { "igdbId", igdbId } }
     };
 
-    private static ExternalItem Found(string externalId) => new(
+    private static ExternalItem Found(string externalId, IReadOnlySet<string>? softWrite = null) => new(
         externalId,
         "The Witcher 3",
         "An adventure.",
@@ -89,10 +93,20 @@ public class EnrichCommandTests
             ["developer"] = "CD Projekt RED",
             ["genres"] = "RPG",
             ["igdbRating"] = 93.5d
-        });
+        })
+    {
+        FillOnlyIfAbsent = softWrite ?? new HashSet<string>(StringComparer.Ordinal)
+    };
 
     private EnrichCommandHandler CreateSut() => new(
         new ProviderRegistry([_provider.Object]),
+        _jobs.Object,
+        _queue,
+        CreateRunner(),
+        _userContext.Object,
+        _time);
+
+    private EnrichJobRunner CreateRunner() => new(
         _items.Object,
         _categories.Object,
         _jobs.Object,
@@ -106,7 +120,7 @@ public class EnrichCommandTests
             .ReturnsAsync(new ExternalLookupResult(found, failed));
 
     [Fact]
-    public async Task Batch_mode_enriches_candidates_that_lack_the_marker()
+    public async Task Batch_mode_enriches_candidates_that_lack_the_completion_marker()
     {
         _items.Setup(r => r.ListEnrichmentCandidatesAsync("igdbId", 50, It.IsAny<CancellationToken>()))
             .ReturnsAsync([SteamItem("440")]);
@@ -123,7 +137,7 @@ public class EnrichCommandTests
     }
 
     [Fact]
-    public async Task Uses_the_existing_marker_instead_of_the_steam_id_when_present()
+    public async Task Uses_the_existing_external_id_attribute_instead_of_the_steam_id_when_present()
     {
         var item = BoundItem(1942);
         _items.Setup(r => r.ListByIdsAsync(It.IsAny<IReadOnlyList<ObjectId>>(), It.IsAny<CancellationToken>()))
@@ -138,8 +152,40 @@ public class EnrichCommandTests
             It.IsAny<CancellationToken>()));
     }
 
+    /// <summary>
+    /// 識別碼來源與完成標記分離之後，兩者可以是不同欄位。
+    /// 批次候選看的是完成標記，定址看的是識別碼來源——這一案釘住這件事。
+    /// </summary>
     [Fact]
-    public async Task Skips_items_with_neither_a_marker_nor_an_external_ref()
+    public async Task Addresses_by_the_external_id_attribute_while_batching_by_the_completion_marker()
+    {
+        _provider.SetupGet(p => p.Key).Returns(ProviderKeys.Steam);
+        _provider.SetupGet(p => p.ExternalIdAttributeKey).Returns("steamAppId");
+        _provider.SetupGet(p => p.CompletionMarkerKey).Returns("steamStoreUpdatedAt");
+
+        var physicalItem = new Item
+        {
+            Id = ObjectId.GenerateNewId(),
+            OwnerId = Owner,
+            CategoryId = CategoryId,
+            Name = "實體遊戲，沒有 externalRef",
+            Attributes = new BsonDocument { { "steamAppId", 292030L } }
+        };
+
+        _items.Setup(r => r.ListEnrichmentCandidatesAsync(
+                "steamStoreUpdatedAt", 50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([physicalItem]);
+        SetupLookup(new Dictionary<string, ExternalItem>());
+
+        await CreateSut().Handle(new EnrichCommand(ProviderKeys.Steam), CancellationToken.None);
+
+        _provider.Verify(p => p.FetchByExternalIdsAsync(
+            It.Is<IReadOnlyList<string>>(ids => ids.Single() == "steam:292030"),
+            It.IsAny<CancellationToken>()));
+    }
+
+    [Fact]
+    public async Task Skips_items_with_neither_an_external_id_attribute_nor_an_external_ref()
     {
         var orphan = new Item
         {
@@ -199,15 +245,75 @@ public class EnrichCommandTests
             "igdbRating", "品類沒宣告的 key 會被 AttributeValidator 擋掉");
     }
 
+    // ---- 欄位擁有權 ----
+
     [Fact]
-    public async Task Writes_the_summary_only_when_the_item_has_no_description()
+    public async Task A_soft_write_attribute_yields_when_the_item_already_has_a_value()
+    {
+        _items.Setup(r => r.ListEnrichmentCandidatesAsync("igdbId", 50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([SteamItem("440", attributes: new BsonDocument { { "genres", "動作、角色扮演" } })]);
+        SetupLookup(new Dictionary<string, ExternalItem>
+        {
+            ["steam:440"] = Found("1942", SoftWrite("genres"))
+        });
+
+        await CreateSut().Handle(new EnrichCommand(ProviderKeys.Igdb), CancellationToken.None);
+
+        _written.Single().Attributes.Should().NotContainKey(
+            "genres", "繁體中文的類型已經在了，英文版必須讓位");
+    }
+
+    [Fact]
+    public async Task A_soft_write_attribute_is_written_when_the_item_has_no_value()
+    {
+        _items.Setup(r => r.ListEnrichmentCandidatesAsync("igdbId", 50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([SteamItem("440")]);
+        SetupLookup(new Dictionary<string, ExternalItem>
+        {
+            ["steam:440"] = Found("1942", SoftWrite("genres"))
+        });
+
+        await CreateSut().Handle(new EnrichCommand(ProviderKeys.Igdb), CancellationToken.None);
+
+        _written.Single().Attributes["genres"].Should().Be("RPG", "沒有值時讓位等於白白丟掉資訊");
+    }
+
+    [Fact]
+    public async Task An_attribute_that_is_not_declared_soft_overwrites_an_existing_value()
+    {
+        _items.Setup(r => r.ListEnrichmentCandidatesAsync("igdbId", 50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([SteamItem("440", attributes: new BsonDocument { { "genres", "動作" } })]);
+        SetupLookup(new Dictionary<string, ExternalItem> { ["steam:440"] = Found("1942") });
+
+        await CreateSut().Handle(new EnrichCommand(ProviderKeys.Igdb), CancellationToken.None);
+
+        _written.Single().Attributes["genres"].Should().Be("RPG", "未宣告為軟寫入就代表這個 provider 擁有該欄位");
+    }
+
+    [Fact]
+    public async Task A_blank_existing_value_does_not_block_a_soft_write()
+    {
+        _items.Setup(r => r.ListEnrichmentCandidatesAsync("igdbId", 50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([SteamItem("440", attributes: new BsonDocument { { "genres", "  " } })]);
+        SetupLookup(new Dictionary<string, ExternalItem>
+        {
+            ["steam:440"] = Found("1942", SoftWrite("genres"))
+        });
+
+        await CreateSut().Handle(new EnrichCommand(ProviderKeys.Igdb), CancellationToken.None);
+
+        _written.Single().Attributes["genres"].Should().Be("RPG", "空字串不是值，不該擋住軟寫入");
+    }
+
+    [Fact]
+    public async Task A_soft_write_description_yields_to_what_the_user_already_wrote()
     {
         _items.Setup(r => r.ListEnrichmentCandidatesAsync("igdbId", 50, It.IsAny<CancellationToken>()))
             .ReturnsAsync([SteamItem("440"), SteamItem("620", "Portal 2", "我自己寫的心得")]);
         SetupLookup(new Dictionary<string, ExternalItem>
         {
-            ["steam:440"] = Found("1942"),
-            ["steam:620"] = Found("1943")
+            ["steam:440"] = Found("1942", SoftWrite(ItemFieldKeys.Description)),
+            ["steam:620"] = Found("1943", SoftWrite(ItemFieldKeys.Description))
         });
 
         await CreateSut().Handle(new EnrichCommand(ProviderKeys.Igdb), CancellationToken.None);
@@ -215,6 +321,51 @@ public class EnrichCommandTests
         _written.Should().HaveCount(2);
         _written.Should().ContainSingle(e => e.Description == "An adventure.");
         _written.Should().ContainSingle(e => e.Description == null);
+    }
+
+    [Fact]
+    public async Task A_name_that_is_not_declared_soft_overwrites_the_existing_name()
+    {
+        _items.Setup(r => r.ListEnrichmentCandidatesAsync("igdbId", 50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([SteamItem("440", "ELDEN RING")]);
+        SetupLookup(new Dictionary<string, ExternalItem> { ["steam:440"] = Found("1942") });
+
+        await CreateSut().Handle(new EnrichCommand(ProviderKeys.Igdb), CancellationToken.None);
+
+        _written.Single().Name.Should().Be(
+            "The Witcher 3", "本地化補完的存在理由就是把既有的英文品名換掉");
+    }
+
+    [Fact]
+    public async Task A_soft_write_name_yields_to_the_existing_name()
+    {
+        _items.Setup(r => r.ListEnrichmentCandidatesAsync("igdbId", 50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([SteamItem("440", "我改過的名字")]);
+        SetupLookup(new Dictionary<string, ExternalItem>
+        {
+            ["steam:440"] = Found("1942", SoftWrite(ItemFieldKeys.Name))
+        });
+
+        await CreateSut().Handle(new EnrichCommand(ProviderKeys.Igdb), CancellationToken.None);
+
+        _written.Single().Name.Should().BeNull();
+    }
+
+    // ---- 執行位置 ----
+
+    [Fact]
+    public async Task A_background_provider_returns_a_running_job_without_doing_the_work()
+    {
+        _provider.SetupGet(p => p.PrefersBackgroundExecution).Returns(true);
+
+        var job = await CreateSut().Handle(new EnrichCommand(ProviderKeys.Igdb), CancellationToken.None);
+
+        job.Status.Should().Be("Running");
+        _queue.Enqueued.Should().ContainSingle();
+        _provider.Verify(
+            p => p.FetchByExternalIdsAsync(It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "背景 provider 的工作必須留給 worker，不能綁在 HTTP 請求上");
     }
 
     [Fact]
@@ -235,14 +386,14 @@ public class EnrichCommandTests
     }
 
     [Fact]
-    public async Task Requires_a_search_capable_provider()
+    public async Task Requires_a_lookup_capable_provider()
     {
         var bulkOnly = new Mock<IBulkSyncProvider>();
         bulkOnly.SetupGet(p => p.Key).Returns(ProviderKeys.Steam);
 
         var sut = new EnrichCommandHandler(
-            new ProviderRegistry([bulkOnly.Object]), _items.Object, _categories.Object,
-            _jobs.Object, _writer.Object, _userContext.Object, _time);
+            new ProviderRegistry([bulkOnly.Object]), _jobs.Object, _queue,
+            CreateRunner(), _userContext.Object, _time);
 
         var act = () => sut.Handle(new EnrichCommand(ProviderKeys.Steam), CancellationToken.None);
 
@@ -262,5 +413,17 @@ public class EnrichCommandTests
         await CreateSut().Handle(new EnrichCommand(ProviderKeys.Igdb, null, requested), CancellationToken.None);
 
         _items.Verify(r => r.ListEnrichmentCandidatesAsync("igdbId", expected, It.IsAny<CancellationToken>()));
+    }
+
+    private static HashSet<string> SoftWrite(params string[] keys) => new(keys, StringComparer.Ordinal);
+
+    private sealed class StubEnrichJobQueue : IEnrichJobQueue
+    {
+        public List<EnrichJobRequest> Enqueued { get; } = [];
+
+        public void Enqueue(EnrichJobRequest request) => Enqueued.Add(request);
+
+        public ValueTask<EnrichJobRequest> DequeueAsync(CancellationToken ct) =>
+            throw new NotSupportedException("測試不消費佇列。");
     }
 }

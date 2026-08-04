@@ -102,8 +102,29 @@ public class MongoItemSyncWriterTests(MongoFixture fixture) : IAsyncLifetime
         reloaded.Acquisition!.Vendor.Should().Be("Steam 特賣");
         reloaded.CreatedAt.Should().Be(SyncedAt, "createdAt 只在建立時寫入");
 
-        reloaded.Name.Should().Be("Team Fortress 2 (Updated)", "provider 擁有的欄位仍會更新");
+        reloaded.Attributes["playtimeForever"].ToInt32().Should().Be(1234, "provider 擁有的欄位仍會更新");
         reloaded.ExternalRef!.LastSyncedAt.Should().Be(SyncedAt.AddDays(1));
+    }
+
+    /// <summary>
+    /// 這是繁體中文品名唯一的護欄。name 若被改回 $set，
+    /// 商店補完寫好的「艾爾登法環」會在下一次同步被默默改回 "ELDEN RING"——
+    /// 沒有錯誤訊息、沒有失敗的作業，只有資料悄悄退回英文。
+    /// </summary>
+    [Fact]
+    public async Task Sync_never_overwrites_an_existing_name()
+    {
+        await SyncAsync(SteamPayload());
+
+        var tf2 = await LoadAsync("440");
+        await fixture.Context.Items.UpdateOneAsync(
+            Builders<Item>.Filter.Eq(x => x.Id, tf2.Id),
+            Builders<Item>.Update.Set(x => x.Name, "絕地要塞 2"));
+
+        await SyncAsync(SteamPayload(tf2Name: "Team Fortress 2"), at: SyncedAt.AddDays(1));
+
+        (await LoadAsync("440")).Name.Should().Be(
+            "絕地要塞 2", "name 的擁有者是補完，同步只在建立品項時寫入");
     }
 
     [Fact]

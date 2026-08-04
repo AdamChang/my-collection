@@ -59,8 +59,9 @@ public class MongoItemEnrichWriterTests(MongoFixture fixture) : IAsyncLifetime
     private Task<Item> LoadAsync(ObjectId id) =>
         fixture.Context.Items.Find(Builders<Item>.Filter.Eq(x => x.Id, id)).FirstAsync();
 
-    private static ItemEnrichment Enrichment(ObjectId itemId, string? description = null) =>
-        new(itemId, description, new Dictionary<string, object?>
+    private static ItemEnrichment Enrichment(
+        ObjectId itemId, string? description = null, string? name = null) =>
+        new(itemId, name, description, new Dictionary<string, object?>
         {
             ["igdbId"] = 1942L,
             ["developer"] = "Valve",
@@ -159,7 +160,7 @@ public class MongoItemEnrichWriterTests(MongoFixture fixture) : IAsyncLifetime
     [Fact]
     public async Task An_enrichment_with_nothing_to_write_is_skipped_entirely()
     {
-        var empty = new ItemEnrichment(_itemId, null, new Dictionary<string, object?>());
+        var empty = new ItemEnrichment(_itemId, null, null, new Dictionary<string, object?>());
 
         var matched = await _sut.ApplyAsync(Owner, [empty], EnrichedAt, ProviderKeys.Igdb, CancellationToken.None);
 

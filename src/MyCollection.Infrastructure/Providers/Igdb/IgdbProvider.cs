@@ -30,13 +30,24 @@ public sealed class IgdbProvider(
     private const string GameFields =
         "fields name,summary,url,first_release_date,total_rating,cover.image_id," +
         "genres.name,platforms.abbreviation,involved_companies.company.name," +
-        "involved_companies.developer,involved_companies.publisher;";
+        "involved_companies.developer,involved_companies.publisher," +
+        "external_games.uid,external_games.external_game_source;";
 
     public string Key => ProviderKey;
 
-    public string MarkerAttributeKey => IgdbFields.MarkerKey;
+    /// <summary>
+    /// IGDB 的識別碼來源與完成標記是同一個欄位——只有 IGDB 補完會寫 igdbId，
+    /// 所以「有值」同時代表「查得到」與「補過了」。Steam 兩者必須分開，
+    /// 因為 IGDB 也會寫它的識別碼欄位。
+    /// </summary>
+    public string ExternalIdAttributeKey => IgdbFields.MarkerKey;
+
+    public string CompletionMarkerKey => IgdbFields.MarkerKey;
 
     public IReadOnlyList<CategoryField> RequiredFields { get; } = IgdbFields.All;
+
+    /// <summary>IGDB 可批次反查且允許 4 req/sec，一次補完在請求內就跑得完。</summary>
+    public bool PrefersBackgroundExecution => false;
 
     public async Task<IReadOnlyList<ExternalItem>> SearchAsync(string query, int limit, CancellationToken ct)
     {

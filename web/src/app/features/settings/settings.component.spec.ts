@@ -7,7 +7,7 @@ import { ShareService } from '../../core/api/share.service';
 import { TransferService } from '../../core/api/transfer.service';
 import { NotificationService } from '../../core/notification.service';
 import { SyncJobDto } from '../../core/models';
-import { IgdbEnrichComponent } from './igdb-enrich.component';
+import { ProviderEnrichComponent } from './provider-enrich.component';
 import { SettingsComponent } from './settings.component';
 
 describe('SettingsComponent', () => {
@@ -169,10 +169,10 @@ describe('SettingsComponent', () => {
     const fixture = TestBed.createComponent(SettingsComponent);
     fixture.detectChanges();
 
-    const enrich = fixture.debugElement.query(By.directive(IgdbEnrichComponent)).componentInstance;
-    expect(enrich).toBeInstanceOf(IgdbEnrichComponent);
+    const panels = fixture.debugElement.queryAll(By.directive(ProviderEnrichComponent));
+    expect(panels.map((p) => p.componentInstance.provider())).toEqual(['igdb', 'steam']);
 
-    enrich.completed.emit();
+    panels[1].componentInstance.completed.emit();
 
     expect(jobs).toHaveBeenCalledTimes(2);
   });

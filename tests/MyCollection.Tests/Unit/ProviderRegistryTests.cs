@@ -77,7 +77,8 @@ public class ProviderRegistryTests
     [Theory]
     [InlineData("steam", ProviderCapability.BulkSync)]
     [InlineData("opengraph", ProviderCapability.UrlLookup)]
-    [InlineData("igdb", ProviderCapability.Search)]
+    // 可搜尋的 provider 必然也可依識別碼反查——ISearchProvider 繼承 IExternalIdLookupProvider
+    [InlineData("igdb", ProviderCapability.Search | ProviderCapability.Enrich)]
     public void Derives_capabilities_from_the_implemented_interfaces(string key, ProviderCapability expected)
     {
         ProviderCapabilities.Of(CreateSut().Require(key)).Should().Be(expected);

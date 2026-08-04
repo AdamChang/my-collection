@@ -21,7 +21,7 @@ internal static class ProviderFields
         ProviderRegistry registry, ICategoryRepository categories,
         string categoryId, string providerKey, CancellationToken ct)
     {
-        var provider = registry.Require<ISearchProvider>(providerKey);
+        var provider = registry.Require<IExternalIdLookupProvider>(providerKey);
 
         if (!ObjectId.TryParse(categoryId, out var id))
         {

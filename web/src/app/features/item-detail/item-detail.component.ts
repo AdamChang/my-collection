@@ -5,7 +5,11 @@ import { finalize } from 'rxjs';
 import { CatalogService, ItemWritePayload } from '../../core/api/catalog.service';
 import { CategoryService } from '../../core/api/category.service';
 import { IngestionService } from '../../core/api/ingestion.service';
-import { IGDB_PROVIDER_KEY, ProviderService } from '../../core/api/provider.service';
+import {
+  IGDB_PROVIDER_KEY,
+  STEAM_PROVIDER_KEY,
+  ProviderService,
+} from '../../core/api/provider.service';
 import { IGNORE_HANDLED_BY_INTERCEPTOR } from '../../core/error.interceptor';
 import { NotificationService } from '../../core/notification.service';
 import { CategoryDto, FetchedMetadataDto, ItemDto } from '../../core/models';
@@ -127,6 +131,18 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
         </section>
       }
 
+      @if (itemId() && steamAddressable()) {
+        <section class="detail__panel mc-panel" data-item-steam>
+          <div class="mc-eyebrow">STEAM</div>
+          <button type="button" (click)="refetchFromSteam()" [disabled]="busy()" data-steam-refetch>
+            {{ enriching() ? '抓取中…' : '重新抓取繁體中文資料' }}
+          </button>
+          <span class="hint">
+            會以 Steam 商店的繁體中文品名、簡介與類型覆蓋現有內容。這也是修正手動編輯的出口。
+          </span>
+        </section>
+      }
+
       @if (itemId(); as id) {
         <section class="detail__panel mc-panel">
           <h2>圖片</h2>
@@ -209,6 +225,20 @@ export class ItemDetailComponent {
     return (
       item != null &&
       (item.attributes['igdbId'] != null || item.externalRef?.provider === 'steam')
+    );
+  });
+
+  /**
+   * Steam 商店補完的定址規則與後端 ExternalIdFor 一致：
+   * 先看 steamAppId，再退回 provider 為 steam 的 externalRef。
+   */
+  readonly steamAddressable = computed(() => {
+    const item = this.item();
+
+    return (
+      item != null &&
+      this.providers.supports(STEAM_PROVIDER_KEY, 'Enrich') &&
+      (item.attributes['steamAppId'] != null || item.externalRef?.provider === 'steam')
     );
   });
 
@@ -327,6 +357,28 @@ export class ItemDetailComponent {
           this.notifications.success('已從 IGDB 更新。');
           this.reloadItem(id);
         },
+        error: IGNORE_HANDLED_BY_INTERCEPTOR,
+      });
+  }
+
+  /**
+   * 與 refetchFromIgdb 刻意不共用：Steam 是背景作業，回應時工作還沒開始，
+   * 所以既不能重載品項，也不能拿 job 的統計數字說話——那些數字全是 0。
+   */
+  refetchFromSteam(): void {
+    const id = this.itemId();
+
+    if (!id || this.busy()) {
+      return;
+    }
+
+    this.enriching.set(true);
+    this.ingestion
+      .enrich(STEAM_PROVIDER_KEY, [id])
+      .pipe(finalize(() => this.enriching.set(false)))
+      .subscribe({
+        next: () =>
+          this.notifications.success('已排入背景作業，完成後重新整理即可看到繁體中文資料。'),
         error: IGNORE_HANDLED_BY_INTERCEPTOR,
       });
   }

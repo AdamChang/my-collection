@@ -69,7 +69,6 @@ public sealed class MongoItemSyncWriter(MongoContext context) : IItemSyncWriter
 
         var set = new BsonDocument
         {
-            { "name", item.Name },
             { "externalRef.url", ToBson(item.SourceUrl?.ToString()) },
             { "externalRef.lastSyncedAt", syncedAt },
             { "updatedAt", syncedAt }
@@ -85,9 +84,14 @@ public sealed class MongoItemSyncWriter(MongoContext context) : IItemSyncWriter
             set[$"attributes.{key}"] = ToBson(value);
         }
 
-        // 使用者擁有的欄位只在建立時寫入，後續同步一律不碰
+        // 使用者擁有的欄位只在建立時寫入，後續同步一律不碰。
+        //
+        // name 也在這裡：Steam 只回得到英文品名，繁體中文由商店補完寫入
+        // （見 IItemEnrichWriter）。若同步繼續 $set name，補完寫好的繁中名稱
+        // 會在下一次同步被默默改回英文。代價是 Steam 端真的改名不再傳播進來。
         var setOnInsert = new BsonDocument
         {
+            { "name", item.Name },
             { "categoryId", categoryId },
             { "source", source.ToString() },
             { "isShowcased", false },

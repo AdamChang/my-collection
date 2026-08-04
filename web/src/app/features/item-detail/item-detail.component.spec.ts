@@ -5,7 +5,11 @@ import { Observable, Subject, of, throwError } from 'rxjs';
 import { CatalogService } from '../../core/api/catalog.service';
 import { CategoryService } from '../../core/api/category.service';
 import { IngestionService } from '../../core/api/ingestion.service';
-import { IGDB_PROVIDER_KEY, ProviderService } from '../../core/api/provider.service';
+import {
+  IGDB_PROVIDER_KEY,
+  STEAM_PROVIDER_KEY,
+  ProviderService,
+} from '../../core/api/provider.service';
 import { NotificationService } from '../../core/notification.service';
 import { CategoryDto, FetchedMetadataDto, ItemDto, SyncJobDto } from '../../core/models';
 import { IgdbSearchDialogComponent } from '../../shared/igdb-search-dialog/igdb-search-dialog.component';
@@ -509,6 +513,84 @@ describe('ItemDetailComponent', () => {
     });
 
     expect(fixture.nativeElement.querySelector('[data-igdb-refetch]')).toBeTruthy();
+  });
+
+  /**
+   * Steam 商店補完的入口只在 provider 宣告 Enrich 能力時出現，
+   * 與 IGDB 的 Search 能力是兩件事——上面那組測試把 supports 限定成 IGDB/Search，
+   * 所以這裡必須自己餵一組。
+   */
+  async function createWithSteamEnrich(item: ItemDto, enrich = () => of(runningJob)) {
+    await TestBed.configureTestingModule({
+      imports: [ItemDetailComponent],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => item.id } } } },
+        { provide: CategoryService, useValue: { list: () => of([igdbCategory]) } },
+        { provide: CatalogService, useValue: { get: () => of(item) } },
+        { provide: IngestionService, useValue: { search: () => of([]), enrich } },
+        { provide: NotificationService, useValue: { success: () => undefined, error: () => undefined } },
+        {
+          provide: ProviderService,
+          useValue: {
+            supports: (key: string, capability: string) =>
+              key === STEAM_PROVIDER_KEY && capability === 'Enrich',
+          },
+        },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(ItemDetailComponent);
+    fixture.detectChanges();
+
+    return fixture;
+  }
+
+  const runningJob = {
+    id: 'j1', provider: 'steam', status: 'Running',
+    created: 0, updated: 0, failed: 0, skipped: 0,
+    error: null, startedAt: '2026-08-04T03:00:00Z', finishedAt: null,
+  };
+
+  it('offers a steam refetch button for a steam-synced item', async () => {
+    const fixture = await createWithSteamEnrich(steamItem);
+
+    expect(fixture.nativeElement.querySelector('[data-steam-refetch]')).toBeTruthy();
+  });
+
+  /** 手動建檔的實體遊戲靠 IGDB 反查寫進來的 steamAppId 定址。 */
+  it('offers a steam refetch button for an item that only carries a steam app id', async () => {
+    const fixture = await createWithSteamEnrich({
+      ...steamItem,
+      source: 'Manual',
+      externalRef: null,
+      attributes: { steamAppId: 1245620 },
+    });
+
+    expect(fixture.nativeElement.querySelector('[data-steam-refetch]')).toBeTruthy();
+  });
+
+  it('hides the steam refetch button when the item has no steam identity', async () => {
+    const fixture = await createWithSteamEnrich({
+      ...steamItem,
+      source: 'Manual',
+      externalRef: null,
+      attributes: {},
+    });
+
+    expect(fixture.nativeElement.querySelector('[data-steam-refetch]')).toBeNull();
+  });
+
+  it('asks steam to enrich just this item', async () => {
+    const calls: unknown[][] = [];
+    const fixture = await createWithSteamEnrich(steamItem, (...args: unknown[]) => {
+      calls.push(args);
+      return of(runningJob);
+    });
+
+    fixture.nativeElement.querySelector('[data-steam-refetch]').click();
+
+    expect(calls).toEqual([[STEAM_PROVIDER_KEY, [steamItem.id]]]);
   });
 
   /**

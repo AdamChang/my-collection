@@ -1,3 +1,4 @@
+using MyCollection.Application.Ingestion;
 using MyCollection.Domain.Entities;
 
 namespace MyCollection.Infrastructure.Providers.Igdb;
@@ -13,6 +14,21 @@ namespace MyCollection.Infrastructure.Providers.Igdb;
 public static class IgdbFields
 {
     public const string MarkerKey = "igdbId";
+
+    /// <summary>
+    /// IGDB 讓位的欄位：品項已有值時不寫。
+    ///
+    /// genres 與 description 的繁體中文版由 Steam 商店補完提供，IGDB 只有英文；
+    /// 讓位讓兩者的執行順序不再影響結果。steamAppId 讓位是因為 Steam 商店補完
+    /// 才是它的權威來源，IGDB 反查只是替沒有 externalRef 的品項（例如手動建檔的
+    /// 實體遊戲）補上入口。
+    /// </summary>
+    public static IReadOnlySet<string> SoftWriteKeys { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "genres",
+        SteamFields.AppIdKey,
+        ItemFieldKeys.Description
+    };
 
     /// <summary>唯讀快照，供只需要讀 Key/Type 的呼叫端。</summary>
     public static IReadOnlyList<CategoryField> All { get; } = Create();
@@ -30,6 +46,10 @@ public static class IgdbFields
         new() { Key = "genres", Label = "類型", Type = FieldType.Text, Searchable = true },
         new() { Key = "platforms", Label = "發行平台", Type = FieldType.Text, Searchable = true },
         new() { Key = "igdbRating", Label = "IGDB 評分", Type = FieldType.Number },
-        new() { Key = "coverUrl", Label = "IGDB 封面網址", Type = FieldType.Url }
+        new() { Key = "coverUrl", Label = "IGDB 封面網址", Type = FieldType.Url },
+
+        // IGDB 反查得到 Steam 對應時會寫入，好讓非 Steam 同步而來的品項也能被商店補完定址。
+        // 定義取自 SteamFields，不在這裡重寫一份字面值。
+        SteamFields.CreateAppIdField()
     ];
 }

@@ -86,7 +86,9 @@ public sealed class SystemCategorySeederTests(MongoFixture fixture) : IAsyncLife
             Field("genres", "類型", FieldType.Text, searchable: true),
             Field("platforms", "發行平台", FieldType.Text, searchable: true),
             Field("igdbRating", "IGDB 評分", FieldType.Number),
-            Field("coverUrl", "IGDB 封面網址", FieldType.Url)
+            Field("coverUrl", "IGDB 封面網址", FieldType.Url),
+            Field("steamAppId", "Steam App ID", FieldType.Number),
+            Field("steamStoreUpdatedAt", "Steam 資料更新時間", FieldType.Date)
         ]);
         AssertCategory(actual[1], "000000000000000000000002", "數位遊戲", "gamepad-2", CategoryKind.Digital,
         [
@@ -102,7 +104,9 @@ public sealed class SystemCategorySeederTests(MongoFixture fixture) : IAsyncLife
             Field("genres", "類型", FieldType.Text, searchable: true),
             Field("platforms", "發行平台", FieldType.Text, searchable: true),
             Field("igdbRating", "IGDB 評分", FieldType.Number),
-            Field("coverUrl", "IGDB 封面網址", FieldType.Url)
+            Field("coverUrl", "IGDB 封面網址", FieldType.Url),
+            Field("steamAppId", "Steam App ID", FieldType.Number),
+            Field("steamStoreUpdatedAt", "Steam 資料更新時間", FieldType.Date)
         ]);
         AssertCategory(actual[2], "000000000000000000000003", "音樂專輯", "disc-3", CategoryKind.Physical,
         [

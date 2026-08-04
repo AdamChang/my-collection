@@ -13,6 +13,9 @@ public static class IgdbMapper
 {
     private const string CoverUrlTemplate = "https://images.igdb.com/igdb/image/upload/t_cover_big/{0}.jpg";
 
+    /// <summary>與 IgdbProvider 的 external_games 查詢用的是同一個來源代號。</summary>
+    private const int SteamExternalGameSource = 1;
+
     public static ExternalItem ToExternalItem(JsonElement game)
     {
         var id = game.GetProperty("id").GetInt64();
@@ -28,6 +31,13 @@ public static class IgdbMapper
         Add(attributes, "genres", Join(game, "genres", "name"));
         Add(attributes, "platforms", Join(game, "platforms", "abbreviation"));
         Add(attributes, "coverUrl", coverUrl?.ToString());
+
+        // 反查到 Steam 對應就記下來，讓沒有 externalRef 的品項（手動建檔的實體遊戲）
+        // 也能被 Steam 商店的本地化補完定址到。查不到就不寫，不猜。
+        if (SteamAppId(game) is { } steamAppId)
+        {
+            attributes[SteamFields.AppIdKey] = steamAppId;
+        }
 
         if (Property(game, "first_release_date") is { } released)
         {
@@ -46,8 +56,39 @@ public static class IgdbMapper
             ImageUrl: coverUrl,
             Attributes: attributes)
         {
-            SourceUrl = Text(game, "url") is { } url ? new Uri(url) : null
+            SourceUrl = Text(game, "url") is { } url ? new Uri(url) : null,
+            FillOnlyIfAbsent = IgdbFields.SoftWriteKeys
         };
+    }
+
+    /// <summary>
+    /// external_games 裡 source 為 Steam 的那一筆，uid 就是 appid。
+    /// 同一款遊戲可能有多筆（不同地區的商店項目），取第一筆解析得出的即可——
+    /// appid 對同一款遊戲是一致的。
+    /// </summary>
+    private static long? SteamAppId(JsonElement game)
+    {
+        if (Property(game, "external_games") is not { ValueKind: JsonValueKind.Array } array)
+        {
+            return null;
+        }
+
+        foreach (var entry in array.EnumerateArray())
+        {
+            if (Property(entry, "external_game_source")?.GetInt32() != SteamExternalGameSource)
+            {
+                continue;
+            }
+
+            if (long.TryParse(
+                    Text(entry, "uid"), NumberStyles.None, CultureInfo.InvariantCulture, out var appId)
+                && appId > 0)
+            {
+                return appId;
+            }
+        }
+
+        return null;
     }
 
     private static void Add(Dictionary<string, object?> attributes, string key, string? value)
