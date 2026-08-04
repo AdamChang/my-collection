@@ -21,7 +21,7 @@ import { CategoryFieldDto, ItemDto } from '../../core/models';
         }
         @if (cardAttributes().length) {
           <dl class="card__fields" data-card-fields>
-            @for (entry of cardAttributes(); track entry.label) {
+            @for (entry of cardAttributes(); track entry.key) {
               <dt>{{ entry.label }}</dt>
               <dd>{{ entry.value }}</dd>
             }
