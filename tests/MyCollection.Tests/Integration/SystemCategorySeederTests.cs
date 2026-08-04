@@ -1,10 +1,8 @@
 using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
-using MongoDB.Bson;
 using MongoDB.Driver;
 using MyCollection.Domain.Entities;
 using MyCollection.Infrastructure.Mongo;
-using MyCollection.Infrastructure.Providers.Psn;
 using MyCollection.Tests.Fixtures;
 
 namespace MyCollection.Tests.Integration;
@@ -93,11 +91,25 @@ public sealed class SystemCategorySeederTests(MongoFixture fixture) : IAsyncLife
             Field("steamStoreUpdatedAt", "Steam 資料更新時間", FieldType.Date)
         ]);
         AssertCategory(actual[1], "000000000000000000000002", "數位遊戲", "gamepad-2", CategoryKind.Digital,
-            ExpectedFieldsOf(SystemCategoryDefinitions.DigitalGameId));
-
-        var seededPsnFields = actual[1].Fields
-            .Where(field => PsnFields.All.Any(expected => expected.Key == field.Key));
-        seededPsnFields.Should().BeEquivalentTo(PsnFields.All);
+        [
+            Field("platform", "平台／商店", FieldType.Text, searchable: true, showOnCard: true),
+            Field("developer", "開發商", FieldType.Text, searchable: true),
+            Field("publisher", "發行商", FieldType.Text, searchable: true, showOnCard: true),
+            Field("releaseDate", "發售日期", FieldType.Date),
+            Field("productCode", "產品編號", FieldType.Text, searchable: true),
+            Field("playtimeForever", "遊玩時數（分鐘）", FieldType.Number, showOnCard: true),
+            Field("headerUrl", "封面圖網址", FieldType.Url),
+            Field("iconUrl", "圖示網址", FieldType.Url),
+            Field("igdbId", "IGDB ID", FieldType.Number),
+            Field("genres", "類型", FieldType.Text, searchable: true),
+            Field("platforms", "發行平台", FieldType.Text, searchable: true),
+            Field("igdbRating", "IGDB 評分", FieldType.Number),
+            Field("coverUrl", "IGDB 封面網址", FieldType.Url),
+            Field("steamAppId", "Steam App ID", FieldType.Number),
+            Field("steamStoreUpdatedAt", "Steam 資料更新時間", FieldType.Date),
+            Field("psnProgress", "PSN 獎盃完成度", FieldType.Number, required: false),
+            Field("psnLastPlayedAt", "PSN 最後遊玩時間", FieldType.Date, required: false)
+        ]);
         AssertCategory(actual[2], "000000000000000000000003", "音樂專輯", "disc-3", CategoryKind.Physical,
         [
             Field("artist", "演出者", FieldType.Text, searchable: true, showOnCard: true),
@@ -158,22 +170,9 @@ public sealed class SystemCategorySeederTests(MongoFixture fixture) : IAsyncLife
         FieldType type,
         IReadOnlyList<string>? options = null,
         bool searchable = false,
-        bool showOnCard = false) =>
-        new(key, label, type, options, Required: false, searchable, showOnCard);
-
-    private static IReadOnlyList<ExpectedField> ExpectedFieldsOf(ObjectId categoryId) =>
-        SystemCategoryDefinitions.Create(DateTime.UnixEpoch)
-            .Single(category => category.Id == categoryId)
-            .Fields
-            .Select(field => new ExpectedField(
-                field.Key,
-                field.Label,
-                field.Type,
-                field.Options,
-                field.Required,
-                field.Searchable,
-                field.ShowOnCard))
-            .ToArray();
+        bool showOnCard = false,
+        bool required = false) =>
+        new(key, label, type, options, required, searchable, showOnCard);
 
     private sealed record ExpectedField(
         string Key,
