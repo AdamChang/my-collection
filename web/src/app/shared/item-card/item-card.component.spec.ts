@@ -100,4 +100,60 @@ describe('ItemCardComponent', () => {
 
     expect(fixture.nativeElement.querySelector('[data-card-fields]')).toBeNull();
   });
+
+  it('shows playtime instead of PSN progress while retaining unrelated card attributes', () => {
+    renderActivityCard({ playtimeForever: 120, psnProgress: 75, platform: 'Steam' });
+
+    const text = fixture.nativeElement.querySelector('[data-card-fields]').textContent;
+    expect(text).toContain('遊玩時數（分鐘）');
+    expect(text).toContain('120');
+    expect(text).not.toContain('PSN 獎盃完成度');
+    expect(text).not.toContain('75');
+    expect(text).toContain('平台／商店');
+    expect(text).toContain('Steam');
+  });
+
+  it('shows PSN progress when playtime is absent while retaining unrelated card attributes', () => {
+    renderActivityCard({ psnProgress: 75, platform: 'PlayStation' });
+
+    const text = fixture.nativeElement.querySelector('[data-card-fields]').textContent;
+    expect(text).not.toContain('遊玩時數（分鐘）');
+    expect(text).not.toContain('120');
+    expect(text).toContain('PSN 獎盃完成度');
+    expect(text).toContain('75');
+    expect(text).toContain('平台／商店');
+    expect(text).toContain('PlayStation');
+  });
+
+  it('treats zero playtime as populated and suppresses PSN progress', () => {
+    renderActivityCard({ playtimeForever: 0, psnProgress: 75, platform: 'Steam' });
+
+    const text = fixture.nativeElement.querySelector('[data-card-fields]').textContent;
+    expect(text).toContain('遊玩時數（分鐘）');
+    expect(text).toContain('0');
+    expect(text).not.toContain('PSN 獎盃完成度');
+    expect(text).not.toContain('75');
+    expect(text).toContain('平台／商店');
+    expect(text).toContain('Steam');
+  });
+
+  it('hides activity rows when neither activity value is populated while retaining unrelated card attributes', () => {
+    renderActivityCard({ platform: 'PlayStation' });
+
+    const text = fixture.nativeElement.querySelector('[data-card-fields]').textContent;
+    expect(text).not.toContain('遊玩時數（分鐘）');
+    expect(text).not.toContain('PSN 獎盃完成度');
+    expect(text).toContain('平台／商店');
+    expect(text).toContain('PlayStation');
+  });
+
+  function renderActivityCard(attributes: ItemDto['attributes']): void {
+    fixture.componentRef.setInput('item', item({ attributes }));
+    fixture.componentRef.setInput('cardFields', [
+      { key: 'playtimeForever', label: '遊玩時數（分鐘）', type: 'Number', options: null, required: false, searchable: false, showOnCard: true },
+      { key: 'psnProgress', label: 'PSN 獎盃完成度', type: 'Number', options: null, required: false, searchable: false, showOnCard: true },
+      { key: 'platform', label: '平台／商店', type: 'Text', options: null, required: false, searchable: true, showOnCard: true },
+    ]);
+    fixture.detectChanges();
+  }
 });
