@@ -93,6 +93,31 @@ describe('ItemCardComponent', () => {
     expect(text).not.toContain('1/8');
   });
 
+  it('tracks same-label card attributes by key across value updates', () => {
+    const warn = spyOn(console, 'warn');
+    fixture.componentRef.setInput('item', item({ attributes: { first: 'A1', second: 'B1' } }));
+    fixture.componentRef.setInput('cardFields', [
+      { key: 'first', label: '共同標籤', type: 'Text', options: null, required: false, searchable: false, showOnCard: true },
+      { key: 'second', label: '共同標籤', type: 'Text', options: null, required: false, searchable: false, showOnCard: true },
+    ]);
+    fixture.detectChanges();
+
+    expect(warn).not.toHaveBeenCalled();
+    expect(cardFieldRows()).toEqual([
+      ['共同標籤', 'A1'],
+      ['共同標籤', 'B1'],
+    ]);
+
+    fixture.componentRef.setInput('item', item({ attributes: { first: 'A2', second: 'B2' } }));
+    fixture.detectChanges();
+
+    expect(warn).not.toHaveBeenCalled();
+    expect(cardFieldRows()).toEqual([
+      ['共同標籤', 'A2'],
+      ['共同標籤', 'B2'],
+    ]);
+  });
+
   it('renders no attribute row when no field is marked showOnCard', () => {
     fixture.componentRef.setInput('item', item({ attributes: { brand: 'GSC' } }));
     fixture.componentRef.setInput('cardFields', []);
@@ -155,5 +180,15 @@ describe('ItemCardComponent', () => {
       { key: 'platform', label: '平台／商店', type: 'Text', options: null, required: false, searchable: true, showOnCard: true },
     ]);
     fixture.detectChanges();
+  }
+
+  function cardFieldRows(): string[][] {
+    const terms = fixture.nativeElement.querySelectorAll('dt') as NodeListOf<HTMLElement>;
+    const descriptions = fixture.nativeElement.querySelectorAll('dd') as NodeListOf<HTMLElement>;
+
+    return Array.from(terms, (term, index) => [
+      term.textContent ?? '',
+      descriptions[index].textContent ?? '',
+    ]);
   }
 });
