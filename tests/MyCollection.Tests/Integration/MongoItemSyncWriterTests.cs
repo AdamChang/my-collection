@@ -25,15 +25,31 @@ public class MongoItemSyncWriterTests(MongoFixture fixture) : IAsyncLifetime
 
     public Task DisposeAsync() => Task.CompletedTask;
 
-    private static IReadOnlyList<ExternalItem> SteamPayload(string tf2Name = "Team Fortress 2") =>
+    private static IReadOnlyList<ExternalItem> SteamPayload(
+        string tf2Name = "Team Fortress 2",
+        int tf2Playtime = 1234) =>
     [
         new ExternalItem("440", tf2Name, null, new Uri("https://cdn/440.jpg"),
-            new Dictionary<string, object?> { ["playtimeForever"] = 1234, ["headerUrl"] = "https://cdn/440.jpg" })
+            new Dictionary<string, object?>
+            {
+                ["playtimeForever"] = tf2Playtime,
+                ["headerUrl"] = "https://cdn/440.jpg",
+                ["platform"] = "Steam"
+            })
         {
-            SourceUrl = new Uri("https://store.steampowered.com/app/440")
+            SourceUrl = new Uri("https://store.steampowered.com/app/440"),
+            FillOnlyIfAbsent = new HashSet<string>(["platform"], StringComparer.Ordinal)
         },
         new ExternalItem("620", "Portal 2", null, new Uri("https://cdn/620.jpg"),
-            new Dictionary<string, object?> { ["playtimeForever"] = 0, ["headerUrl"] = "https://cdn/620.jpg" })
+            new Dictionary<string, object?>
+            {
+                ["playtimeForever"] = 0,
+                ["headerUrl"] = "https://cdn/620.jpg",
+                ["platform"] = "Steam"
+            })
+        {
+            FillOnlyIfAbsent = new HashSet<string>(["platform"], StringComparer.Ordinal)
+        }
     ];
 
     private Task<SyncOutcome> SyncAsync(IReadOnlyList<ExternalItem> payload, DateTime? at = null) =>
@@ -65,6 +81,7 @@ public class MongoItemSyncWriterTests(MongoFixture fixture) : IAsyncLifetime
         tf2.ExternalRef!.Provider.Should().Be("steam");
         tf2.ExternalRef.LastSyncedAt.Should().Be(SyncedAt);
         tf2.CreatedAt.Should().Be(SyncedAt);
+        tf2.Attributes["platform"].AsString.Should().Be("Steam");
     }
 
     [Fact]
@@ -125,6 +142,57 @@ public class MongoItemSyncWriterTests(MongoFixture fixture) : IAsyncLifetime
 
         (await LoadAsync("440")).Name.Should().Be(
             "絕地要塞 2", "name 的擁有者是補完，同步只在建立品項時寫入");
+    }
+
+    [Fact]
+    public async Task Sync_preserves_an_existing_non_empty_soft_write_attribute()
+    {
+        await SyncAsync(SteamPayload());
+
+        var tf2 = await LoadAsync("440");
+        await fixture.Context.Items.UpdateOneAsync(
+            Builders<Item>.Filter.Eq(x => x.Id, tf2.Id),
+            Builders<Item>.Update.Set("attributes.platform", "PS5 光碟版"));
+
+        await SyncAsync(SteamPayload(), at: SyncedAt.AddDays(1));
+
+        (await LoadAsync("440")).Attributes["platform"].AsString.Should().Be(
+            "PS5 光碟版", "來源對 platform 是軟寫入，不得覆蓋使用者的非空值");
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("null")]
+    [InlineData("empty")]
+    public async Task Sync_fills_a_missing_null_or_empty_soft_write_attribute(string legacyState)
+    {
+        await SyncAsync(SteamPayload());
+
+        var tf2 = await LoadAsync("440");
+        var update = legacyState switch
+        {
+            "missing" => new BsonDocument("$unset", new BsonDocument("attributes.platform", "")),
+            "null" => new BsonDocument("$set", new BsonDocument("attributes.platform", BsonNull.Value)),
+            "empty" => new BsonDocument("$set", new BsonDocument("attributes.platform", "")),
+            _ => throw new InvalidOperationException($"Unsupported state: {legacyState}")
+        };
+
+        await fixture.Context.Items.UpdateOneAsync(
+            Builders<Item>.Filter.Eq(x => x.Id, tf2.Id), update);
+
+        await SyncAsync(SteamPayload(), at: SyncedAt.AddDays(1));
+
+        (await LoadAsync("440")).Attributes["platform"].AsString.Should().Be("Steam");
+    }
+
+    [Fact]
+    public async Task Sync_continues_to_overwrite_an_ordinary_provider_owned_attribute()
+    {
+        await SyncAsync(SteamPayload(tf2Playtime: 1234));
+
+        await SyncAsync(SteamPayload(tf2Playtime: 4321), at: SyncedAt.AddDays(1));
+
+        (await LoadAsync("440")).Attributes["playtimeForever"].AsInt32.Should().Be(4321);
     }
 
     [Fact]

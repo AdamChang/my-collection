@@ -14,6 +14,7 @@ using MyCollection.Infrastructure.Ingestion;
 using MyCollection.Infrastructure.Mongo;
 using MyCollection.Infrastructure.Providers;
 using MyCollection.Infrastructure.Providers.Igdb;
+using MyCollection.Infrastructure.Providers.Psn;
 using MyCollection.Infrastructure.Security;
 using MyCollection.Infrastructure.Storage;
 
@@ -29,6 +30,7 @@ public static class DependencyInjection
         services.Configure<SecretProtectionOptions>(configuration.GetSection(SecretProtectionOptions.SectionName));
         services.Configure<SteamOptions>(configuration.GetSection(SteamOptions.SectionName));
         services.Configure<IgdbOptions>(configuration.GetSection(IgdbOptions.SectionName));
+        services.Configure<PsnOptions>(configuration.GetSection(PsnOptions.SectionName));
 
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<MongoContext>();
@@ -55,6 +57,7 @@ public static class DependencyInjection
         services.AddScoped<IItemEnrichWriter, MongoItemEnrichWriter>();
 
         var steam = configuration.GetSection(SteamOptions.SectionName).Get<SteamOptions>() ?? new SteamOptions();
+        var psn = configuration.GetSection(PsnOptions.SectionName).Get<PsnOptions>() ?? new PsnOptions();
 
         services.AddHttpClient<SteamProvider>(client =>
             {
@@ -68,6 +71,23 @@ public static class DependencyInjection
                 options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(steam.TimeoutSeconds);
                 options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(steam.TimeoutSeconds * 4);
                 options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(steam.TimeoutSeconds * 4);
+            });
+
+        services.AddHttpClient<PsnProvider>(client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(psn.TimeoutSeconds);
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                AllowAutoRedirect = false
+            })
+            .AddStandardResilienceHandler(options =>
+            {
+                options.Retry.MaxRetryAttempts = 3;
+                options.Retry.BackoffType = Polly.DelayBackoffType.Exponential;
+                options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(psn.TimeoutSeconds);
+                options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(psn.TimeoutSeconds * 4);
+                options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(psn.TimeoutSeconds * 4);
             });
 
         services.AddHttpClient<OpenGraphProvider>(client =>
@@ -98,6 +118,7 @@ public static class DependencyInjection
         services.AddHostedService<EnrichJobWorker>();
 
         services.AddScoped<IMetadataProvider>(sp => sp.GetRequiredService<SteamProvider>());
+        services.AddScoped<IMetadataProvider>(sp => sp.GetRequiredService<PsnProvider>());
         services.AddScoped<IMetadataProvider>(sp => sp.GetRequiredService<OpenGraphProvider>());
 
         // IGDB 是選配功能：沒有憑證就整組不註冊，/ingest/providers 自然不會列出它，

@@ -145,7 +145,8 @@ public sealed class SteamProvider(
         var attributes = new Dictionary<string, object?>
         {
             ["playtimeForever"] = game.PlaytimeForever,
-            ["headerUrl"] = HeaderUrl(game.AppId).ToString()
+            ["headerUrl"] = HeaderUrl(game.AppId).ToString(),
+            ["platform"] = "Steam"
         };
 
         if (!string.IsNullOrWhiteSpace(game.ImgIconUrl))
@@ -161,7 +162,8 @@ public sealed class SteamProvider(
             ImageUrl: HeaderUrl(game.AppId),
             Attributes: attributes)
         {
-            SourceUrl = new Uri($"https://store.steampowered.com/app/{game.AppId}")
+            SourceUrl = new Uri($"https://store.steampowered.com/app/{game.AppId}"),
+            FillOnlyIfAbsent = new HashSet<string>(["platform"], StringComparer.Ordinal)
         };
     }
 

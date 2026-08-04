@@ -69,50 +69,68 @@ public sealed class MongoItemSyncWriter(MongoContext context) : IItemSyncWriter
 
         var set = new BsonDocument
         {
-            { "externalRef.url", ToBson(item.SourceUrl?.ToString()) },
-            { "externalRef.lastSyncedAt", syncedAt },
-            { "updatedAt", syncedAt }
+            { "externalRef.url", Literal(item.SourceUrl?.ToString()) },
+            { "externalRef.lastSyncedAt", Literal(syncedAt) },
+            { "updatedAt", Literal(syncedAt) },
+
+            // Aggregation pipeline 沒有 $setOnInsert。$ifNull 讓建立時補齊預設值，
+            // 同時保留既有品項的使用者欄位；空陣列與 false 都不是 null，會原樣保留。
+            { "name", IfNull("name", item.Name) },
+            { "categoryId", IfNull("categoryId", categoryId) },
+            { "source", IfNull("source", source.ToString()) },
+            { "isShowcased", IfNull("isShowcased", false) },
+            { "tags", IfNull("tags", new BsonArray()) },
+            { "images", IfNull("images", new BsonArray()) },
+            { "acquisition", IfNull("acquisition", null) },
+            { "locationId", IfNull("locationId", null) },
+            { "createdAt", IfNull("createdAt", syncedAt) }
         };
 
         if (item.Description is not null)
         {
-            set["description"] = item.Description;
+            set["description"] = Literal(item.Description);
         }
 
         foreach (var (key, value) in item.Attributes)
         {
-            set[$"attributes.{key}"] = ToBson(value);
+            var path = $"attributes.{key}";
+            set[path] = item.FillOnlyIfAbsent.Contains(key)
+                ? FillIfMissingNullOrEmpty(path, value)
+                : Literal(value);
         }
 
-        // 使用者擁有的欄位只在建立時寫入，後續同步一律不碰。
-        //
-        // name 也在這裡：Steam 只回得到英文品名，繁體中文由商店補完寫入
-        // （見 IItemEnrichWriter）。若同步繼續 $set name，補完寫好的繁中名稱
-        // 會在下一次同步被默默改回英文。代價是 Steam 端真的改名不再傳播進來。
-        var setOnInsert = new BsonDocument
-        {
-            { "name", item.Name },
-            { "categoryId", categoryId },
-            { "source", source.ToString() },
-            { "isShowcased", false },
-            { "tags", new BsonArray() },
-            { "images", new BsonArray() },
-            { "acquisition", BsonNull.Value },
-            { "locationId", BsonNull.Value },
-            { "createdAt", syncedAt }
-        };
+        var pipeline = PipelineDefinition<Item, Item>.Create(
+            [new BsonDocument("$set", set)]);
 
         return new UpdateOneModel<Item>(
             filter,
-            new BsonDocumentUpdateDefinition<Item>(new BsonDocument
-            {
-                { "$set", set },
-                { "$setOnInsert", setOnInsert }
-            }))
+            new PipelineUpdateDefinition<Item>(pipeline))
         {
             IsUpsert = true
         };
     }
+
+    private static BsonDocument IfNull(string path, object? fallback) =>
+        new("$ifNull", new BsonArray { $"${path}", Literal(fallback) });
+
+    private static BsonDocument FillIfMissingNullOrEmpty(string path, object? value) =>
+        new("$cond", new BsonArray
+        {
+            new BsonDocument("$or", new BsonArray
+            {
+                new BsonDocument("$in", new BsonArray
+                {
+                    new BsonDocument("$type", $"${path}"),
+                    new BsonArray { "missing", "null" }
+                }),
+                new BsonDocument("$eq", new BsonArray { $"${path}", "" })
+            }),
+            Literal(value),
+            $"${path}"
+        });
+
+    // Pipeline 會把以 '$' 開頭的字串解讀為欄位路徑；所有 payload 常數都必須包成 literal。
+    private static BsonDocument Literal(object? value) => new("$literal", ToBson(value));
 
     /// <summary>
     /// null 一律映成 BSON null。不可寫成 <c>value is null ? BsonNull.Value : value.ToString()</c>——

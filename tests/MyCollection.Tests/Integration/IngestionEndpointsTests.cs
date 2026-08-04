@@ -26,12 +26,15 @@ public class IngestionEndpointsTests(MongoFixture mongo) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Providers_endpoint_lists_steam_and_opengraph()
+    public async Task Providers_endpoint_lists_steam_psn_and_opengraph()
     {
         var providers = await _client.GetFromJsonAsync<JsonElement>("/ingest/providers");
 
         providers.EnumerateArray().Select(p => p.GetProperty("key").GetString())
-            .Should().BeEquivalentTo("steam", "opengraph");
+            .Should().BeEquivalentTo("steam", "psn", "opengraph");
+
+        providers.EnumerateArray().Single(p => p.GetProperty("key").GetString() == "psn")
+            .GetProperty("capabilities").GetString().Should().Be("BulkSync");
     }
 
     [Fact]
@@ -61,7 +64,7 @@ public class IngestionEndpointsTests(MongoFixture mongo) : IAsyncLifetime
     [Fact]
     public async Task Sync_with_an_unknown_provider_returns_404()
     {
-        var response = await _client.PostAsync("/ingest/sync/psn", null);
+        var response = await _client.PostAsync("/ingest/sync/unknown", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }

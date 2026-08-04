@@ -76,6 +76,12 @@ public class SteamProviderTests
         var items = await sut.SyncAsync(Account(), CancellationToken.None);
 
         items.Should().HaveCount(3);
+        foreach (var item in items)
+        {
+            item.Attributes.Should().ContainKey("platform").WhoseValue.Should().Be("Steam");
+            item.FillOnlyIfAbsent.Should().BeEquivalentTo(["platform"]);
+        }
+
         var tf2 = items.Single(i => i.ExternalId == "440");
         tf2.Name.Should().Be("Team Fortress 2");
         tf2.Attributes["playtimeForever"].Should().Be(1234);
