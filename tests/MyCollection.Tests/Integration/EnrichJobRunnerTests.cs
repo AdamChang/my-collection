@@ -11,6 +11,7 @@ using MyCollection.Application.Ingestion;
 using MyCollection.Domain.Entities;
 using MyCollection.Infrastructure.Mongo;
 using MyCollection.Infrastructure.Providers;
+using MyCollection.Infrastructure.Providers.Igdb;
 using MyCollection.Tests.Fixtures;
 
 namespace MyCollection.Tests.Integration;
@@ -167,6 +168,37 @@ public class EnrichJobRunnerTests(MongoFixture fixture) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Skips_a_psn_trophy_title_when_igdb_cannot_resolve_its_external_id()
+    {
+        var itemId = ObjectId.GenerateNewId();
+        await fixture.Context.Items.InsertOneAsync(new Item
+        {
+            Id = itemId,
+            OwnerId = Owner,
+            CategoryId = CategoryId,
+            Name = "PSN trophy title",
+            Source = ItemSource.Psn,
+            ExternalRef = new ExternalRef
+            {
+                Provider = ProviderKeys.Psn,
+                ExternalId = "NPWR12345_00",
+                LastSyncedAt = CreatedAt
+            },
+            CreatedAt = CreatedAt,
+            UpdatedAt = CreatedAt
+        });
+
+        var job = await RunAsync(CreateIgdbProvider());
+
+        var item = await LoadAsync(itemId);
+        item.Source.Should().Be(ItemSource.Psn);
+        item.ExternalRef!.Provider.Should().Be("psn");
+        job.Skipped.Should().Be(1);
+        job.Failed.Should().Be(0);
+        job.Status.Should().Be(SyncStatus.Succeeded);
+    }
+
+    [Fact]
     public async Task Records_a_store_failure_per_item_and_still_finishes_the_rest()
     {
         await InsertSteamItemAsync(EldenRing, "ELDEN RING");
@@ -182,7 +214,10 @@ public class EnrichJobRunnerTests(MongoFixture fixture) : IAsyncLifetime
 
     // ---- helpers ----
 
-    private async Task<SyncJob> RunAsync(StubHttpMessageHandler storeHandler)
+    private Task<SyncJob> RunAsync(StubHttpMessageHandler storeHandler) =>
+        RunAsync(CreateProvider(storeHandler));
+
+    private async Task<SyncJob> RunAsync(IExternalIdLookupProvider provider)
     {
         var userContext = new FixedUserContext(Owner);
         var jobs = new MongoSyncJobRepository(fixture.Context, userContext);
@@ -190,7 +225,7 @@ public class EnrichJobRunnerTests(MongoFixture fixture) : IAsyncLifetime
         var job = new SyncJob
         {
             Id = ObjectId.GenerateNewId(),
-            Provider = ProviderKeys.Steam,
+            Provider = provider.Key,
             Status = SyncStatus.Running,
             StartedAt = _time.GetUtcNow().UtcDateTime
         };
@@ -204,7 +239,7 @@ public class EnrichJobRunnerTests(MongoFixture fixture) : IAsyncLifetime
             userContext,
             _time);
 
-        return await runner.RunAsync(job, CreateProvider(storeHandler), null, 50, CancellationToken.None);
+        return await runner.RunAsync(job, provider, null, 50, CancellationToken.None);
     }
 
     private SteamProvider CreateProvider(StubHttpMessageHandler storeHandler)
@@ -221,6 +256,24 @@ public class EnrichJobRunnerTests(MongoFixture fixture) : IAsyncLifetime
             Mock.Of<ISecretProtector>(),
             _time,
             NullLogger<SteamProvider>.Instance);
+    }
+
+    private IgdbProvider CreateIgdbProvider()
+    {
+        var options = Options.Create(new IgdbOptions
+        {
+            ClientId = "cid",
+            ClientSecret = "csecret",
+            MinRequestIntervalMs = 0,
+            LookupBatchSize = 10
+        });
+
+        return new IgdbProvider(
+            StubHttpMessageHandler.Json("[]").CreateClient("https://api.igdb.com/v4/"),
+            Mock.Of<ITwitchTokenProvider>(),
+            new IgdbRateLimiter(options, _time),
+            options,
+            NullLogger<IgdbProvider>.Instance);
     }
 
     /// <summary>依 appid 回放錄下來的商店回應；未錄的 appid 回 success:false。</summary>
