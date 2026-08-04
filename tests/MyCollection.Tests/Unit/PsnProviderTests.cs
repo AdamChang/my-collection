@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
 using FluentAssertions;
@@ -17,7 +18,7 @@ public class PsnProviderTests
 {
     private static PsnProvider CreateSut(
         StubHttpMessageHandler handler,
-        FakeSecretProtector? protector = null,
+        ISecretProtector? protector = null,
         PsnOptions? options = null) =>
         new(handler.CreateClient("https://unused.example/"),
             protector ?? new FakeSecretProtector(),
@@ -212,6 +213,70 @@ public class PsnProviderTests
     }
 
     [Fact]
+    public async Task Sync_keeps_the_known_total_when_a_later_short_page_omits_it()
+    {
+        var trophyOffsets = new List<string>();
+        var handler = AuthenticatedHandler(request =>
+        {
+            trophyOffsets.Add(request.RequestUri!.Query);
+            return request.RequestUri.Query switch
+            {
+                "?limit=800&offset=0" => Json(GeneratedPage(800, start: 0, total: 802, nextOffset: 800)),
+                "?limit=800&offset=800" => Json(GeneratedPage(1, start: 800, total: null, nextOffset: 801)),
+                "?limit=800&offset=801" => Json(GeneratedPage(1, start: 801, total: null, nextOffset: null)),
+                _ => throw new InvalidOperationException($"Unexpected Trophy page: {request.RequestUri}")
+            };
+        });
+
+        var items = await CreateSut(handler).SyncAsync(Account(), CancellationToken.None);
+
+        items.Should().HaveCount(802);
+        trophyOffsets.Should().Equal(
+            "?limit=800&offset=0",
+            "?limit=800&offset=800",
+            "?limit=800&offset=801");
+    }
+
+    [Fact]
+    public async Task Sync_stops_at_a_known_exact_multiple_without_requesting_an_extra_page()
+    {
+        var trophyOffsets = new List<string>();
+        var handler = AuthenticatedHandler(request =>
+        {
+            trophyOffsets.Add(request.RequestUri!.Query);
+            return request.RequestUri.Query switch
+            {
+                "?limit=800&offset=0" => Json(GeneratedPage(800, start: 0, total: 1600, nextOffset: 800)),
+                "?limit=800&offset=800" => Json(GeneratedPage(800, start: 800, total: null, nextOffset: null)),
+                _ => throw new InvalidOperationException($"Unexpected Trophy page: {request.RequestUri}")
+            };
+        });
+
+        var items = await CreateSut(handler).SyncAsync(Account(), CancellationToken.None);
+
+        items.Should().HaveCount(1600);
+        trophyOffsets.Should().Equal("?limit=800&offset=0", "?limit=800&offset=800");
+    }
+
+    [Fact]
+    public async Task Sync_rejects_a_total_item_count_that_changes_between_pages()
+    {
+        var handler = AuthenticatedHandler(request => request.RequestUri!.Query switch
+        {
+            "?limit=800&offset=0" => Json(GeneratedPage(800, start: 0, total: 801, nextOffset: 800)),
+            "?limit=800&offset=800" => Json(GeneratedPage(1, start: 800, total: 802, nextOffset: null)),
+            _ => throw new InvalidOperationException($"Unexpected Trophy page: {request.RequestUri}")
+        });
+
+        var act = () => CreateSut(handler).SyncAsync(Account(), CancellationToken.None);
+
+        var exception = (await act.Should()
+            .ThrowAsync<MyCollection.Domain.Exceptions.ProviderException>()).Which;
+        exception.ProviderKey.Should().Be("psn");
+        exception.Message.Should().Contain("totalItemCount changed");
+    }
+
+    [Fact]
     public async Task Sync_returns_empty_for_an_empty_first_trophy_page()
     {
         var handler = SuccessfulHandler(
@@ -251,6 +316,24 @@ public class PsnProviderTests
         var exception = (await act.Should().ThrowAsync<MyCollection.Domain.Exceptions.ProviderException>()).Which;
         exception.ProviderKey.Should().Be("psn");
         exception.Message.Should().Contain("NPSSO 已過期，請重新取得");
+    }
+
+    [Theory]
+    [InlineData("?code=fake-auth-code")]
+    [InlineData("callback?code=fake-auth-code")]
+    public async Task Sync_accepts_an_authorization_code_from_a_relative_location(string location)
+    {
+        var handler = RoutingHandler(
+            _ => new HttpResponseMessage(HttpStatusCode.Found)
+            {
+                Headers = { Location = new Uri(location, UriKind.Relative) }
+            },
+            _ => Json(TokenPayload()),
+            _ => Json(Fixture("psn-trophy-titles-page-0.json")));
+
+        var items = await CreateSut(handler).SyncAsync(Account(), CancellationToken.None);
+
+        items.Should().HaveCount(2);
     }
 
     [Theory]
@@ -357,6 +440,17 @@ public class PsnProviderTests
     }
 
     [Fact]
+    public async Task Sync_wraps_a_null_trophy_title_element_as_invalid_schema()
+    {
+        var handler = SuccessfulHandler("""{"trophyTitles":[null],"totalItemCount":1,"nextOffset":null}""");
+
+        var act = () => CreateSut(handler).SyncAsync(Account(), CancellationToken.None);
+
+        (await act.Should().ThrowAsync<MyCollection.Domain.Exceptions.ProviderException>())
+            .Which.ProviderKey.Should().Be("psn");
+    }
+
+    [Fact]
     public async Task Sync_rejects_a_missing_numeric_progress_instead_of_defaulting_it_to_zero()
     {
         var page = JsonNode.Parse(Fixture("psn-trophy-titles-page-0.json"))!.AsObject();
@@ -381,6 +475,23 @@ public class PsnProviderTests
     }
 
     [Fact]
+    public async Task Sync_wraps_secret_decryption_failure_without_leaking_secret_material()
+    {
+        var handler = SuccessfulHandler(Fixture("psn-trophy-titles-page-0.json"));
+        var protector = new ThrowingSecretProtector();
+
+        var act = () => CreateSut(handler, protector).SyncAsync(Account(), CancellationToken.None);
+
+        var exception = (await act.Should()
+            .ThrowAsync<MyCollection.Domain.Exceptions.ProviderException>()).Which;
+        exception.ProviderKey.Should().Be("psn");
+        exception.Message.Should().NotContain("protected-fake-npsso");
+        exception.Message.Should().NotContain("NPSSO");
+        exception.Message.Should().NotContain("fake-secret-material");
+        exception.InnerException.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Sync_does_not_relabel_caller_cancellation_as_a_provider_failure()
     {
         using var cancellation = new CancellationTokenSource();
@@ -392,13 +503,16 @@ public class PsnProviderTests
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
-    private static string ExpandFirstPageToEightHundred()
+    private static string ExpandFirstPageToEightHundred() =>
+        GeneratedPage(800, start: 0, total: 801, nextOffset: 800);
+
+    private static string GeneratedPage(int count, int start, int? total, int? nextOffset)
     {
         var page = JsonNode.Parse(Fixture("psn-trophy-titles-page-0.json"))!.AsObject();
         var template = page["trophyTitles"]!.AsArray()[0]!.AsObject();
         var titles = new JsonArray();
 
-        for (var i = 0; i < 800; i++)
+        for (var i = start; i < start + count; i++)
         {
             var title = template.DeepClone().AsObject();
             title["npCommunicationId"] = $"NPWR{i:00000}_00";
@@ -407,9 +521,17 @@ public class PsnProviderTests
         }
 
         page["trophyTitles"] = titles;
-        page["totalItemCount"] = 801;
-        page["nextOffset"] = 800;
-        page["previousOffset"] = null;
+        if (total is { } knownTotal)
+        {
+            page["totalItemCount"] = knownTotal;
+        }
+        else
+        {
+            page.Remove("totalItemCount");
+        }
+
+        page["nextOffset"] = nextOffset;
+        page.Remove("previousOffset");
         return page.ToJsonString();
     }
 
@@ -424,5 +546,14 @@ public class PsnProviderTests
             UnprotectedCiphertexts.Add(ciphertext);
             return "fake-npsso-from-protector";
         }
+    }
+
+    private sealed class ThrowingSecretProtector : ISecretProtector
+    {
+        public string Protect(string plaintext) => throw new NotSupportedException();
+
+        public string Unprotect(string ciphertext) =>
+            throw new CryptographicException(
+                "protected-fake-npsso npsso=fake-secret-material");
     }
 }
