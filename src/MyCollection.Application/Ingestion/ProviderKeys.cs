@@ -7,6 +7,7 @@ namespace MyCollection.Application.Ingestion;
 public static class ProviderKeys
 {
     public const string Steam = "steam";
+    public const string Psn = "psn";
     public const string OpenGraph = "opengraph";
     public const string Igdb = "igdb";
 }

@@ -80,10 +80,15 @@ public sealed class IgdbProvider(
             {
                 recognised.Add(new LookupId(externalId, IsSteam: false, igdbId));
             }
+            else if (externalId.StartsWith(SteamPrefix, StringComparison.Ordinal)
+                     || externalId.StartsWith(IgdbPrefix, StringComparison.Ordinal))
+            {
+                logger.LogWarning("Malformed external id: {ExternalId}", externalId);
+                failed.Add(externalId);
+            }
             else
             {
-                logger.LogWarning("Unsupported or malformed external id: {ExternalId}", externalId);
-                failed.Add(externalId);
+                logger.LogWarning("Unsupported external id prefix; skipping: {ExternalId}", externalId);
             }
         }
 

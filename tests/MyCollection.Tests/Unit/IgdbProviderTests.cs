@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using MyCollection.Application.Ingestion;
+using MyCollection.Domain.Entities;
 using MyCollection.Domain.Exceptions;
 using MyCollection.Infrastructure.Providers.Igdb;
 using MyCollection.Tests.Fixtures;
@@ -38,6 +39,13 @@ public class IgdbProviderTests
             new IgdbRateLimiter(options, new FakeTimeProvider()),
             options,
             NullLogger<IgdbProvider>.Instance);
+    }
+
+    [Fact]
+    public void Psn_provider_key_maps_to_the_psn_item_source()
+    {
+        ProviderKeys.Psn.Should().Be("psn");
+        Enum.Parse<ItemSource>(ProviderKeys.Psn, ignoreCase: true).Should().Be(ItemSource.Psn);
     }
 
     /// <summary>反查先打 external_games 取得 game id，再打 games 取詳情。</summary>
@@ -176,14 +184,14 @@ public class IgdbProviderTests
     }
 
     [Fact]
-    public async Task Lookup_marks_an_unknown_prefix_as_failed()
+    public async Task Lookup_omits_an_unknown_prefix_without_marking_it_failed()
     {
         var sut = CreateSut(LookupHandler());
 
-        var result = await sut.FetchByExternalIdsAsync(["psn:CUSA123"], CancellationToken.None);
+        var result = await sut.FetchByExternalIdsAsync(["psn:NPWR12345_00"], CancellationToken.None);
 
         result.Found.Should().BeEmpty();
-        result.FailedIds.Should().BeEquivalentTo("psn:CUSA123");
+        result.FailedIds.Should().BeEmpty("未知的外部識別碼來源應略過而非失敗");
     }
 
     [Fact]

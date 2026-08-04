@@ -7,6 +7,7 @@ public enum ItemSource
 {
     Manual,
     Steam,
+    Psn,
     OpenGraph
 }
 
