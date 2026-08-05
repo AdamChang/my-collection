@@ -7,6 +7,7 @@ import { ShareService } from '../../core/api/share.service';
 import { TransferService } from '../../core/api/transfer.service';
 import { NotificationService } from '../../core/notification.service';
 import { SyncJobDto } from '../../core/models';
+import { ProviderAccountComponent } from './provider-account.component';
 import { ProviderEnrichComponent } from './provider-enrich.component';
 import { SettingsComponent } from './settings.component';
 
@@ -29,11 +30,10 @@ describe('SettingsComponent', () => {
     const fixture = TestBed.createComponent(SettingsComponent);
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.querySelectorAll('[data-settings-panel]').length).toBe(4);
+    expect(fixture.nativeElement.querySelectorAll('[data-settings-panel]').length).toBe(5);
   });
 
-  /** 重複送出的綁定會對同一個 Steam 帳號打出多次寫入。 */
-  it('locks the link button while the request is in flight', async () => {
+  it('does not lock one account panel while the other is working', async () => {
     const link = new Subject<unknown>();
 
     await TestBed.configureTestingModule({
@@ -53,14 +53,20 @@ describe('SettingsComponent', () => {
     const fixture = TestBed.createComponent(SettingsComponent);
     fixture.detectChanges();
 
-    const submit: HTMLButtonElement = fixture.nativeElement.querySelector('button[type="submit"]');
-    expect(submit.disabled).toBeFalse();
+    const panels = fixture.debugElement.queryAll(By.directive(ProviderAccountComponent));
+    expect(panels.map((p) => p.componentInstance.provider())).toEqual(['steam', 'psn']);
 
-    fixture.componentInstance.link();
+    const psnForm: HTMLFormElement = panels[1].nativeElement.querySelector('form');
+    psnForm.dispatchEvent(new Event('submit'));
     fixture.detectChanges();
 
-    expect(submit.disabled).toBeTrue();
-    expect(submit.textContent).toContain('綁定中');
+    const steamSubmit: HTMLButtonElement =
+      panels[0].nativeElement.querySelector('button[type="submit"]');
+    const psnSubmit: HTMLButtonElement =
+      panels[1].nativeElement.querySelector('button[type="submit"]');
+
+    expect(psnSubmit.disabled).toBeTrue();
+    expect(steamSubmit.disabled).toBeFalse();
   });
 
   it('re-enables the share button after the request fails', async () => {
