@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { Subject, of } from 'rxjs';
 import { IngestionService } from '../../core/api/ingestion.service';
 import { NotificationService } from '../../core/notification.service';
 import { ExternalAccountDto } from '../../core/models';
@@ -166,6 +166,33 @@ describe('ProviderAccountComponent', () => {
     fixture.detectChanges();
 
     expect(unlink).toHaveBeenCalledWith('steam');
+  });
+
+  it('locks its own submit button while the link request is in flight', async () => {
+    const link = new Subject<ExternalAccountDto>();
+    const fixture = await create(steamInputs, { link: () => link });
+
+    const button: HTMLButtonElement = fixture.nativeElement.querySelector('button[type="submit"]');
+    expect(button.disabled).toBeFalse();
+
+    submit(fixture);
+
+    expect(button.disabled).toBeTrue();
+    expect(button.textContent).toContain('綁定中');
+  });
+
+  it('re-enables its own submit button after the link request fails', async () => {
+    const link = new Subject<ExternalAccountDto>();
+    const fixture = await create(steamInputs, { link: () => link });
+
+    submit(fixture);
+    const button: HTMLButtonElement = fixture.nativeElement.querySelector('button[type="submit"]');
+    expect(button.disabled).toBeTrue();
+
+    link.error(new Error('500'));
+    fixture.detectChanges();
+
+    expect(button.disabled).toBeFalse();
   });
 
   it('emits changed after a sync so the parent can reload its job log', async () => {
