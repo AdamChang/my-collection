@@ -85,7 +85,10 @@ export class ProviderAccountComponent implements OnInit {
 
   readonly fixedUserId = input('me');
 
-  /** 綁定、解綁與同步後都要發：三者都可能讓父層的同步紀錄需要重載。 */
+  /**
+   * 綁定、解綁與同步後都要發。只有同步在失敗時也發——失敗的同步仍會在後端
+   * 留下一筆作業紀錄；綁定與解綁是單純的寫入，失敗時沒有東西需要重載。
+   */
   readonly changed = output<void>();
 
   protected readonly account = signal<ExternalAccountDto | null>(null);
@@ -139,6 +142,7 @@ export class ProviderAccountComponent implements OnInit {
       .pipe(finalize(() => this.unlinking.set(false)))
       .subscribe({
         next: () => {
+          this.userId = '';
           this.notifications.success('已解除綁定。');
           this.reload();
           this.changed.emit();
