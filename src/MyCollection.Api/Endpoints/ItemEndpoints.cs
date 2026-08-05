@@ -32,6 +32,10 @@ public static class ItemEndpoints
         group.MapGet("/tags", async (ISender sender, CancellationToken ct) =>
             Results.Ok(await sender.Send(new ListTagsQuery(), ct)));
 
+        // 必須早於 "/{id}"：否則 "platforms" 會被當成品項 id。
+        group.MapGet("/platforms", async (HttpRequest request, ISender sender, CancellationToken ct) =>
+            Results.Ok(await sender.Send(new ListPlatformsQuery(request.Query["categoryId"].FirstOrDefault()), ct)));
+
         group.MapGet("/{id}", async (string id, ISender sender, CancellationToken ct) =>
             Results.Ok(await sender.Send(new GetItemQuery(id), ct)));
 

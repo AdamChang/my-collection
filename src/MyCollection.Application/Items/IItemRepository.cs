@@ -27,6 +27,12 @@ public interface IItemRepository
     Task<IReadOnlyList<string>> ListTagsAsync(CancellationToken ct);
 
     /// <summary>
+    /// 相異的 platform 屬性值。categoryId 為 null 時不限品類，靠 attributes.platform 是否存在
+    /// 自然限定範圍——只有宣告了 platform 欄位的品類，品項才可能有這個 key。
+    /// </summary>
+    Task<IReadOnlyList<string>> ListPlatformsAsync(ObjectId? categoryId, CancellationToken ct);
+
+    /// <summary>
     /// 補完候選：有外部來源綁定（externalRef 非 null）、但 attributes 尚未帶 markerKey 的品項。
     /// 手動建檔且未綁定過的品項不在其中——補完不猜，那些應走搜尋建檔。
     /// </summary>

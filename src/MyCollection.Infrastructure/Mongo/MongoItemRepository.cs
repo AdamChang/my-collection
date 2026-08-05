@@ -86,6 +86,17 @@ public sealed class MongoItemRepository(MongoContext context, IUserContext userC
         return (await tags.ToListAsync(ct)).Order(StringComparer.Ordinal).ToArray();
     }
 
+    public async Task<IReadOnlyList<string>> ListPlatformsAsync(ObjectId? categoryId, CancellationToken ct)
+    {
+        var filter = Filter.And(
+            OwnerFilter,
+            categoryId is { } id ? Filter.Eq(x => x.CategoryId, id) : Filter.Exists("attributes.platform"));
+
+        var platforms = await Items.DistinctAsync<string>("attributes.platform", filter, cancellationToken: ct);
+
+        return (await platforms.ToListAsync(ct)).Order(StringComparer.Ordinal).ToArray();
+    }
+
     public Task InsertAsync(Item item, CancellationToken ct)
     {
         item.OwnerId = userContext.UserId;
