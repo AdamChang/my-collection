@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Subject, of } from 'rxjs';
 import { IngestionService } from '../../core/api/ingestion.service';
 import { NotificationService } from '../../core/notification.service';
-import { ExternalAccountDto } from '../../core/models';
+import { ExternalAccountDto, SyncJobDto } from '../../core/models';
 import { ProviderAccountComponent } from './provider-account.component';
 
 describe('ProviderAccountComponent', () => {
@@ -166,6 +166,26 @@ describe('ProviderAccountComponent', () => {
     fixture.detectChanges();
 
     expect(unlink).toHaveBeenCalledWith('steam');
+  });
+
+  it('locks the whole panel while a sync is in flight', async () => {
+    const sync = new Subject<SyncJobDto>();
+    const fixture = await create(steamInputs, {
+      accounts: () => of([boundSteam]),
+      sync: () => sync,
+    });
+
+    const syncButton: HTMLButtonElement =
+      fixture.nativeElement.querySelector('[data-provider-account-sync]');
+    const unlinkButton: HTMLButtonElement =
+      fixture.nativeElement.querySelector('[data-provider-account-unlink]');
+    expect(unlinkButton.disabled).toBeFalse();
+
+    syncButton.click();
+    fixture.detectChanges();
+
+    expect(syncButton.disabled).toBeTrue();
+    expect(unlinkButton.disabled).toBeTrue();
   });
 
   it('locks its own submit button while the link request is in flight', async () => {
