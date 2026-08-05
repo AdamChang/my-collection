@@ -26,6 +26,22 @@ import { ExternalAccountDto } from '../../core/models';
         } @else {
           <p>已綁定（更新於 {{ bound.updatedAt | date: 'yyyy-MM-dd HH:mm' }}）</p>
         }
+        <button
+          type="button"
+          (click)="sync()"
+          [disabled]="busy()"
+          [attr.data-provider-account-sync]="provider()"
+        >
+          {{ syncing() ? '同步中…' : '立即同步' }}
+        </button>
+        <button
+          type="button"
+          (click)="unlink()"
+          [disabled]="busy()"
+          [attr.data-provider-account-unlink]="provider()"
+        >
+          {{ unlinking() ? '解除中…' : '解除綁定' }}
+        </button>
       } @else {
         <form (ngSubmit)="link()">
           @if (requiresUserId()) {
@@ -74,9 +90,11 @@ export class ProviderAccountComponent implements OnInit {
 
   protected readonly account = signal<ExternalAccountDto | null>(null);
   protected readonly linking = signal(false);
+  protected readonly unlinking = signal(false);
+  protected readonly syncing = signal(false);
 
   /** 只涵蓋本面板自己的動作，不鎖其他來源與頁面上的其他區塊。 */
-  protected readonly busy = computed(() => this.linking());
+  protected readonly busy = computed(() => this.linking() || this.unlinking() || this.syncing());
 
   userId = '';
   secret = '';
@@ -106,6 +124,49 @@ export class ProviderAccountComponent implements OnInit {
           this.reload();
           this.changed.emit();
         },
+        error: IGNORE_HANDLED_BY_INTERCEPTOR,
+      });
+  }
+
+  protected unlink(): void {
+    if (this.busy()) {
+      return;
+    }
+
+    this.unlinking.set(true);
+    this.ingestion
+      .unlink(this.provider())
+      .pipe(finalize(() => this.unlinking.set(false)))
+      .subscribe({
+        next: () => {
+          this.notifications.success('已解除綁定。');
+          this.reload();
+          this.changed.emit();
+        },
+        error: IGNORE_HANDLED_BY_INTERCEPTOR,
+      });
+  }
+
+  protected sync(): void {
+    if (this.busy()) {
+      return;
+    }
+
+    this.syncing.set(true);
+    this.ingestion
+      .sync(this.provider())
+      .pipe(
+        finalize(() => {
+          this.syncing.set(false);
+          // 失敗的同步也會在後端留下一筆紀錄，兩條路徑都要讓父層重載。
+          this.changed.emit();
+        }),
+      )
+      .subscribe({
+        next: (job) =>
+          this.notifications.success(
+            `同步完成：新增 ${job.created}、更新 ${job.updated}、失敗 ${job.failed}`,
+          ),
         error: IGNORE_HANDLED_BY_INTERCEPTOR,
       });
   }
