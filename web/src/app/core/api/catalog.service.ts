@@ -67,6 +67,11 @@ export class CatalogService {
     return this.http.get<string[]>(`${API_BASE}/items/tags`);
   }
 
+  platforms(categoryId?: string): Observable<string[]> {
+    const params = categoryId ? new HttpParams().set('categoryId', categoryId) : undefined;
+    return this.http.get<string[]>(`${API_BASE}/items/platforms`, params ? { params } : {});
+  }
+
   create(payload: ItemWritePayload): Observable<ItemDto> {
     return this.http.post<ItemDto>(`${API_BASE}/items`, payload);
   }

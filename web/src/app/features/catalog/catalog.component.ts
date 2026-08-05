@@ -18,7 +18,7 @@ import { ItemCardComponent } from '../../shared/item-card/item-card.component';
 
         <label>
           品類
-          <select [(ngModel)]="categoryId" (ngModelChange)="reload()">
+          <select [ngModel]="categoryId()" (ngModelChange)="onCategoryChange($event)">
             <option value="">全部</option>
             @for (category of categories(); track category.id) {
               <option [value]="category.id">{{ category.name }}</option>
@@ -29,7 +29,18 @@ import { ItemCardComponent } from '../../shared/item-card/item-card.component';
         @for (field of searchableFields(); track field.key) {
           <label>
             {{ field.label }}
-            @if (field.type === 'Select') {
+            @if (field.key === 'platform') {
+              <input type="text"
+                     list="attr_platform_options"
+                     [(ngModel)]="platformDraft"
+                     (change)="commitPlatformFilter()"
+                     name="attr_platform" />
+              <datalist id="attr_platform_options">
+                @for (option of platformOptions(); track option) {
+                  <option [value]="option"></option>
+                }
+              </datalist>
+            } @else if (field.type === 'Select') {
               <select [ngModel]="filterValue(field.key)"
                       (ngModelChange)="setAttributeFilter(field.key, $event)"
                       [name]="'attr_' + field.key">
@@ -104,22 +115,53 @@ export class CatalogComponent {
   readonly allTags = signal<string[]>([]);
   readonly selectedTags = signal<string[]>([]);
   readonly attributeFilters = signal<Record<string, string>>({});
+  readonly categoryId = signal('');
+  readonly platformOptions = signal<string[]>([]);
 
-  /** 只有選定品類時才有屬性篩選——不同品類的 schema 無法混用。 */
+  /** 「全部」下唯一允許跨品類出現的欄位——見 docs/adr/0006。不是通用機制，加其他欄位需另外決策。 */
+  private static readonly PLATFORM_FILTER_FIELD: CategoryFieldDto = {
+    key: 'platform',
+    label: '平台',
+    type: 'Text',
+    options: null,
+    required: false,
+    searchable: true,
+    showOnCard: false,
+  };
+
+  /**
+   * 選定單一品類時，依該品類 schema 的 searchable 欄位——不同品類的 schema 無法混用。
+   * 選「全部」時，僅在有品類宣告了 platform 欄位時，額外顯示白名單的平台篩選。
+   */
   readonly searchableFields = computed<CategoryFieldDto[]>(() => {
-    const category = this.categories().find((c) => c.id === this.categoryId);
+    const categoryId = this.categoryId();
+
+    if (categoryId === '') {
+      const hasPlatformField = this.categories().some((c) => c.fields.some((f) => f.key === 'platform'));
+      return hasPlatformField ? [CatalogComponent.PLATFORM_FILTER_FIELD] : [];
+    }
+
+    const category = this.categories().find((c) => c.id === categoryId);
     return category?.fields.filter((f) => f.searchable) ?? [];
   });
 
   search = '';
-  categoryId = '';
+  platformDraft = '';
 
   private page = 1;
 
   constructor() {
-    this.categoryApi.list().subscribe((c) => this.categories.set(c));
+    this.categoryApi.list().subscribe((c) => {
+      this.categories.set(c);
+      this.syncPlatformOptions();
+    });
     this.catalog.tags().subscribe((t) => this.allTags.set(t));
     this.load();
+  }
+
+  onCategoryChange(value: string): void {
+    this.categoryId.set(value);
+    this.reload();
   }
 
   reload(): void {
@@ -127,10 +169,31 @@ export class CatalogComponent {
     this.attributeFilters.update((current) =>
       Object.fromEntries(Object.entries(current).filter(([key]) => allowed.has(key))),
     );
+    this.platformDraft = this.attributeFilters()['platform'] ?? '';
+    this.syncPlatformOptions();
 
     this.page = 1;
     this.items.set([]);
     this.load();
+  }
+
+  /** 平台相異值只在「平台篩選有出現」時才需要，且範圍要跟著目前的品類選擇走。 */
+  private syncPlatformOptions(): void {
+    if (this.searchableFields().some((f) => f.key === 'platform')) {
+      this.catalog.platforms(this.categoryId() || undefined).subscribe((platforms) => this.platformOptions.set(platforms));
+    } else {
+      this.platformOptions.set([]);
+    }
+  }
+
+  /** combobox 限制只能送出既有相異值之一；清單外的文字視為未完成輸入，直接還原。 */
+  commitPlatformFilter(): void {
+    const value = this.platformDraft.trim();
+    if (value && !this.platformOptions().includes(value)) {
+      this.platformDraft = this.filterValue('platform');
+      return;
+    }
+    this.setAttributeFilter('platform', value);
   }
 
   loadMore(): void {
@@ -169,7 +232,7 @@ export class CatalogComponent {
     this.catalog
       .search({
         search: this.search || undefined,
-        categoryId: this.categoryId || undefined,
+        categoryId: this.categoryId() || undefined,
         tags: this.selectedTags(),
         page: this.page,
         pageSize: 24,
