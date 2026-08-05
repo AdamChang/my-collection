@@ -179,6 +179,49 @@ public class MongoItemRepositoryTests(MongoFixture fixture) : IAsyncLifetime
         tags.Should().BeEquivalentTo("FPS", "GSC", "Puzzle", "VOCALOID");
     }
 
+    private Task SetAttributeAsync(string itemName, string key, string value) =>
+        fixture.Context.Items.UpdateOneAsync(
+            MongoDB.Driver.Builders<Item>.Filter.Eq(x => x.Name, itemName),
+            MongoDB.Driver.Builders<Item>.Update.Set($"attributes.{key}", value));
+
+    [Fact]
+    public async Task ListPlatformsAsync_returns_distinct_values_within_category()
+    {
+        await SeedAsync();
+        await SetAttributeAsync("Team Fortress 2", "platform", "Steam");
+        await SetAttributeAsync("Portal 2", "platform", "Steam");
+
+        var platforms = await _sut.ListPlatformsAsync(GameCategory, CancellationToken.None);
+
+        platforms.Should().BeEquivalentTo("Steam");
+    }
+
+    [Fact]
+    public async Task ListPlatformsAsync_with_null_categoryId_unions_across_categories_that_have_the_attribute()
+    {
+        await SeedAsync();
+        await SetAttributeAsync("Team Fortress 2", "platform", "Steam");
+        await SetAttributeAsync("Portal 2", "platform", "Switch");
+        // 初音ミク Figure 屬於 FigureCategory，該品類沒宣告 platform 欄位，不應出現在結果中。
+
+        var platforms = await _sut.ListPlatformsAsync(null, CancellationToken.None);
+
+        platforms.Should().BeEquivalentTo("Steam", "Switch");
+    }
+
+    [Fact]
+    public async Task ListPlatformsAsync_never_returns_other_owners_values()
+    {
+        await SeedAsync();
+        await SetAttributeAsync("Team Fortress 2", "platform", "Steam");
+        await fixture.Context.Items.InsertOneAsync(NewItem(OtherOwner, "別人的遊戲", GameCategory));
+        await SetAttributeAsync("別人的遊戲", "platform", "PSN");
+
+        var platforms = await _sut.ListPlatformsAsync(null, CancellationToken.None);
+
+        platforms.Should().BeEquivalentTo("Steam");
+    }
+
     [Fact]
     public async Task SearchAsync_filters_by_attribute_values()
     {

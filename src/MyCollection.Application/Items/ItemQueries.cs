@@ -20,6 +20,19 @@ public record GetItemQuery(string Id) : IRequest<ItemDto>;
 
 public record ListTagsQuery : IRequest<IReadOnlyList<string>>;
 
+public record ListPlatformsQuery(string? CategoryId = null) : IRequest<IReadOnlyList<string>>;
+
+public sealed class ListPlatformsQueryValidator : AbstractValidator<ListPlatformsQuery>
+{
+    public ListPlatformsQueryValidator()
+    {
+        RuleFor(x => x.CategoryId)
+            .Must(id => ObjectId.TryParse(id, out _))
+            .When(x => !string.IsNullOrWhiteSpace(x.CategoryId))
+            .WithMessage("Invalid category id.");
+    }
+}
+
 public sealed class SearchItemsQueryValidator : AbstractValidator<SearchItemsQuery>
 {
     public SearchItemsQueryValidator()
@@ -80,4 +93,15 @@ public sealed class ListTagsQueryHandler(IItemRepository items) : IRequestHandle
 {
     public Task<IReadOnlyList<string>> Handle(ListTagsQuery request, CancellationToken cancellationToken) =>
         items.ListTagsAsync(cancellationToken);
+}
+
+public sealed class ListPlatformsQueryHandler(IItemRepository items)
+    : IRequestHandler<ListPlatformsQuery, IReadOnlyList<string>>
+{
+    public Task<IReadOnlyList<string>> Handle(ListPlatformsQuery request, CancellationToken cancellationToken)
+    {
+        var categoryId = string.IsNullOrWhiteSpace(request.CategoryId) ? null : (ObjectId?)ObjectId.Parse(request.CategoryId);
+
+        return items.ListPlatformsAsync(categoryId, cancellationToken);
+    }
 }
