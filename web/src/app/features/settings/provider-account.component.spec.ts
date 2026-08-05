@@ -108,4 +108,81 @@ describe('ProviderAccountComponent', () => {
     expect(text).toContain('已綁定');
     expect(fixture.nativeElement.querySelector('code')).toBeNull();
   });
+
+  const boundSteam: ExternalAccountDto = {
+    provider: 'steam',
+    externalUserId: '76561197960287930',
+    updatedAt: '2026-08-05T02:30:00Z',
+  };
+
+  it('does not offer sync before an account is linked', async () => {
+    const fixture = await create(steamInputs, {});
+
+    expect(fixture.nativeElement.querySelector('[data-provider-account-sync]')).toBeNull();
+  });
+
+  it('syncs the provider it was given and reports the counts', async () => {
+    const sync = jasmine.createSpy('sync').and.returnValue(
+      of({
+        id: 'j1', provider: 'steam', status: 'Succeeded',
+        created: 3, updated: 4, failed: 0, skipped: 0,
+        error: null, startedAt: '', finishedAt: '',
+      }),
+    );
+    const success = jasmine.createSpy('success');
+
+    await TestBed.configureTestingModule({
+      imports: [ProviderAccountComponent],
+      providers: [
+        {
+          provide: IngestionService,
+          useValue: { accounts: () => of([boundSteam]), sync },
+        },
+        { provide: NotificationService, useValue: { success } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(ProviderAccountComponent);
+    for (const [key, value] of Object.entries(steamInputs)) {
+      fixture.componentRef.setInput(key, value);
+    }
+    fixture.detectChanges();
+
+    fixture.nativeElement.querySelector('[data-provider-account-sync]').click();
+    fixture.detectChanges();
+
+    expect(sync).toHaveBeenCalledWith('steam');
+    expect(success.calls.mostRecent().args[0]).toContain('新增 3');
+  });
+
+  it('unlinks the provider it was given', async () => {
+    const unlink = jasmine.createSpy('unlink').and.returnValue(of(undefined));
+    const fixture = await create(steamInputs, {
+      accounts: () => of([boundSteam]),
+      unlink,
+    });
+
+    fixture.nativeElement.querySelector('[data-provider-account-unlink]').click();
+    fixture.detectChanges();
+
+    expect(unlink).toHaveBeenCalledWith('steam');
+  });
+
+  it('emits changed after a sync so the parent can reload its job log', async () => {
+    const changed = jasmine.createSpy('changed');
+    const fixture = await create(steamInputs, {
+      accounts: () => of([boundSteam]),
+      sync: () => of({
+        id: 'j1', provider: 'steam', status: 'Succeeded',
+        created: 0, updated: 0, failed: 0, skipped: 0,
+        error: null, startedAt: '', finishedAt: '',
+      }),
+    });
+    fixture.componentInstance.changed.subscribe(changed);
+
+    fixture.nativeElement.querySelector('[data-provider-account-sync]').click();
+    fixture.detectChanges();
+
+    expect(changed).toHaveBeenCalled();
+  });
 });
