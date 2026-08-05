@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { finalize } from 'rxjs';
 import { IngestionService } from '../../core/api/ingestion.service';
@@ -49,7 +49,7 @@ import { ExternalAccountDto } from '../../core/models';
     }
   `,
 })
-export class ProviderAccountComponent {
+export class ProviderAccountComponent implements OnInit {
   private readonly ingestion = inject(IngestionService);
   private readonly notifications = inject(NotificationService);
 
@@ -81,7 +81,12 @@ export class ProviderAccountComponent {
   userId = '';
   secret = '';
 
-  constructor() {
+  /**
+   * 不能放建構子：這裡讀 provider() 等 required input 時，
+   * TestBed／樣板綁定都還沒把值送進來，會丟 NG0950。
+   * ngOnInit 保證跑在第一輪 input 綁定之後。
+   */
+  ngOnInit(): void {
     this.reload();
   }
 

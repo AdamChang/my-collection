@@ -66,4 +66,46 @@ describe('ProviderAccountComponent', () => {
 
     expect(fixture.componentInstance.secret).toBe('');
   });
+
+  const psnInputs = {
+    provider: 'psn',
+    heading: 'PSN 帳號',
+    requiresUserId: false,
+    secretLabel: 'NPSSO',
+  };
+
+  it('sends the fixed user id for a provider that has no user id field', async () => {
+    const link = jasmine.createSpy('link').and.returnValue(of({} as ExternalAccountDto));
+    const fixture = await create(psnInputs, { link });
+
+    fixture.componentInstance.secret = 'NPSSO_VALUE';
+    submit(fixture);
+
+    expect(link).toHaveBeenCalledWith('psn', 'me', 'NPSSO_VALUE');
+  });
+
+  it('does not render a user id field when the provider has none', async () => {
+    const fixture = await create(psnInputs, {});
+
+    const labels = Array.from(
+      fixture.nativeElement.querySelectorAll('label') as NodeListOf<HTMLLabelElement>,
+    ).map((label) => label.textContent);
+
+    expect(labels.length).toBe(1);
+    expect(labels[0]).toContain('NPSSO');
+  });
+
+  it('shows the bound state without the literal user id when the provider has none', async () => {
+    const account: ExternalAccountDto = {
+      provider: 'psn',
+      externalUserId: 'me',
+      updatedAt: '2026-08-05T02:30:00Z',
+    };
+    const fixture = await create(psnInputs, { accounts: () => of([account]) });
+
+    const text: string = fixture.nativeElement.textContent;
+
+    expect(text).toContain('已綁定');
+    expect(text).not.toContain('me');
+  });
 });
