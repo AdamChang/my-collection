@@ -106,6 +106,6 @@ describe('ProviderAccountComponent', () => {
     const text: string = fixture.nativeElement.textContent;
 
     expect(text).toContain('已綁定');
-    expect(text).not.toContain('me');
+    expect(fixture.nativeElement.querySelector('code')).toBeNull();
   });
 });
