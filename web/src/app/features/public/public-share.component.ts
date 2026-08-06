@@ -8,7 +8,11 @@ import { HeroSectionComponent } from '../../shared/showcase-sections/hero-sectio
 import { StatsSectionComponent } from '../../shared/showcase-sections/stats-section.component';
 import { toPublicShowcaseDisplayItem } from '../../shared/showcase-sections/showcase-display-item';
 import { ShowcaseTab, ShowcaseTabsComponent } from '../../shared/showcase-tabs/showcase-tabs.component';
-import { ShowcaseView, parseShowcaseView } from '../../shared/showcase-tabs/showcase-view';
+import {
+  DEFAULT_SHOWCASE_VIEW,
+  ShowcaseView,
+  parseShowcaseView,
+} from '../../shared/showcase-tabs/showcase-view';
 
 @Component({
   selector: 'app-public-share',
@@ -123,7 +127,13 @@ export class PublicShareComponent {
   /** `?view=` query param。與內部頁共用同一組值與同一個頁籤元件（ADR-0009）。 */
   readonly view = input<string>();
 
-  readonly activeView = computed<ShowcaseView>(() => parseShowcaseView(this.view()));
+  /** 見 ShowcaseComponent 同名 computed：無效值與「合法但空」的頁籤都退回拼貼牆。 */
+  readonly activeView = computed<ShowcaseView>(() => {
+    const requested = parseShowcaseView(this.view());
+    const tab = this.tabs().find((t) => t.id === requested);
+
+    return tab && tab.count > 0 ? requested : DEFAULT_SHOWCASE_VIEW;
+  });
 
   readonly share = signal<PublicShareDto | null>(null);
   readonly notFound = signal(false);
