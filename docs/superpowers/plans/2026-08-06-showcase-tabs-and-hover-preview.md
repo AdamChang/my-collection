@@ -523,7 +523,55 @@ storageLocation 的 DOM 回歸測試改為先切到焦點頁籤再斷言，否�
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 ```
 
+---
+
+## Task 4b：空頁籤自動退回拼貼牆（執行中追加）
+
+**Files:** Modify: `web/src/app/features/showcase/showcase.component.ts`、`web/src/app/features/public/public-share.component.ts` 及兩者的 spec
+
+規劃時沒想到的邊界：`?view=` 指到一個**合法但沒有品項**的頁籤（書籤存了 `?view=hero`，之後所有焦點品項都被取消），會停在一個停用又空白的頁籤上。`parseShowcaseView()` 只擋得掉語法上無效的值，擋不掉這個。
+
+兩頁的 `activeView` computed 一併檢查該頁籤的 `count`，為 0 就退回 `DEFAULT_SHOWCASE_VIEW`。
+
+- [x] Step 1–6 完成，commit `2306562`
+
+---
+
 **← Usage-safe checkpoint：頁籤化完整交付，可收工。**
+
+## 執行紀錄（Task 0–4b，2026-08-06）
+
+**committed code 才是權威，以下數字取代計畫前段的預測值。**
+
+| Task | Commit | 全套測試 |
+|---|---|---|
+| 0 文件 | `3ad2cb7` | — |
+| 1 ShowcaseTabsComponent | `20c2376` | 186 |
+| 2 一次載滿 | `c04e76e` | 187 |
+| 3 `/showcase` 頁籤化 | `3c50dd9` | 192 |
+| 4 `/p/:slug` 頁籤化 | `fab7afc` | 195 |
+| 4b 空頁籤退回 | `2306562` | **197** |
+
+`npm run build` 乾淨（2.231s，0 errors／0 warnings）。
+
+### 偏離計畫之處與原因
+
+1. **公開頁 spec 是 5 條不是預測的 6 條**，所以 Task 4 的全套是 195 而非 196。加上 Task 4b 的 2 條後為 197。**下游 Task 5／6／7 的預測數字要各自加 2**（Task 5 → 198、Task 6 → 203、Task 7 → 206）。
+2. **公開頁測試必須加 `provideRouter([])`**。計畫沒寫到這點：元件現在注入 `Router` 來寫回 `?view=`，而既有測試只提供 `ActivatedRoute` mock，會 `NullInjectorError`。順序是 `provideRouter([])` 在前、`ActivatedRoute` mock 在後（後者蓋掉前者的 `ActivatedRoute`）。
+3. **`@switch` 取代計畫寫的 `@if`**。四個互斥的分支用 `@switch` 比四個獨立 `@if` 清楚，銷毀語意相同（切走的分支整個拆掉，計時器隨之停止）。
+4. **公開頁的頁籤列包在 `@if (data.items.length)` 裡**。0 件時四個頁籤全部停用很難看，直接不渲染頁籤列。內部頁靠既有的空狀態分支達到同樣效果。
+5. **Task 4b 是規劃時沒有的**（見上）。
+
+### 環境陷阱（會再遇到）
+
+被 `TaskStop` 中止的 karma 會留下 node 行程佔住 port，**下一次 `npm test` 會無限掛住而不是報錯**。症狀是同一條指令從 60 秒變成跑不完。處理：
+
+```powershell
+Get-Process node | Select-Object Id,StartTime   # 找出開始時間對得上的那幾個
+Stop-Process -Id <ids> -Force
+```
+
+另外 Bash tool 的 cwd 會跨呼叫保留——commit 時 `cd` 回 repo 根目錄之後，下一個 `npm test` 會在根目錄執行而 ENOENT。**每個 npm 指令都自己 `cd /f/VibeCode/MyCollection/web`。**
 
 ---
 
