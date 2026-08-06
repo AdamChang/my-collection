@@ -19,7 +19,10 @@ public record CreateItemCommand(
     bool IsShowcased,
     JsonElement Attributes,
     AcquisitionInput? Acquisition,
-    string? LocationId = null) : IRequest<ItemDto>;
+    string? LocationId = null,
+    string? DisplayMode = null,
+    int? Rating = null,
+    string? StorageLocation = null) : IRequest<ItemDto>;
 
 public record UpdateItemCommand(
     string Id,
@@ -30,7 +33,10 @@ public record UpdateItemCommand(
     bool IsShowcased,
     JsonElement Attributes,
     AcquisitionInput? Acquisition,
-    string? LocationId = null) : IRequest<ItemDto>;
+    string? LocationId = null,
+    string? DisplayMode = null,
+    int? Rating = null,
+    string? StorageLocation = null) : IRequest<ItemDto>;
 
 public record DeleteItemCommand(string Id) : IRequest;
 
@@ -42,6 +48,7 @@ public sealed class CreateItemCommandValidator : AbstractValidator<CreateItemCom
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Description).MaximumLength(4000);
         RuleForEach(x => x.Tags).NotEmpty().MaximumLength(50);
+        ItemWriteRules.ApplyTo(this, x => x.DisplayMode, x => x.Rating, x => x.StorageLocation);
     }
 }
 
@@ -54,6 +61,33 @@ public sealed class UpdateItemCommandValidator : AbstractValidator<UpdateItemCom
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Description).MaximumLength(4000);
         RuleForEach(x => x.Tags).NotEmpty().MaximumLength(50);
+        ItemWriteRules.ApplyTo(this, x => x.DisplayMode, x => x.Rating, x => x.StorageLocation);
+    }
+}
+
+/// <summary>Create/Update 共用的展示相關欄位規則。</summary>
+internal static class ItemWriteRules
+{
+    public static void ApplyTo<T>(
+        AbstractValidator<T> validator,
+        Func<T, string?> displayMode,
+        Func<T, int?> rating,
+        Func<T, string?> storageLocation)
+    {
+        validator.RuleFor(x => displayMode(x))
+            .Must(m => Enum.TryParse<DisplayMode>(m, ignoreCase: true, out _))
+            .When(x => !string.IsNullOrWhiteSpace(displayMode(x)))
+            .WithName("DisplayMode")
+            .WithMessage("DisplayMode must be 'List', 'Hero' or 'Stats'.");
+
+        validator.RuleFor(x => rating(x))
+            .InclusiveBetween(1, 10)
+            .When(x => rating(x).HasValue)
+            .WithName("Rating");
+
+        validator.RuleFor(x => storageLocation(x))
+            .MaximumLength(200)
+            .WithName("StorageLocation");
     }
 }
 
@@ -107,6 +141,9 @@ internal static class ItemWriteHelper
             ? null
             : ObjectId.Parse(locationId);
 
+    public static DisplayMode? ToDisplayMode(string? displayMode) =>
+        string.IsNullOrWhiteSpace(displayMode) ? null : Enum.Parse<DisplayMode>(displayMode, ignoreCase: true);
+
     public static List<string> NormaliseTags(IReadOnlyList<string> tags) =>
         tags.Select(t => t.Trim()).Where(t => t.Length > 0).Distinct(StringComparer.Ordinal).ToList();
 }
@@ -136,13 +173,16 @@ public sealed class CreateItemCommandHandler(
             Acquisition = ItemWriteHelper.ToAcquisition(request.Acquisition),
             LocationId = ItemWriteHelper.ToLocationId(category, request.LocationId),
             Attributes = attributes,
+            DisplayMode = ItemWriteHelper.ToDisplayMode(request.DisplayMode),
+            Rating = request.Rating,
+            StorageLocation = request.StorageLocation,
             CreatedAt = now,
             UpdatedAt = now
         };
 
         await items.InsertAsync(item, cancellationToken);
 
-        return ItemMapper.ToDto(item);
+        return ItemMapper.ToDto(item, category.DefaultDisplayMode);
     }
 }
 
@@ -173,6 +213,9 @@ public sealed class UpdateItemCommandHandler(
         existing.Acquisition = ItemWriteHelper.ToAcquisition(request.Acquisition);
         existing.LocationId = ItemWriteHelper.ToLocationId(category, request.LocationId);
         existing.Attributes = attributes;
+        existing.DisplayMode = ItemWriteHelper.ToDisplayMode(request.DisplayMode);
+        existing.Rating = request.Rating;
+        existing.StorageLocation = request.StorageLocation;
         existing.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
 
         await items.UpdateAsync(existing, cancellationToken);
@@ -183,7 +226,7 @@ public sealed class UpdateItemCommandHandler(
             showcaseImageQueue.Enqueue(existing.Id);
         }
 
-        return ItemMapper.ToDto(existing);
+        return ItemMapper.ToDto(existing, category.DefaultDisplayMode);
     }
 }
 

@@ -67,6 +67,20 @@ public class MongoCategoryRepositoryTests(MongoFixture fixture) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task UpdateAsync_persists_default_display_mode()
+    {
+        var category = NewCategory(Owner, "公仔");
+        await _sut.InsertAsync(category, CancellationToken.None);
+
+        category.DefaultDisplayMode = DisplayMode.Hero;
+        await _sut.UpdateAsync(category, CancellationToken.None);
+
+        var reloaded = await _sut.GetAsync(category.Id, CancellationToken.None);
+
+        reloaded!.DefaultDisplayMode.Should().Be(DisplayMode.Hero);
+    }
+
+    [Fact]
     public async Task UpdateAsync_throws_NotFound_for_other_owners_category()
     {
         var foreign = NewCategory(OtherOwner, "別人的品類");

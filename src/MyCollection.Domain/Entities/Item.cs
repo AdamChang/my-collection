@@ -63,6 +63,15 @@ public sealed class Item
     /// <summary>位置階層第一版不實作，欄位先保留。Digital 品類恆為 null。</summary>
     public ObjectId? LocationId { get; set; }
 
+    /// <summary>精選牆展示版面覆寫。null = 沿用所屬品類的 DefaultDisplayMode。</summary>
+    public DisplayMode? DisplayMode { get; set; }
+
+    /// <summary>1–10，不限品類。</summary>
+    public int? Rating { get; set; }
+
+    /// <summary>自由文字，如「A櫃-第2層」。永不出現在公開分享頁。</summary>
+    public string? StorageLocation { get; set; }
+
     /// <summary>品類 schema 定義的自訂欄位。BsonDocument 天然支援巢狀結構。</summary>
     [BsonElement("attributes")]
     public BsonDocument Attributes { get; set; } = [];

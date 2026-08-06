@@ -11,6 +11,7 @@ public record CreateCategoryCommand(
     string Name,
     string Icon,
     string Kind,
+    string DefaultDisplayMode,
     IReadOnlyList<CategoryFieldDto> Fields) : IRequest<CategoryDto>;
 
 public record UpdateCategoryCommand(
@@ -18,6 +19,7 @@ public record UpdateCategoryCommand(
     string Name,
     string Icon,
     string Kind,
+    string DefaultDisplayMode,
     IReadOnlyList<CategoryFieldDto> Fields) : IRequest<CategoryDto>;
 
 public record DeleteCategoryCommand(string Id) : IRequest;
@@ -28,12 +30,21 @@ public static partial class CategoryRules
     [GeneratedRegex("^[a-z][a-zA-Z0-9]*$")]
     public static partial Regex FieldKeyPattern { get; }
 
-    public static void ApplyTo<T>(AbstractValidator<T> validator, Func<T, string> kind, Func<T, IReadOnlyList<CategoryFieldDto>> fields)
+    public static void ApplyTo<T>(
+        AbstractValidator<T> validator,
+        Func<T, string> kind,
+        Func<T, string> defaultDisplayMode,
+        Func<T, IReadOnlyList<CategoryFieldDto>> fields)
     {
         validator.RuleFor(x => kind(x))
             .Must(k => Enum.TryParse<CategoryKind>(k, ignoreCase: true, out _))
             .WithName("Kind")
             .WithMessage("Kind must be 'Physical' or 'Digital'.");
+
+        validator.RuleFor(x => defaultDisplayMode(x))
+            .Must(m => Enum.TryParse<DisplayMode>(m, ignoreCase: true, out _))
+            .WithName("DefaultDisplayMode")
+            .WithMessage("DefaultDisplayMode must be 'List', 'Hero' or 'Stats'.");
 
         validator.RuleFor(x => fields(x))
             .NotNull()
@@ -68,7 +79,7 @@ public sealed class CreateCategoryCommandValidator : AbstractValidator<CreateCat
     {
         RuleFor(x => x.Name).NotEmpty().MaximumLength(64);
         RuleFor(x => x.Icon).NotEmpty().MaximumLength(32);
-        CategoryRules.ApplyTo(this, x => x.Kind, x => x.Fields);
+        CategoryRules.ApplyTo(this, x => x.Kind, x => x.DefaultDisplayMode, x => x.Fields);
     }
 }
 
@@ -79,7 +90,7 @@ public sealed class UpdateCategoryCommandValidator : AbstractValidator<UpdateCat
         RuleFor(x => x.Id).Must(id => ObjectId.TryParse(id, out _)).WithMessage("Invalid category id.");
         RuleFor(x => x.Name).NotEmpty().MaximumLength(64);
         RuleFor(x => x.Icon).NotEmpty().MaximumLength(32);
-        CategoryRules.ApplyTo(this, x => x.Kind, x => x.Fields);
+        CategoryRules.ApplyTo(this, x => x.Kind, x => x.DefaultDisplayMode, x => x.Fields);
     }
 }
 
@@ -96,6 +107,7 @@ public sealed class CreateCategoryCommandHandler(ICategoryRepository repository,
             Name = request.Name.Trim(),
             Icon = request.Icon,
             Kind = Enum.Parse<CategoryKind>(request.Kind, ignoreCase: true),
+            DefaultDisplayMode = Enum.Parse<DisplayMode>(request.DefaultDisplayMode, ignoreCase: true),
             Fields = request.Fields.Select(CategoryMapper.ToEntity).ToList(),
             CreatedAt = now,
             UpdatedAt = now
@@ -119,6 +131,7 @@ public sealed class UpdateCategoryCommandHandler(ICategoryRepository repository,
         existing.Name = request.Name.Trim();
         existing.Icon = request.Icon;
         existing.Kind = Enum.Parse<CategoryKind>(request.Kind, ignoreCase: true);
+        existing.DefaultDisplayMode = Enum.Parse<DisplayMode>(request.DefaultDisplayMode, ignoreCase: true);
         existing.Fields = request.Fields.Select(CategoryMapper.ToEntity).ToList();
         existing.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
 

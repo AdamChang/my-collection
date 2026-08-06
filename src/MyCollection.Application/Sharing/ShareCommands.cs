@@ -12,7 +12,9 @@ public record CreateShareLinkCommand(
     string Scope,
     IReadOnlyList<string> IncludeCategoryIds,
     bool IncludePrice,
-    DateTime? ExpiresAt) : IRequest<ShareLinkDto>;
+    DateTime? ExpiresAt,
+    bool IncludeRating = false,
+    int CollageSlotCount = 4) : IRequest<ShareLinkDto>;
 
 public record ListShareLinksQuery : IRequest<IReadOnlyList<ShareLinkDto>>;
 
@@ -34,6 +36,8 @@ public sealed class CreateShareLinkCommandValidator : AbstractValidator<CreateSh
         RuleForEach(x => x.IncludeCategoryIds)
             .Must(id => ObjectId.TryParse(id, out _))
             .WithMessage("Invalid category id.");
+
+        RuleFor(x => x.CollageSlotCount).InclusiveBetween(1, 10);
     }
 }
 
@@ -45,6 +49,8 @@ public static class ShareMapper
         link.Scope.ToString(),
         link.IncludeCategoryIds.Select(id => id.ToString()).ToArray(),
         link.IncludePrice,
+        link.IncludeRating,
+        link.CollageSlotCount,
         link.ExpiresAt,
         link.CreatedAt);
 }
@@ -64,6 +70,8 @@ public sealed class CreateShareLinkCommandHandler(IShareLinkRepository links, Ti
             Scope = Enum.Parse<ShareScope>(request.Scope, ignoreCase: true),
             IncludeCategoryIds = request.IncludeCategoryIds.Select(ObjectId.Parse).ToList(),
             IncludePrice = request.IncludePrice,
+            IncludeRating = request.IncludeRating,
+            CollageSlotCount = request.CollageSlotCount,
             // 沒帶 Z 的輸入視為 UTC；資料層會拒絕非 UTC 值
             ExpiresAt = UtcDate.Normalise(request.ExpiresAt),
             CreatedAt = timeProvider.GetUtcNow().UtcDateTime

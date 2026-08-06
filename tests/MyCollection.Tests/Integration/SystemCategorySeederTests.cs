@@ -54,7 +54,7 @@ public sealed class SystemCategorySeederTests(MongoFixture fixture) : IAsyncLife
         await SystemCategorySeeder.SeedAsync(fixture.Context, _time, CancellationToken.None);
         var second = await GetSystemCategoriesAsync();
 
-        second.Should().HaveCount(4);
+        second.Should().HaveCount(6);
         AssertCanonicalCategories(second);
         second.Select(x => x.CreatedAt).Should().Equal(first.Select(x => x.CreatedAt));
         second.Select(x => x.UpdatedAt).Should()
@@ -69,8 +69,8 @@ public sealed class SystemCategorySeederTests(MongoFixture fixture) : IAsyncLife
 
     private static void AssertCanonicalCategories(IReadOnlyList<Category> actual)
     {
-        actual.Should().HaveCount(4);
-        AssertCategory(actual[0], "000000000000000000000001", "實體遊戲", "gamepad-2", CategoryKind.Physical,
+        actual.Should().HaveCount(6);
+        AssertCategory(actual[0], "000000000000000000000001", "實體遊戲", "gamepad-2", CategoryKind.Physical, DisplayMode.List,
         [
             Field("platform", "平台", FieldType.Text, searchable: true, showOnCard: true),
             Field("edition", "版本", FieldType.Text, searchable: true, showOnCard: true),
@@ -90,7 +90,7 @@ public sealed class SystemCategorySeederTests(MongoFixture fixture) : IAsyncLife
             Field("steamAppId", "Steam App ID", FieldType.Number),
             Field("steamStoreUpdatedAt", "Steam 資料更新時間", FieldType.Date)
         ]);
-        AssertCategory(actual[1], "000000000000000000000002", "數位遊戲", "gamepad-2", CategoryKind.Digital,
+        AssertCategory(actual[1], "000000000000000000000002", "數位遊戲", "gamepad-2", CategoryKind.Digital, DisplayMode.Stats,
         [
             Field("platform", "平台／商店", FieldType.Text, searchable: true, showOnCard: true),
             Field("developer", "開發商", FieldType.Text, searchable: true),
@@ -110,7 +110,7 @@ public sealed class SystemCategorySeederTests(MongoFixture fixture) : IAsyncLife
             Field("psnProgress", "PSN 獎盃完成度", FieldType.Number, showOnCard: true, required: false),
             Field("psnLastPlayedAt", "PSN 最後遊玩時間", FieldType.Date, required: false)
         ]);
-        AssertCategory(actual[2], "000000000000000000000003", "音樂專輯", "disc-3", CategoryKind.Physical,
+        AssertCategory(actual[2], "000000000000000000000003", "音樂專輯", "disc-3", CategoryKind.Physical, DisplayMode.List,
         [
             Field("artist", "演出者", FieldType.Text, searchable: true, showOnCard: true),
             Field("mediaFormat", "媒體格式", FieldType.Select, ["CD", "黑膠唱片", "卡帶", "SACD", "其他"], true, true),
@@ -123,7 +123,7 @@ public sealed class SystemCategorySeederTests(MongoFixture fixture) : IAsyncLife
             Field("style", "風格", FieldType.Text, searchable: true),
             Field("barcode", "條碼", FieldType.Text, searchable: true)
         ]);
-        AssertCategory(actual[3], "000000000000000000000004", "電影光碟", "film", CategoryKind.Physical,
+        AssertCategory(actual[3], "000000000000000000000004", "電影光碟", "film", CategoryKind.Physical, DisplayMode.List,
         [
             Field("discFormat", "光碟格式", FieldType.Select, ["Blu-ray", "4K UHD", "DVD", "VCD", "其他"], true, true),
             Field("edition", "版本", FieldType.Text, searchable: true, showOnCard: true),
@@ -135,6 +135,23 @@ public sealed class SystemCategorySeederTests(MongoFixture fixture) : IAsyncLife
             Field("genre", "類型", FieldType.Text, searchable: true),
             Field("barcode", "條碼", FieldType.Text, searchable: true)
         ]);
+        AssertCategory(actual[4], "000000000000000000000005", "公仔模型", "toy-brick", CategoryKind.Physical, DisplayMode.Hero,
+        [
+            Field("scale", "比例", FieldType.Select, ["1/4", "1/6", "1/7", "1/8", "未標示比例", "其他"], true, true),
+            Field("manufacturer", "製造商", FieldType.Text),
+            Field("character", "角色作品", FieldType.Text, searchable: true),
+            Field("material", "材質", FieldType.Text),
+            Field("limitedEdition", "限定版本", FieldType.Text),
+            Field("condition", "保存狀況", FieldType.Select, ["全新", "近全新", "良好", "普通", "需修復"], true)
+        ]);
+        AssertCategory(actual[5], "000000000000000000000006", "珍藏卡", "award", CategoryKind.Physical, DisplayMode.Hero,
+        [
+            Field("signedBy", "簽名者", FieldType.Text, searchable: true, showOnCard: true),
+            Field("certificationNumber", "鑑定編號", FieldType.Text),
+            Field("cardNumber", "卡片編號", FieldType.Text),
+            Field("series", "發行系列", FieldType.Text),
+            Field("condition", "保存狀況", FieldType.Select, ["全新", "近全新", "良好", "普通", "需修復"], true)
+        ]);
     }
 
     private static void AssertCategory(
@@ -143,12 +160,14 @@ public sealed class SystemCategorySeederTests(MongoFixture fixture) : IAsyncLife
         string name,
         string icon,
         CategoryKind kind,
+        DisplayMode displayMode,
         IReadOnlyList<ExpectedField> fields)
     {
         actual.Id.ToString().Should().Be(id);
         actual.Name.Should().Be(name);
         actual.Icon.Should().Be(icon);
         actual.Kind.Should().Be(kind);
+        actual.DefaultDisplayMode.Should().Be(displayMode);
         actual.Fields.Should().HaveCount(fields.Count);
         for (var index = 0; index < fields.Count; index++)
         {

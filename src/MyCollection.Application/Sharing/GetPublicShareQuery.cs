@@ -31,25 +31,35 @@ public sealed class GetPublicShareQueryHandler(
 
         var owner = await users.GetByIdAsync(link.OwnerId, cancellationToken);
 
-        var categoryNames = await catalog.ListCategoryNamesAsync(link.OwnerId, cancellationToken);
+        var categories = await catalog.ListCategoriesAsync(link.OwnerId, cancellationToken);
 
         var items = await catalog.ListItemsAsync(
-            link.OwnerId, link.Scope, link.IncludeCategoryIds, link.IncludePrice, cancellationToken);
+            link.OwnerId, link.Scope, link.IncludeCategoryIds, link.IncludePrice, link.IncludeRating, cancellationToken);
 
         return new PublicShareDto(
             owner?.DisplayName ?? "Collector",
             link.Scope.ToString(),
-            items.Select(i => new PublicItemDto(
-                i.Id.ToString(),
-                i.Name,
-                i.Description,
-                categoryNames.TryGetValue(i.CategoryId, out var name) ? name : string.Empty,
-                i.Tags,
-                i.Images
-                    .OrderBy(img => img.Order)
-                    .Select(img => new PublicImageDto(img.CardPath, img.ThumbPath, img.IsPrimary, img.Order))
-                    .ToArray(),
-                BsonJson.ToDictionary(i.Attributes),
-                i.Price is null ? null : new PublicPriceDto(i.Price.Amount, i.Price.Currency))).ToArray());
+            link.CollageSlotCount,
+            items.Select(i =>
+            {
+                categories.TryGetValue(i.CategoryId, out var category);
+
+                return new PublicItemDto(
+                    i.Id.ToString(),
+                    i.Name,
+                    i.Description,
+                    category?.Name ?? string.Empty,
+                    i.Tags,
+                    i.Images
+                        .OrderBy(img => img.Order)
+                        .Select(img => new PublicImageDto(img.CardPath, img.ThumbPath, img.IsPrimary, img.Order))
+                        .ToArray(),
+                    BsonJson.ToDictionary(i.Attributes),
+                    category?.CardFields ?? [],
+                    (i.DisplayMode ?? category?.DefaultDisplayMode ?? DisplayMode.List).ToString(),
+                    i.Price is null ? null : new PublicPriceDto(i.Price.Amount, i.Price.Currency),
+                    i.AcquiredAt,
+                    i.Rating);
+            }).ToArray());
     }
 }

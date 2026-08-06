@@ -91,4 +91,55 @@ public class SystemCategoryDefinitionsTests
         SystemCategoryDefinitions.PhysicalGameId,
         SystemCategoryDefinitions.DigitalGameId
     ];
+
+    [Theory]
+    [InlineData("scale")]
+    [InlineData("manufacturer")]
+    [InlineData("character")]
+    [InlineData("material")]
+    [InlineData("limitedEdition")]
+    [InlineData("condition")]
+    public void Plush_figure_declares_the_expected_fields(string key)
+    {
+        KeysOf(SystemCategoryDefinitions.PlushFigureId).Should().Contain(key);
+    }
+
+    [Theory]
+    [InlineData("signedBy")]
+    [InlineData("certificationNumber")]
+    [InlineData("cardNumber")]
+    [InlineData("series")]
+    [InlineData("condition")]
+    public void Trading_card_declares_the_expected_fields(string key)
+    {
+        KeysOf(SystemCategoryDefinitions.TradingCardId).Should().Contain(key);
+    }
+
+    public static TheoryData<ObjectId, DisplayMode> ExpectedDefaultDisplayModes() => new()
+    {
+        { SystemCategoryDefinitions.PhysicalGameId, DisplayMode.List },
+        { SystemCategoryDefinitions.DigitalGameId, DisplayMode.Stats },
+        { SystemCategoryDefinitions.MusicAlbumId, DisplayMode.List },
+        { SystemCategoryDefinitions.MovieDiscId, DisplayMode.List },
+        { SystemCategoryDefinitions.PlushFigureId, DisplayMode.Hero },
+        { SystemCategoryDefinitions.TradingCardId, DisplayMode.Hero }
+    };
+
+    [Theory]
+    [MemberData(nameof(ExpectedDefaultDisplayModes))]
+    public void Each_system_category_has_the_expected_default_display_mode(ObjectId categoryId, DisplayMode expected)
+    {
+        SystemCategoryDefinitions.Create(Now)
+            .Single(c => c.Id == categoryId)
+            .DefaultDisplayMode.Should().Be(expected);
+    }
+
+    [Fact]
+    public void Declares_exactly_six_system_categories_with_unique_ids()
+    {
+        var categories = SystemCategoryDefinitions.Create(Now);
+
+        categories.Should().HaveCount(6);
+        categories.Select(c => c.Id).Should().OnlyHaveUniqueItems();
+    }
 }

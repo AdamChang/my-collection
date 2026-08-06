@@ -20,6 +20,7 @@ public static class SystemCategorySeeder
                     .Set(x => x.Icon, category.Icon)
                     .Set(x => x.Kind, category.Kind)
                     .Set(x => x.Fields, category.Fields)
+                    .Set(x => x.DefaultDisplayMode, category.DefaultDisplayMode)
                     .Set(x => x.UpdatedAt, now)
                     .SetOnInsert(x => x.CreatedAt, now))
             {

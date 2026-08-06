@@ -12,10 +12,14 @@ public static class SystemCategoryDefinitions
     public static readonly ObjectId DigitalGameId = ObjectId.Parse("000000000000000000000002");
     public static readonly ObjectId MusicAlbumId = ObjectId.Parse("000000000000000000000003");
     public static readonly ObjectId MovieDiscId = ObjectId.Parse("000000000000000000000004");
+    public static readonly ObjectId PlushFigureId = ObjectId.Parse("000000000000000000000005");
+    public static readonly ObjectId TradingCardId = ObjectId.Parse("000000000000000000000006");
+
+    private static readonly List<string> ConditionOptions = ["全新", "近全新", "良好", "普通", "需修復"];
 
     public static IReadOnlyList<Category> Create(DateTime now) =>
     [
-        Category(PhysicalGameId, "實體遊戲", "gamepad-2", CategoryKind.Physical, now,
+        Category(PhysicalGameId, "實體遊戲", "gamepad-2", CategoryKind.Physical, DisplayMode.List, now,
         [
             Text("platform", "平台", searchable: true, showOnCard: true),
             Text("edition", "版本", searchable: true, showOnCard: true),
@@ -26,7 +30,7 @@ public static class SystemCategoryDefinitions
             Date("releaseDate", "發售日期"),
             Text("productCode", "產品編號", searchable: true),
             Text("barcode", "條碼", searchable: true),
-            Select("condition", "保存狀況", ["全新", "近全新", "良好", "普通", "需修復"], true),
+            Select("condition", "保存狀況", ConditionOptions, true),
             // 以下為 IGDB 補完寫入的欄位。developer / publisher / releaseDate 上方已宣告。
             // 定義來源是 IgdbFields，這裡只列出上方尚未出現的 key。
             Number(IgdbFields.MarkerKey, "IGDB ID"),
@@ -40,7 +44,7 @@ public static class SystemCategoryDefinitions
             Number(SteamFields.AppIdKey, "Steam App ID"),
             Date(SteamFields.StoreUpdatedAtKey, "Steam 資料更新時間")
         ]),
-        Category(DigitalGameId, "數位遊戲", "gamepad-2", CategoryKind.Digital, now,
+        Category(DigitalGameId, "數位遊戲", "gamepad-2", CategoryKind.Digital, DisplayMode.Stats, now,
         [
             Text("platform", "平台／商店", searchable: true, showOnCard: true),
             Text("developer", "開發商", searchable: true),
@@ -63,7 +67,7 @@ public static class SystemCategoryDefinitions
             Date(SteamFields.StoreUpdatedAtKey, "Steam 資料更新時間"),
             ..PsnFields.Create()
         ]),
-        Category(MusicAlbumId, "音樂專輯", "disc-3", CategoryKind.Physical, now,
+        Category(MusicAlbumId, "音樂專輯", "disc-3", CategoryKind.Physical, DisplayMode.List, now,
         [
             Text("artist", "演出者", searchable: true, showOnCard: true),
             Select("mediaFormat", "媒體格式", ["CD", "黑膠唱片", "卡帶", "SACD", "其他"], true, true),
@@ -76,7 +80,7 @@ public static class SystemCategoryDefinitions
             Text("style", "風格", searchable: true),
             Text("barcode", "條碼", searchable: true)
         ]),
-        Category(MovieDiscId, "電影光碟", "film", CategoryKind.Physical, now,
+        Category(MovieDiscId, "電影光碟", "film", CategoryKind.Physical, DisplayMode.List, now,
         [
             Select("discFormat", "光碟格式", ["Blu-ray", "4K UHD", "DVD", "VCD", "其他"], true, true),
             Text("edition", "版本", searchable: true, showOnCard: true),
@@ -87,11 +91,29 @@ public static class SystemCategoryDefinitions
             Date("releaseDate", "發行日期"),
             Text("genre", "類型", searchable: true),
             Text("barcode", "條碼", searchable: true)
+        ]),
+        Category(PlushFigureId, "公仔模型", "toy-brick", CategoryKind.Physical, DisplayMode.Hero, now,
+        [
+            Select("scale", "比例", ["1/4", "1/6", "1/7", "1/8", "未標示比例", "其他"], true, true),
+            Text("manufacturer", "製造商"),
+            Text("character", "角色作品", searchable: true),
+            Text("material", "材質"),
+            Text("limitedEdition", "限定版本"),
+            Select("condition", "保存狀況", ConditionOptions, true)
+        ]),
+        Category(TradingCardId, "珍藏卡", "award", CategoryKind.Physical, DisplayMode.Hero, now,
+        [
+            Text("signedBy", "簽名者", searchable: true, showOnCard: true),
+            Text("certificationNumber", "鑑定編號"),
+            Text("cardNumber", "卡片編號"),
+            Text("series", "發行系列"),
+            Select("condition", "保存狀況", ConditionOptions, true)
         ])
     ];
 
     private static Category Category(
-        ObjectId id, string name, string icon, CategoryKind kind, DateTime now, List<CategoryField> fields) =>
+        ObjectId id, string name, string icon, CategoryKind kind, DisplayMode defaultDisplayMode, DateTime now,
+        List<CategoryField> fields) =>
         new()
         {
             Id = id,
@@ -100,6 +122,7 @@ public static class SystemCategoryDefinitions
             Icon = icon,
             Kind = kind,
             Fields = fields,
+            DefaultDisplayMode = defaultDisplayMode,
             CreatedAt = now,
             UpdatedAt = now
         };

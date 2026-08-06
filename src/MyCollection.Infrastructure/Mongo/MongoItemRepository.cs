@@ -125,6 +125,9 @@ public sealed class MongoItemRepository(MongoContext context, IUserContext userC
             .Set(x => x.Acquisition, item.Acquisition)
             .Set(x => x.LocationId, item.LocationId)
             .Set(x => x.Attributes, item.Attributes)
+            .Set(x => x.DisplayMode, item.DisplayMode)
+            .Set(x => x.Rating, item.Rating)
+            .Set(x => x.StorageLocation, item.StorageLocation)
             .Set(x => x.UpdatedAt, item.UpdatedAt);
 
         // OwnerId / Source / ExternalRef / CreatedAt 不在此列：

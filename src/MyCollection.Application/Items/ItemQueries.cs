@@ -1,6 +1,7 @@
 using FluentValidation;
 using MediatR;
 using MongoDB.Bson;
+using MyCollection.Application.Categories;
 using MyCollection.Application.Common;
 using MyCollection.Domain.Entities;
 using MyCollection.Domain.Exceptions;
@@ -46,7 +47,7 @@ public sealed class SearchItemsQueryValidator : AbstractValidator<SearchItemsQue
     }
 }
 
-public sealed class SearchItemsQueryHandler(IItemRepository items)
+public sealed class SearchItemsQueryHandler(IItemRepository items, ICategoryRepository categories)
     : IRequestHandler<SearchItemsQuery, PagedResult<ItemDto>>
 {
     public async Task<PagedResult<ItemDto>> Handle(SearchItemsQuery request, CancellationToken cancellationToken)
@@ -63,16 +64,20 @@ public sealed class SearchItemsQueryHandler(IItemRepository items)
         };
 
         var result = await items.SearchAsync(spec, cancellationToken);
+        var displayModes = CategoryMapper.ToDisplayModeLookup(await categories.ListAsync(cancellationToken));
 
         return new PagedResult<ItemDto>(
-            result.Items.Select(ItemMapper.ToDto).ToArray(),
+            result.Items
+                .Select(i => ItemMapper.ToDto(i, displayModes.GetValueOrDefault(i.CategoryId, DisplayMode.List)))
+                .ToArray(),
             result.Total,
             result.Page,
             result.PageSize);
     }
 }
 
-public sealed class GetItemQueryHandler(IItemRepository items) : IRequestHandler<GetItemQuery, ItemDto>
+public sealed class GetItemQueryHandler(IItemRepository items, ICategoryRepository categories)
+    : IRequestHandler<GetItemQuery, ItemDto>
 {
     public async Task<ItemDto> Handle(GetItemQuery request, CancellationToken cancellationToken)
     {
@@ -85,7 +90,10 @@ public sealed class GetItemQueryHandler(IItemRepository items) : IRequestHandler
         var item = await items.GetAsync(id, cancellationToken)
                    ?? throw new NotFoundException(nameof(Item), request.Id);
 
-        return ItemMapper.ToDto(item);
+        // 品類正常一定存在（Item 寫入時就驗證過）；查不到時退回 List 只是防呆，不代表預期狀態
+        var category = await categories.GetAsync(item.CategoryId, cancellationToken);
+
+        return ItemMapper.ToDto(item, category?.DefaultDisplayMode ?? DisplayMode.List);
     }
 }
 

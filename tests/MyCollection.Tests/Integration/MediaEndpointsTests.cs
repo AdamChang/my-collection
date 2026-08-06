@@ -47,7 +47,7 @@ public class MediaEndpointsTests(MongoFixture mongo) : IAsyncLifetime
     {
         var category = (await (await _client.PostAsJsonAsync("/categories", new
         {
-            name = "公仔", icon = "figure", kind = "Physical",
+            name = "公仔", icon = "figure", kind = "Physical", defaultDisplayMode = "List",
             fields = Array.Empty<object>()
         })).Content.ReadFromJsonAsync<CategoryDto>())!;
 

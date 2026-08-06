@@ -145,6 +145,24 @@ public class MongoItemRepositoryTests(MongoFixture fixture) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task UpdateAsync_persists_display_mode_rating_and_storage_location()
+    {
+        var item = NewItem(Owner, "初音ミク Figure", FigureCategory);
+        await _sut.InsertAsync(item, CancellationToken.None);
+
+        item.DisplayMode = DisplayMode.Hero;
+        item.Rating = 9;
+        item.StorageLocation = "A櫃-第2層";
+        await _sut.UpdateAsync(item, CancellationToken.None);
+
+        var reloaded = await _sut.GetAsync(item.Id, CancellationToken.None);
+
+        reloaded!.DisplayMode.Should().Be(DisplayMode.Hero);
+        reloaded.Rating.Should().Be(9);
+        reloaded.StorageLocation.Should().Be("A櫃-第2層");
+    }
+
+    [Fact]
     public async Task UpdateAsync_throws_NotFound_for_other_owners_item()
     {
         await SeedAsync();
