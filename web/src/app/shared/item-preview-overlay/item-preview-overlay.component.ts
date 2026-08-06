@@ -18,7 +18,6 @@ interface PreviewField {
  */
 @Component({
   selector: 'app-item-preview-overlay',
-  imports: [DatePipe],
   template: `
     @if (item(); as preview) {
       <div class="preview" data-preview-overlay aria-hidden="true">
