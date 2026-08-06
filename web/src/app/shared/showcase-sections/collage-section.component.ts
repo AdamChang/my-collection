@@ -33,8 +33,10 @@ interface CollageSlot {
   `,
   styles: `
     .collage { margin-bottom: 1.5rem; }
-    .collage__wall { display: flex; flex-wrap: wrap; gap: 1.5rem; padding: 1rem 0.5rem; }
-    .collage__card { background: #fff; padding: 0.6rem 0.6rem 1.6rem; width: 11rem; box-shadow: 0 8px 18px rgb(5 7 13 / 45%);
+    /* 拼貼牆是預設第一眼（ADR-0009），要有足夠的視覺重量：8 格 × 18rem 在 1920px 下排成 4+4 置中。
+       拍立得風格本來就靠大尺寸與陰影取勝，11rem 那種尺寸更像縮圖。 */
+    .collage__wall { display: flex; flex-wrap: wrap; justify-content: center; gap: 1.5rem; padding: 1rem 0.5rem; }
+    .collage__card { background: #fff; padding: 0.6rem 0.6rem 1.6rem; width: 18rem; box-shadow: 0 8px 18px rgb(5 7 13 / 45%);
                       transition: transform 480ms ease; }
     .collage__card img, .collage__placeholder { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; }
     .collage__placeholder { display: grid; place-items: center; background: var(--mc-surface-raised); color: var(--mc-cyan); font-size: 2rem; }

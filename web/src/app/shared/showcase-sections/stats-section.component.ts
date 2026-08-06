@@ -40,7 +40,9 @@ import { ShowcaseDisplayItem } from './showcase-display-item';
     }
   `,
   styles: `
-    .stats { position: relative; margin-bottom: 1.5rem; min-height: 16rem; display: flex; align-items: end;
+    /* 頁籤化後成就看板獨佔一整頁（ADR-0009），16rem 會在下方留一大片空白。
+       用 clamp 而非固定值，窄螢幕才不會變成一整屏的黑底圖。 */
+    .stats { position: relative; margin-bottom: 1.5rem; min-height: clamp(20rem, 46vw, 40rem); display: flex; align-items: end;
              border: 1px solid var(--mc-border); box-shadow: var(--mc-shadow); overflow: hidden;
              background-size: cover; background-position: center; background-color: var(--mc-surface-raised);
              clip-path: polygon(0 0, calc(100% - var(--mc-cut)) 0, 100% var(--mc-cut), 100% 100%, 0 100%); }

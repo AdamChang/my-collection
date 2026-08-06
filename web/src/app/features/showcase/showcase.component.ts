@@ -60,7 +60,7 @@ const MAX_SHOWCASE_ITEMS = 2000;
       @switch (activeView()) {
         @case ('collage') {
           <div role="tabpanel" id="showcase-panel-collage" aria-labelledby="showcase-tab-collage">
-            <app-collage-section [items]="displayItems()" [slotCount]="4" />
+            <app-collage-section [items]="displayItems()" [slotCount]="8" />
           </div>
         }
         @case ('hero') {
