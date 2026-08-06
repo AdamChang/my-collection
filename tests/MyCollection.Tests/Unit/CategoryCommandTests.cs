@@ -17,7 +17,7 @@ public class CategoryCommandTests
         new(key, $"{key} label", type, options, false, false, false);
 
     private static CreateCategoryCommand ValidCommand(params CategoryFieldDto[] fields) =>
-        new("公仔", "figure", "Physical", fields.Length == 0 ? [Field("brand")] : fields);
+        new("公仔", "figure", "Physical", "List", fields.Length == 0 ? [Field("brand")] : fields);
 
     [Fact]
     public void Validator_accepts_valid_command()
@@ -84,13 +84,37 @@ public class CategoryCommandTests
     }
 
     [Fact]
+    public async Task CreateHandler_persists_default_display_mode()
+    {
+        Category? saved = null;
+        _repository.Setup(r => r.InsertAsync(It.IsAny<Category>(), It.IsAny<CancellationToken>()))
+            .Callback<Category, CancellationToken>((c, _) => saved = c)
+            .Returns(Task.CompletedTask);
+
+        var command = new CreateCategoryCommand("公仔", "figure", "Physical", "Hero", [Field("brand")]);
+        var dto = await new CreateCategoryCommandHandler(_repository.Object, _time)
+            .Handle(command, CancellationToken.None);
+
+        saved!.DefaultDisplayMode.Should().Be(DisplayMode.Hero);
+        dto.DefaultDisplayMode.Should().Be("Hero");
+    }
+
+    [Fact]
+    public void Validator_rejects_unknown_default_display_mode()
+    {
+        var command = new CreateCategoryCommand("公仔", "figure", "Physical", "Nope", [Field("brand")]);
+
+        new CreateCategoryCommandValidator().Validate(command).IsValid.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task UpdateHandler_throws_NotFound_when_missing()
     {
         _repository.Setup(r => r.GetAsync(It.IsAny<ObjectId>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Category?)null);
 
         var command = new UpdateCategoryCommand(
-            ObjectId.GenerateNewId().ToString(), "公仔", "figure", "Physical", [Field("brand")]);
+            ObjectId.GenerateNewId().ToString(), "公仔", "figure", "Physical", "List", [Field("brand")]);
 
         var act = () => new UpdateCategoryCommandHandler(_repository.Object, _time)
             .Handle(command, CancellationToken.None);

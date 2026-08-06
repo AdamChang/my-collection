@@ -24,12 +24,20 @@ public record ItemDto(
     AcquisitionDto? Acquisition,
     string? LocationId,
     IReadOnlyDictionary<string, object?> Attributes,
+    string? DisplayMode,
+    int? Rating,
+    string? StorageLocation,
+    string EffectiveDisplayMode,
     DateTime CreatedAt,
     DateTime UpdatedAt);
 
 public static class ItemMapper
 {
-    public static ItemDto ToDto(Item item) => new(
+    /// <summary>
+    /// categoryDefaultDisplayMode 是所屬品類的 DefaultDisplayMode，用來在 item.DisplayMode 為 null
+    /// 時算出 EffectiveDisplayMode。呼叫端必須自己載入品類——這裡不查資料庫。
+    /// </summary>
+    public static ItemDto ToDto(Item item, DisplayMode categoryDefaultDisplayMode) => new(
         item.Id.ToString(),
         item.CategoryId.ToString(),
         item.Name,
@@ -49,6 +57,10 @@ public static class ItemMapper
                 item.Acquisition.Vendor),
         item.LocationId?.ToString(),
         BsonJson.ToDictionary(item.Attributes),
+        item.DisplayMode?.ToString(),
+        item.Rating,
+        item.StorageLocation,
+        (item.DisplayMode ?? categoryDefaultDisplayMode).ToString(),
         item.CreatedAt,
         item.UpdatedAt);
 }

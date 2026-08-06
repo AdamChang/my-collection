@@ -34,6 +34,7 @@ public class CatalogEndpointsTests(MongoFixture mongo) : IAsyncLifetime
             name = "公仔",
             icon = "figure",
             kind = "Physical",
+            defaultDisplayMode = "List",
             fields = new[]
             {
                 new { key = "brand", label = "廠商", type = "Select", options = (string[]?)["GSC", "ALTER"], required = true, searchable = true, showOnCard = true },
@@ -86,6 +87,52 @@ public class CatalogEndpointsTests(MongoFixture mongo) : IAsyncLifetime
         deleted.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         (await _client.GetAsync($"/items/{item.Id}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Item_round_trips_display_mode_rating_and_storage_location()
+    {
+        var category = await CreateFigureCategoryAsync();
+
+        var created = await _client.PostAsJsonAsync("/items", new
+        {
+            categoryId = category.Id,
+            name = "初音ミク 1/8",
+            description = (string?)null,
+            tags = Array.Empty<string>(),
+            isShowcased = true,
+            attributes = new { brand = "GSC" },
+            acquisition = (object?)null,
+            displayMode = "Hero",
+            rating = 9,
+            storageLocation = "A櫃-第2層"
+        });
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        var item = (await created.Content.ReadFromJsonAsync<ItemDto>())!;
+
+        item.DisplayMode.Should().Be("Hero");
+        item.EffectiveDisplayMode.Should().Be("Hero");
+        item.Rating.Should().Be(9);
+        item.StorageLocation.Should().Be("A櫃-第2層");
+
+        var fetchedById = await _client.GetFromJsonAsync<ItemDto>($"/items/{item.Id}");
+        fetchedById!.EffectiveDisplayMode.Should().Be("Hero");
+        fetchedById.Rating.Should().Be(9);
+        fetchedById.StorageLocation.Should().Be("A櫃-第2層");
+
+        var searched = await _client.GetFromJsonAsync<PagedItemsResponse>("/items?pageSize=200");
+        searched!.Items.Should().Contain(i => i.Id == item.Id).Which.EffectiveDisplayMode.Should().Be("Hero");
+    }
+
+    [Fact]
+    public async Task Item_without_display_mode_override_inherits_the_category_default()
+    {
+        var category = await CreateFigureCategoryAsync();
+        var created = await CreateItemAsync(category.Id, "初音ミク 1/7", new { brand = "GSC", scale = "1/7" });
+        var item = (await created.Content.ReadFromJsonAsync<ItemDto>())!;
+
+        item.DisplayMode.Should().BeNull();
+        item.EffectiveDisplayMode.Should().Be("List", "CreateFigureCategoryAsync 的 DefaultDisplayMode 是 List");
     }
 
     [Fact]
@@ -162,7 +209,7 @@ public class CatalogEndpointsTests(MongoFixture mongo) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Api_startup_exposes_the_four_system_categories()
+    public async Task Api_startup_exposes_the_six_system_categories()
     {
         var categories = await _client.GetFromJsonAsync<CategoryDto[]>("/categories");
 
@@ -170,7 +217,7 @@ public class CatalogEndpointsTests(MongoFixture mongo) : IAsyncLifetime
             .Where(x => x.IsSystem)
             .Select(x => x.Name)
             .Should()
-            .BeEquivalentTo("實體遊戲", "數位遊戲", "音樂專輯", "電影光碟");
+            .BeEquivalentTo("實體遊戲", "數位遊戲", "音樂專輯", "電影光碟", "公仔模型", "珍藏卡");
     }
 
     [Theory]

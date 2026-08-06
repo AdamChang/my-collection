@@ -22,8 +22,14 @@ public sealed class ShareLink
     public ShareScope Scope { get; set; } = ShareScope.Showcase;
     public List<ObjectId> IncludeCategoryIds { get; set; } = [];
 
-    /// <summary>預設 false。true 時公開投影才會額外納入 acquisition.price。</summary>
+    /// <summary>預設 false。true 時公開投影才會額外納入 acquisition.price 與 acquisition.acquiredAt。</summary>
     public bool IncludePrice { get; set; }
+
+    /// <summary>預設 false。true 時公開投影才會額外納入 rating。</summary>
+    public bool IncludeRating { get; set; }
+
+    /// <summary>Collage 拼貼牆同時可見的槽位數，1–10。</summary>
+    public int CollageSlotCount { get; set; } = 4;
 
     public DateTime? ExpiresAt { get; set; }
     public DateTime CreatedAt { get; set; }

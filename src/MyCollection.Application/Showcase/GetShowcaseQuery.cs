@@ -1,7 +1,9 @@
 using FluentValidation;
 using MediatR;
+using MyCollection.Application.Categories;
 using MyCollection.Application.Common;
 using MyCollection.Application.Items;
+using MyCollection.Domain.Entities;
 
 namespace MyCollection.Application.Showcase;
 
@@ -17,7 +19,7 @@ public sealed class GetShowcaseQueryValidator : AbstractValidator<GetShowcaseQue
     }
 }
 
-public sealed class GetShowcaseQueryHandler(IItemRepository items)
+public sealed class GetShowcaseQueryHandler(IItemRepository items, ICategoryRepository categories)
     : IRequestHandler<GetShowcaseQuery, PagedResult<ItemDto>>
 {
     public async Task<PagedResult<ItemDto>> Handle(GetShowcaseQuery request, CancellationToken cancellationToken)
@@ -26,8 +28,12 @@ public sealed class GetShowcaseQueryHandler(IItemRepository items)
             new ItemQuerySpec { IsShowcased = true, Page = request.Page, PageSize = request.PageSize },
             cancellationToken);
 
+        var displayModes = CategoryMapper.ToDisplayModeLookup(await categories.ListAsync(cancellationToken));
+
         return new PagedResult<ItemDto>(
-            result.Items.Select(ItemMapper.ToDto).ToArray(),
+            result.Items
+                .Select(i => ItemMapper.ToDto(i, displayModes.GetValueOrDefault(i.CategoryId, DisplayMode.List)))
+                .ToArray(),
             result.Total,
             result.Page,
             result.PageSize);

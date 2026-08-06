@@ -68,6 +68,7 @@ public class ImageTransferEndpointsTests(MongoFixture mongo) : IAsyncLifetime
             name = "黑膠唱片",
             icon = "disc-3",
             kind = "Physical",
+            defaultDisplayMode = "List",
             fields = Array.Empty<object>()
         })).Content.ReadFromJsonAsync<CategoryDto>())!;
 

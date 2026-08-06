@@ -50,7 +50,7 @@ public class ShareCommandTests
     private GetPublicShareQueryHandler CreatePublicSut() =>
         new(_links.Object, _catalog.Object, _users.Object, _time);
 
-    private static ShareLink Link(DateTime? expiresAt = null, bool includePrice = false) => new()
+    private static ShareLink Link(DateTime? expiresAt = null, bool includePrice = false, bool includeRating = false) => new()
     {
         Id = ObjectId.GenerateNewId(),
         OwnerId = Owner,
@@ -58,6 +58,7 @@ public class ShareCommandTests
         Scope = ShareScope.Showcase,
         IncludeCategoryIds = [],
         IncludePrice = includePrice,
+        IncludeRating = includeRating,
         ExpiresAt = expiresAt,
         CreatedAt = DateTime.UtcNow
     };
@@ -91,7 +92,7 @@ public class ShareCommandTests
             .ReturnsAsync(Link(includePrice: true));
         _users.Setup(r => r.GetByIdAsync(Owner, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new User { Email = "a@b.c", PasswordHash = "h", DisplayName = "Adam" });
-        _catalog.Setup(r => r.ListItemsAsync(Owner, ShareScope.Showcase, It.IsAny<IReadOnlyList<ObjectId>>(), true, It.IsAny<CancellationToken>()))
+        _catalog.Setup(r => r.ListItemsAsync(Owner, ShareScope.Showcase, It.IsAny<IReadOnlyList<ObjectId>>(), true, false, It.IsAny<CancellationToken>()))
             .ReturnsAsync([new PublicItemProjection
             {
                 Id = ObjectId.GenerateNewId(),
@@ -99,12 +100,61 @@ public class ShareCommandTests
                 Name = "精選公仔",
                 Price = new Money(12800m, "TWD")
             }]);
-        _catalog.Setup(r => r.ListCategoryNamesAsync(Owner, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Dictionary<ObjectId, string>());
+        _catalog.Setup(r => r.ListCategoriesAsync(Owner, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<ObjectId, PublicCategoryInfo>());
 
         var result = await CreatePublicSut().Handle(new GetPublicShareQuery("abc123abc123"), CancellationToken.None);
 
         result.OwnerDisplayName.Should().Be("Adam");
         result.Items.Should().ContainSingle().Which.Price!.Amount.Should().Be(12800m);
+    }
+
+    [Fact]
+    public async Task Public_query_passes_includeRating_flag_through()
+    {
+        _links.Setup(r => r.GetBySlugAsync("abc123abc123", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Link(includeRating: true));
+        _users.Setup(r => r.GetByIdAsync(Owner, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User { Email = "a@b.c", PasswordHash = "h", DisplayName = "Adam" });
+        _catalog.Setup(r => r.ListItemsAsync(Owner, ShareScope.Showcase, It.IsAny<IReadOnlyList<ObjectId>>(), false, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new PublicItemProjection
+            {
+                Id = ObjectId.GenerateNewId(),
+                CategoryId = ObjectId.GenerateNewId(),
+                Name = "精選公仔",
+                Rating = 9
+            }]);
+        _catalog.Setup(r => r.ListCategoriesAsync(Owner, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<ObjectId, PublicCategoryInfo>());
+
+        var result = await CreatePublicSut().Handle(new GetPublicShareQuery("abc123abc123"), CancellationToken.None);
+
+        result.Items.Should().ContainSingle().Which.Rating.Should().Be(9);
+    }
+
+    [Fact]
+    public async Task Public_query_resolves_effective_display_mode_from_category_default()
+    {
+        var categoryId = ObjectId.GenerateNewId();
+        _links.Setup(r => r.GetBySlugAsync("abc123abc123", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Link());
+        _users.Setup(r => r.GetByIdAsync(Owner, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User { Email = "a@b.c", PasswordHash = "h", DisplayName = "Adam" });
+        _catalog.Setup(r => r.ListItemsAsync(Owner, ShareScope.Showcase, It.IsAny<IReadOnlyList<ObjectId>>(), false, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new PublicItemProjection
+            {
+                Id = ObjectId.GenerateNewId(),
+                CategoryId = categoryId,
+                Name = "公仔"
+            }]);
+        _catalog.Setup(r => r.ListCategoriesAsync(Owner, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<ObjectId, PublicCategoryInfo>
+            {
+                [categoryId] = new("公仔模型", DisplayMode.Hero, [])
+            });
+
+        var result = await CreatePublicSut().Handle(new GetPublicShareQuery("abc123abc123"), CancellationToken.None);
+
+        result.Items.Should().ContainSingle().Which.EffectiveDisplayMode.Should().Be("Hero");
     }
 }
