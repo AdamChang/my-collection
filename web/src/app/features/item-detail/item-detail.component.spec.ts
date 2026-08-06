@@ -22,6 +22,7 @@ describe('ItemDetailComponent', () => {
     icon: 'robot',
     kind: 'Physical',
     isSystem: true,
+    defaultDisplayMode: 'List',
     fields: [
       {
         key: 'brand',
@@ -243,6 +244,7 @@ describe('ItemDetailComponent', () => {
     icon: 'gamepad-2',
     kind: 'Physical',
     isSystem: true,
+    defaultDisplayMode: 'List',
     fields: [
       { key: 'igdbId', label: 'IGDB ID', type: 'Number', options: null, required: false, searchable: false, showOnCard: false },
       { key: 'developer', label: '開發商', type: 'Text', options: null, required: false, searchable: true, showOnCard: false },
@@ -445,6 +447,10 @@ describe('ItemDetailComponent', () => {
     acquisition: null,
     locationId: null,
     attributes: {},
+    displayMode: null,
+    rating: null,
+    storageLocation: null,
+    effectiveDisplayMode: 'List',
     createdAt: '2026-07-01T00:00:00Z',
     updatedAt: '2026-07-01T00:00:00Z',
   };

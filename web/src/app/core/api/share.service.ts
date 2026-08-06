@@ -8,6 +8,8 @@ export interface ShareWritePayload {
   scope: 'Showcase' | 'Category';
   includeCategoryIds: string[];
   includePrice: boolean;
+  includeRating: boolean;
+  collageSlotCount: number;
   expiresAt: string | null;
 }
 

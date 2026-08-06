@@ -59,6 +59,15 @@ const FIELD_TYPES: FieldType[] = ['Text', 'Number', 'Date', 'Select', 'Bool', 'U
           </select>
         </label>
 
+        <label>
+          精選牆預設展示模式
+          <select [(ngModel)]="current.defaultDisplayMode" name="defaultDisplayMode">
+            <option value="List">List（清單／網格）</option>
+            <option value="Hero">Hero（焦點展品）</option>
+            <option value="Stats">Stats（數據看板）</option>
+          </select>
+        </label>
+
         <h3>欄位</h3>
         @for (field of current.fields; track $index) {
           <fieldset class="editor__field">
@@ -160,7 +169,7 @@ export class CategoriesComponent {
 
   startNew(): void {
     this.editingId.set(null);
-    this.draft.set({ name: '', icon: 'box', kind: 'Physical', fields: [] });
+    this.draft.set({ name: '', icon: 'box', kind: 'Physical', defaultDisplayMode: 'List', fields: [] });
   }
 
   edit(category: CategoryDto): void {
@@ -174,6 +183,7 @@ export class CategoriesComponent {
       name: category.name,
       icon: category.icon,
       kind: category.kind,
+      defaultDisplayMode: category.defaultDisplayMode,
       fields: category.fields.map((f) => ({ ...f, options: f.options ? [...f.options] : null })),
     });
   }

@@ -13,6 +13,8 @@ export interface AuthResponse {
 
 export type FieldType = 'Text' | 'Number' | 'Date' | 'Select' | 'Bool' | 'Url';
 
+export type DisplayMode = 'List' | 'Hero' | 'Stats';
+
 export interface CategoryFieldDto {
   key: string;
   label: string;
@@ -29,6 +31,7 @@ export interface CategoryDto {
   icon: string;
   kind: 'Physical' | 'Digital';
   isSystem: boolean;
+  defaultDisplayMode: DisplayMode;
   fields: CategoryFieldDto[];
 }
 
@@ -60,6 +63,10 @@ export interface ItemDto {
   acquisition: AcquisitionDto | null;
   locationId: string | null;
   attributes: Record<string, unknown>;
+  displayMode: DisplayMode | null;
+  rating: number | null;
+  storageLocation: string | null;
+  effectiveDisplayMode: DisplayMode;
   createdAt: string;
   updatedAt: string;
 }
@@ -77,6 +84,8 @@ export interface ShareLinkDto {
   scope: 'Showcase' | 'Category';
   includeCategoryIds: string[];
   includePrice: boolean;
+  includeRating: boolean;
+  collageSlotCount: number;
   expiresAt: string | null;
   createdAt: string;
 }
@@ -89,12 +98,17 @@ export interface PublicItemDto {
   tags: string[];
   images: { cardPath: string; thumbPath: string; isPrimary: boolean; order: number }[];
   attributes: Record<string, unknown>;
+  cardFields: CategoryFieldDto[];
+  effectiveDisplayMode: DisplayMode;
   price: { amount: number; currency: string } | null;
+  acquiredAt: string | null;
+  rating: number | null;
 }
 
 export interface PublicShareDto {
   ownerDisplayName: string;
   scope: string;
+  collageSlotCount: number;
   items: PublicItemDto[];
 }
 

@@ -12,7 +12,7 @@ import {
 } from '../../core/api/provider.service';
 import { IGNORE_HANDLED_BY_INTERCEPTOR } from '../../core/error.interceptor';
 import { NotificationService } from '../../core/notification.service';
-import { CategoryDto, FetchedMetadataDto, ItemDto } from '../../core/models';
+import { CategoryDto, DisplayMode, FetchedMetadataDto, ItemDto } from '../../core/models';
 import { DynamicFormComponent } from '../../shared/dynamic-form/dynamic-form.component';
 import { IgdbSearchDialogComponent } from '../../shared/igdb-search-dialog/igdb-search-dialog.component';
 import { ImageUploaderComponent } from '../../shared/image-uploader/image-uploader.component';
@@ -89,6 +89,23 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
           設為精選（顯示在首頁牆面）
         </label>
         <app-tag-input [tags]="tags()" (tagsChange)="tags.set($event)" />
+      </section>
+
+      <section class="detail__panel mc-panel" data-item-showcase>
+        <div class="mc-eyebrow">SHOWCASE PRESENTATION</div>
+        <label>
+          展示模式
+          <select [(ngModel)]="displayModeOverride" name="displayModeOverride">
+            <option value="">沿用品類預設{{ defaultDisplayModeHint() }}</option>
+            <option value="List">List</option>
+            <option value="Hero">Hero</option>
+            <option value="Stats">Stats</option>
+          </select>
+        </label>
+        <label>評分（1–10，留空代表未評分）
+          <input type="number" min="1" max="10" [(ngModel)]="rating" name="rating" />
+        </label>
+        <label>存放位置<input [(ngModel)]="storageLocation" name="storageLocation" placeholder="例：A櫃-第2層" /></label>
       </section>
 
       @if (selectedCategory(); as category) {
@@ -247,6 +264,11 @@ export class ItemDetailComponent {
     () => this.saving() || this.removing() || this.fetching() || this.enriching(),
   );
 
+  readonly defaultDisplayModeHint = computed(() => {
+    const mode = this.selectedCategory()?.defaultDisplayMode;
+    return mode ? `（${mode}）` : '';
+  });
+
   categoryId = '';
   name = '';
   description = '';
@@ -256,6 +278,9 @@ export class ItemDetailComponent {
   price: number | null = null;
   currency = 'TWD';
   vendor = '';
+  displayModeOverride: DisplayMode | '' = '';
+  rating: number | null = null;
+  storageLocation = '';
 
   constructor() {
     this.categoryApi.list().subscribe((categories) => {
@@ -472,6 +497,9 @@ export class ItemDetailComponent {
     this.price = item.acquisition?.price?.amount ?? null;
     this.currency = item.acquisition?.price?.currency ?? 'TWD';
     this.vendor = item.acquisition?.vendor ?? '';
+    this.displayModeOverride = item.displayMode ?? '';
+    this.rating = item.rating;
+    this.storageLocation = item.storageLocation ?? '';
     this.syncSelectedCategory();
   }
 
@@ -499,6 +527,9 @@ export class ItemDetailComponent {
             vendor: this.vendor || null,
           }
         : null,
+      displayMode: this.displayModeOverride || null,
+      rating: this.rating,
+      storageLocation: this.storageLocation.trim() || null,
     };
   }
 }
