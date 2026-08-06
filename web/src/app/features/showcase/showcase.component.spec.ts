@@ -206,6 +206,17 @@ describe('ShowcaseComponent', () => {
     ]);
   });
 
+  it('feeds the collage eight slots on the internal showcase page', async () => {
+    // 剛好 8 件：slotCount 為 4 時只會渲染 4 格，所以這條仍然驗得出 slotCount。
+    // 刻意不給超過 8 件——CollageSectionComponent 只有在 pool 多於格數時才啟動輪播，
+    // 而這條測試不是 fakeAsync，真的起了 setInterval 會讓整個 karma 跑不完。
+    const fixture = await createShowcase(
+      Array.from({ length: 8 }, (_, i) => item({ id: `i${i}`, effectiveDisplayMode: 'List' })),
+    );
+
+    expect(fixture.nativeElement.querySelectorAll('[data-collage-card]').length).toBe(8);
+  });
+
   it('renders every showcased item in the list tab', async () => {
     const fixture = await createShowcase([
       item({ id: 'h', effectiveDisplayMode: 'Hero' }),
