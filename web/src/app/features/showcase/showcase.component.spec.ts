@@ -1,6 +1,7 @@
 import { Subject, of } from 'rxjs';
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { API_BASE } from '../../core/api-base';
 import { CatalogService } from '../../core/api/catalog.service';
 import { CategoryService } from '../../core/api/category.service';
 import { ShowcaseComponent } from './showcase.component';
@@ -34,6 +35,7 @@ function item(overrides: Record<string, unknown> = {}) {
 /** 一次載滿的精選頁，資料同步到齊——頁籤相關的測試都從這裡開始。 */
 async function createShowcase(
   items: ReturnType<typeof item>[],
+  categories: unknown[] = [],
 ): Promise<ComponentFixture<ShowcaseComponent>> {
   await TestBed.configureTestingModule({
     imports: [ShowcaseComponent],
@@ -45,7 +47,7 @@ async function createShowcase(
           showcase: () => of({ items, total: items.length, page: 1, pageSize: 200 }),
         },
       },
-      { provide: CategoryService, useValue: { list: () => of([]) } },
+      { provide: CategoryService, useValue: { list: () => of(categories) } },
     ],
   }).compileComponents();
 
@@ -53,6 +55,19 @@ async function createShowcase(
   fixture.detectChanges();
 
   return fixture;
+}
+
+/** 切到列表頁籤、把游標停在第 index 張卡片上並等過進場延遲，回傳浮層元素。 */
+function hoverCard(fixture: ComponentFixture<ShowcaseComponent>, index = 0): HTMLElement | null {
+  fixture.componentRef.setInput('view', 'list');
+  fixture.detectChanges();
+
+  const cards = fixture.nativeElement.querySelectorAll('[data-showcase-card]');
+  cards[index].dispatchEvent(new MouseEvent('mouseenter'));
+  tick(200);
+  fixture.detectChanges();
+
+  return fixture.nativeElement.querySelector('[data-preview-overlay]');
 }
 
 describe('ShowcaseComponent', () => {
@@ -265,6 +280,62 @@ describe('ShowcaseComponent', () => {
 
     // 只有第二張的預覽，第一張的計時器必須已經被取消。
     expect(fixture.nativeElement.querySelector('[data-preview-overlay]').textContent).toContain('b');
+  }));
+
+  it('shows the name, card attributes, and acquisition fields in the preview', fakeAsync(async () => {
+    const fixture = await createShowcase(
+      [
+        item({
+          id: '初音未來 1/7 比例模型',
+          attributes: { scale: '1/7' },
+          acquisition: { acquiredAt: '2026-01-15T00:00:00Z', price: { amount: 12800, currency: 'TWD' }, vendor: null },
+          rating: 9,
+          storageLocation: '書房 A 櫃第二層',
+        }),
+      ],
+      [{ id: 'c1', fields: [{ key: 'scale', label: '比例', showOnCard: true }] }],
+    );
+
+    const text = hoverCard(fixture)?.textContent ?? '';
+
+    expect(text).toContain('初音未來 1/7 比例模型');
+    expect(text).toContain('比例');
+    expect(text).toContain('1/7');
+    expect(text).toContain('2026-01-15');
+    expect(text).toContain('12800 TWD');
+    expect(text).toContain('書房 A 櫃第二層');
+    expect(text).toContain('9 / 10');
+  }));
+
+  it('never shows the description in the preview', fakeAsync(async () => {
+    const fixture = await createShowcase([
+      item({ id: 'a', description: '這段描述不該出現在浮層裡' }),
+    ]);
+
+    expect(hoverCard(fixture)?.textContent).not.toContain('這段描述不該出現在浮層裡');
+  }));
+
+  it('starts the preview from the already-cached card image', fakeAsync(async () => {
+    const fixture = await createShowcase([
+      item({
+        id: 'a',
+        images: [
+          { id: 'img1', path: 'o/a/img1-full.webp', cardPath: 'o/a/img1-card.webp', thumbPath: 'o/a/img1-thumb.webp', isPrimary: true, order: 0 },
+        ],
+      }),
+    ]);
+
+    const src = hoverCard(fixture)?.querySelector('[data-preview-image]')?.getAttribute('src');
+
+    expect(src).toBe(`${API_BASE}/media/o/a/img1-card.webp`);
+  }));
+
+  it('falls back to an initial in the preview when the item has no image', fakeAsync(async () => {
+    const fixture = await createShowcase([item({ id: '初音' })]);
+    const overlay = hoverCard(fixture);
+
+    expect(overlay?.querySelector('[data-preview-image]')).toBeNull();
+    expect(overlay?.querySelector('[data-preview-placeholder]')?.textContent?.trim()).toBe('初');
   }));
 
   it('does not show the preview outside the list tab', fakeAsync(async () => {
