@@ -562,6 +562,24 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 4. **公開頁的頁籤列包在 `@if (data.items.length)` 裡**。0 件時四個頁籤全部停用很難看，直接不渲染頁籤列。內部頁靠既有的空狀態分支達到同樣效果。
 5. **Task 4b 是規劃時沒有的**（見上）。
 
+## 執行紀錄（Task 5–7，2026-08-06）
+
+| Task | Commit | 全套測試 |
+|---|---|---|
+| 5 尺寸 | `612c046` | 198 |
+| 6 浮層元件 | `9f69eea` | 203 |
+| 7 列表接上浮層 | `8a6f2e9` | **206** |
+
+`npm run build` 乾淨（0 warnings / 0 errors）。
+
+### 偏離計畫之處與原因
+
+6. **Task 5 的測試碼在計畫裡就是錯的**。原本寫「給 10 件、驗 8 格」，但 `CollageSectionComponent` 只有在 `pool.length > slotCount` 時才啟動輪播——10 > 8 會起一個**真實的 `setInterval(4000)`**，而那條測試不是 `fakeAsync`。結果整個 karma 永遠跑不完（症狀是同一條指令從 60 秒變成無限等待）。改成**剛好 8 件**：`slotCount` 為 4 時只渲染 4 格，一樣驗得出 slotCount，但不跨過輪播門檻。
+   **教訓**：skill §4 要求「檢查測試碼的競態」，這條漏掉了。往後凡是餵資料給有計時器的元件，都要先確認有沒有跨過啟動門檻。
+7. **浮層的 `fullImageUrl` 由呼叫端提供**，不是元件自己算。元件只有 `ShowcaseDisplayItem`（其 `imageUrl` 已是 card 圖），拿不到 `ItemDto.images[].path`。由 `ShowcaseComponent` 預載完再傳進來，元件保持純呈現。
+8. **預載完成要比對 `pendingId`**。圖片載入是非同步的，回來時游標可能早就移到別張卡片，不比對就會把前一張的原圖套到現在這張上。計畫沒提到這點。
+9. **`DatePipe` 不能放在 `imports`**（NG8113 warning）。浮層在類別裡用 `new DatePipe('en-US')` 格式化日期，模板沒有用到 pipe 語法，列在 `imports` 會讓 build 出現「All imports are unused」警告。
+
 ### 環境陷阱（會再遇到）
 
 被 `TaskStop` 中止的 karma 會留下 node 行程佔住 port，**下一次 `npm test` 會無限掛住而不是報錯**。症狀是同一條指令從 60 秒變成跑不完。處理：
@@ -570,6 +588,15 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 Get-Process node | Select-Object Id,StartTime   # 找出開始時間對得上的那幾個
 Stop-Process -Id <ids> -Force
 ```
+
+**這個陷阱在 Task 5–7 又出現了三次**，而且不只 `TaskStop` 會造成——**單檔測試（`--include=`）正常結束後也可能留下 node 行程**。穩妥的作法是每條 `npm test` 後面接一次清理：
+
+```bash
+npm test -- --watch=false --browsers=ChromeHeadless 2>&1 | tail -3
+powershell -NoProfile -Command "Get-Process node -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue"
+```
+
+（本機沒有其他長駐 node 服務時才能無差別清掉；有的話要挑 PID。）
 
 另外 Bash tool 的 cwd 會跨呼叫保留——commit 時 `cd` 回 repo 根目錄之後，下一個 `npm test` 會在根目錄執行而 ENOENT。**每個 npm 指令都自己 `cd /f/VibeCode/MyCollection/web`。**
 
