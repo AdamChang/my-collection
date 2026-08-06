@@ -1,5 +1,5 @@
 import { Subject, of } from 'rxjs';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { CatalogService } from '../../core/api/catalog.service';
 import { CategoryService } from '../../core/api/category.service';
@@ -227,6 +227,56 @@ describe('ShowcaseComponent', () => {
 
     expect(fixture.nativeElement.querySelectorAll('[data-item-card]').length).toBe(2);
   });
+
+  it('opens the preview only after the hover delay elapses', fakeAsync(async () => {
+    const fixture = await createShowcase([item({ id: 'a', effectiveDisplayMode: 'List' })]);
+    fixture.componentRef.setInput('view', 'list');
+    fixture.detectChanges();
+
+    const card = fixture.nativeElement.querySelector('[data-showcase-card]');
+    card.dispatchEvent(new MouseEvent('mouseenter'));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-preview-overlay]')).toBeNull();
+
+    tick(200);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-preview-overlay]')).toBeTruthy();
+
+    card.dispatchEvent(new MouseEvent('mouseleave'));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-preview-overlay]')).toBeNull();
+  }));
+
+  it('cancels a pending preview when the pointer moves on before the delay', fakeAsync(async () => {
+    const fixture = await createShowcase([
+      item({ id: 'a', effectiveDisplayMode: 'List' }),
+      item({ id: 'b', effectiveDisplayMode: 'List' }),
+    ]);
+    fixture.componentRef.setInput('view', 'list');
+    fixture.detectChanges();
+
+    const cards = fixture.nativeElement.querySelectorAll('[data-showcase-card]');
+    cards[0].dispatchEvent(new MouseEvent('mouseenter'));
+    tick(120);
+    cards[0].dispatchEvent(new MouseEvent('mouseleave'));
+    cards[1].dispatchEvent(new MouseEvent('mouseenter'));
+    tick(200);
+    fixture.detectChanges();
+
+    // 只有第二張的預覽，第一張的計時器必須已經被取消。
+    expect(fixture.nativeElement.querySelector('[data-preview-overlay]').textContent).toContain('b');
+  }));
+
+  it('does not show the preview outside the list tab', fakeAsync(async () => {
+    const fixture = await createShowcase([item({ id: 'a', effectiveDisplayMode: 'Hero' })]);
+    fixture.componentRef.setInput('view', 'hero');
+    fixture.detectChanges();
+
+    tick(200);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-preview-overlay]')).toBeNull();
+  }));
 
   it('hides the tablist until every item has loaded', async () => {
     // 永不 emit 的 Subject：停在載入中，頁籤列的數字還不是穩定的事實。

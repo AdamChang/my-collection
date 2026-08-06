@@ -1,9 +1,12 @@
-import { Component, computed, inject, input, signal } from '@angular/core';
+import { Component, DestroyRef, NgZone, computed, inject, input, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { API_BASE } from '../../core/api-base';
 import { CatalogService } from '../../core/api/catalog.service';
 import { CategoryService } from '../../core/api/category.service';
 import { CategoryDto, CategoryFieldDto, ItemDto } from '../../core/models';
 import { ItemCardComponent } from '../../shared/item-card/item-card.component';
+import { ItemPreviewOverlayComponent } from '../../shared/item-preview-overlay/item-preview-overlay.component';
+import { ShowcaseDisplayItem } from '../../shared/showcase-sections/showcase-display-item';
 import { CollageSectionComponent } from '../../shared/showcase-sections/collage-section.component';
 import { HeroSectionComponent } from '../../shared/showcase-sections/hero-section.component';
 import { StatsSectionComponent } from '../../shared/showcase-sections/stats-section.component';
@@ -24,6 +27,9 @@ const SHOWCASE_PAGE_SIZE = 200;
  */
 const MAX_SHOWCASE_ITEMS = 2000;
 
+/** 滑鼠停留多久才浮出預覽。太短會讓滑過整排卡片時瘋狂閃爍，太長則感覺遲鈍。 */
+const HOVER_PREVIEW_DELAY_MS = 200;
+
 @Component({
   selector: 'app-showcase',
   imports: [
@@ -33,6 +39,7 @@ const MAX_SHOWCASE_ITEMS = 2000;
     StatsSectionComponent,
     CollageSectionComponent,
     ShowcaseTabsComponent,
+    ItemPreviewOverlayComponent,
   ],
   template: `
     <header class="showcase__header" data-showcase-terminal>
@@ -81,9 +88,18 @@ const MAX_SHOWCASE_ITEMS = 2000;
             aria-labelledby="showcase-tab-list"
           >
             @for (item of items(); track item.id) {
-              <app-item-card [item]="item" [cardFields]="cardFieldsFor(item)" />
+              <div
+                class="showcase__card"
+                data-showcase-card
+                (mouseenter)="onCardEnter(item)"
+                (mouseleave)="onCardLeave()"
+              >
+                <app-item-card [item]="item" [cardFields]="cardFieldsFor(item)" />
+              </div>
             }
           </div>
+
+          <app-item-preview-overlay [item]="hovered()" [fullImageUrl]="hoveredFullUrl()" />
         }
       }
     }
@@ -148,11 +164,80 @@ export class ShowcaseComponent {
     ];
   });
 
+  readonly hovered = signal<ShowcaseDisplayItem | null>(null);
+  readonly hoveredFullUrl = signal<string | null>(null);
+
+  private readonly zone = inject(NgZone);
+  private hoverTimer: ReturnType<typeof setTimeout> | undefined;
+  private pendingId: string | null = null;
+
   constructor() {
     this.categoryApi.list().subscribe((categories) => this.categories.set(categories));
 
     this.loading.set(true);
     this.fetchPage(1);
+
+    inject(DestroyRef).onDestroy(() => this.clearHoverTimer());
+  }
+
+  /**
+   * 滑鼠停在列表卡片上 200ms 才浮出預覽。計時器比照 Hero/Stats 用 runOutsideAngular 建立、
+   * DestroyRef 清除，避免卡住 ApplicationRef.whenStable()。
+   *
+   * 游標在延遲結束前移到別張卡片時，前一張的計時器必須被取消，否則會閃出錯誤的品項。
+   */
+  onCardEnter(item: ItemDto): void {
+    this.clearHoverTimer();
+    this.pendingId = item.id;
+    this.hoveredFullUrl.set(null);
+
+    this.preloadFullImage(item);
+
+    const display = this.displayItems().find((d) => d.id === item.id) ?? null;
+
+    this.hoverTimer = this.zone.runOutsideAngular(() =>
+      setTimeout(
+        () => this.zone.run(() => this.hovered.set(display)),
+        HOVER_PREVIEW_DELAY_MS,
+      ),
+    );
+  }
+
+  onCardLeave(): void {
+    this.clearHoverTimer();
+    this.pendingId = null;
+    this.hovered.set(null);
+    this.hoveredFullUrl.set(null);
+  }
+
+  /**
+   * 延遲期間就開始載原圖（full，1600px），載完才換掉列表已快取的 card 圖（480px）。
+   * 載入是非同步的，回來時游標可能早就移到別張卡片了，所以要比對 pendingId。
+   */
+  private preloadFullImage(item: ItemDto): void {
+    const primary = item.images.find((i) => i.isPrimary) ?? item.images[0];
+
+    if (!primary) {
+      return; // 只有 CDN 網址的同步品項沒有 full 版本，直接用 card 圖那層。
+    }
+
+    const url = `${API_BASE}/media/${primary.path}`;
+    const image = new Image();
+
+    image.onload = () => {
+      if (this.pendingId === item.id) {
+        this.zone.run(() => this.hoveredFullUrl.set(url));
+      }
+    };
+
+    image.src = url;
+  }
+
+  private clearHoverTimer(): void {
+    if (this.hoverTimer) {
+      clearTimeout(this.hoverTimer);
+      this.hoverTimer = undefined;
+    }
   }
 
   /** 頁籤狀態放在網址上，可分享、可書籤、重新整理保留。replaceUrl 避免切頁籤在瀏覽記錄裡堆成一長串。 */
