@@ -92,6 +92,16 @@ describe('PublicShareComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-collage-section]')).toBeTruthy();
   });
 
+  it('falls back to the collage tab when the requested view has no items', async () => {
+    const fixture = await createPublicShare([publicItem({ id: 'l' })]);
+    fixture.componentRef.setInput('view', 'stats');
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.activeView()).toBe('collage');
+    expect(fixture.nativeElement.querySelector('[data-stats-section]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-collage-section]')).toBeTruthy();
+  });
+
   it('renders every shared item in the list tab', async () => {
     const fixture = await createPublicShare([
       publicItem({ id: 'h', effectiveDisplayMode: 'Hero' }),

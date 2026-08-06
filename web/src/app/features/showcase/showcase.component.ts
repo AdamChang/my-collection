@@ -9,7 +9,11 @@ import { HeroSectionComponent } from '../../shared/showcase-sections/hero-sectio
 import { StatsSectionComponent } from '../../shared/showcase-sections/stats-section.component';
 import { toShowcaseDisplayItem } from '../../shared/showcase-sections/showcase-display-item';
 import { ShowcaseTab, ShowcaseTabsComponent } from '../../shared/showcase-tabs/showcase-tabs.component';
-import { ShowcaseView, parseShowcaseView } from '../../shared/showcase-tabs/showcase-view';
+import {
+  DEFAULT_SHOWCASE_VIEW,
+  ShowcaseView,
+  parseShowcaseView,
+} from '../../shared/showcase-tabs/showcase-view';
 
 /** 後端驗證器的單頁上限。抓不完就自動續抓下一頁。 */
 const SHOWCASE_PAGE_SIZE = 200;
@@ -105,7 +109,16 @@ export class ShowcaseComponent {
   /** `?view=` query param，靠 app.config.ts 的 withComponentInputBinding() 直接綁進來。 */
   readonly view = input<string>();
 
-  readonly activeView = computed<ShowcaseView>(() => parseShowcaseView(this.view()));
+  /**
+   * 除了正規化無效值，還要擋掉「合法但空」的頁籤：書籤存了 `?view=hero`、之後所有焦點
+   * 品項都被取消，就會停在一個停用又空白的頁籤上。這種情況一律退回拼貼牆。
+   */
+  readonly activeView = computed<ShowcaseView>(() => {
+    const requested = parseShowcaseView(this.view());
+    const tab = this.tabs().find((t) => t.id === requested);
+
+    return tab && tab.count > 0 ? requested : DEFAULT_SHOWCASE_VIEW;
+  });
 
   readonly items = signal<ItemDto[]>([]);
   readonly total = signal(0);

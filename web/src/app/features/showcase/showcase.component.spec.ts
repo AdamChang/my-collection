@@ -179,6 +179,17 @@ describe('ShowcaseComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-collage-section]')).toBeTruthy();
   });
 
+  it('falls back to the collage tab when the requested view has no items', async () => {
+    // 書籤存了 ?view=hero，之後所有焦點品項都被取消——不能停在一個停用又空白的頁籤上。
+    const fixture = await createShowcase([item({ id: 'l', effectiveDisplayMode: 'List' })]);
+    fixture.componentRef.setInput('view', 'hero');
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.activeView()).toBe('collage');
+    expect(fixture.nativeElement.querySelector('[data-collage-section]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-hero-section]')).toBeNull();
+  });
+
   it('counts hero and stats tabs by display mode and the others by total', async () => {
     const fixture = await createShowcase([
       item({ id: 'h1', effectiveDisplayMode: 'Hero' }),
