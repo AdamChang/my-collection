@@ -1,5 +1,5 @@
-import { Component, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { Component, computed, inject, input, signal } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
 import { API_BASE } from '../../core/api-base';
 import { ShareService } from '../../core/api/share.service';
 import { PublicShareDto } from '../../core/models';
@@ -7,10 +7,17 @@ import { CollageSectionComponent } from '../../shared/showcase-sections/collage-
 import { HeroSectionComponent } from '../../shared/showcase-sections/hero-section.component';
 import { StatsSectionComponent } from '../../shared/showcase-sections/stats-section.component';
 import { toPublicShowcaseDisplayItem } from '../../shared/showcase-sections/showcase-display-item';
+import { ShowcaseTab, ShowcaseTabsComponent } from '../../shared/showcase-tabs/showcase-tabs.component';
+import { ShowcaseView, parseShowcaseView } from '../../shared/showcase-tabs/showcase-view';
 
 @Component({
   selector: 'app-public-share',
-  imports: [HeroSectionComponent, StatsSectionComponent, CollageSectionComponent],
+  imports: [
+    HeroSectionComponent,
+    StatsSectionComponent,
+    CollageSectionComponent,
+    ShowcaseTabsComponent,
+  ],
   template: `
     @if (share(); as data) {
       <main class="public" data-public-terminal>
@@ -22,28 +29,61 @@ import { toPublicShowcaseDisplayItem } from '../../shared/showcase-sections/show
           </div>
         </header>
 
-        <app-hero-section [items]="heroItems()" />
-        <app-stats-section [items]="statsItems()" />
-        <app-collage-section [items]="displayItems()" [slotCount]="data.collageSlotCount" />
+        @if (data.items.length) {
+          <app-showcase-tabs
+            [tabs]="tabs()"
+            [active]="activeView()"
+            (activeChange)="selectView($event)"
+          />
 
-        <div class="public__wall">
-          @for (item of data.items; track item.id) {
-            <article class="public__card">
-              @if (imageUrl(item.images); as url) {
-                <img [src]="url" [alt]="item.name" loading="lazy" />
-              } @else {
-                <div class="public__placeholder" aria-hidden="true">{{ item.name.charAt(0) }}</div>
-              }
-              <div class="public__card-body">
-                <h2>{{ item.name }}</h2>
-                <small>{{ item.categoryName }}</small>
-                @if (item.price; as price) {
-                  <strong>{{ price.amount }} {{ price.currency }}</strong>
+          @switch (activeView()) {
+            @case ('collage') {
+              <div role="tabpanel" id="showcase-panel-collage" aria-labelledby="showcase-tab-collage">
+                <app-collage-section
+                  [items]="displayItems()"
+                  [slotCount]="data.collageSlotCount"
+                />
+              </div>
+            }
+            @case ('hero') {
+              <div role="tabpanel" id="showcase-panel-hero" aria-labelledby="showcase-tab-hero">
+                <app-hero-section [items]="heroItems()" />
+              </div>
+            }
+            @case ('stats') {
+              <div role="tabpanel" id="showcase-panel-stats" aria-labelledby="showcase-tab-stats">
+                <app-stats-section [items]="statsItems()" />
+              </div>
+            }
+            @case ('list') {
+              <div
+                class="public__wall"
+                role="tabpanel"
+                id="showcase-panel-list"
+                aria-labelledby="showcase-tab-list"
+              >
+                @for (item of data.items; track item.id) {
+                  <article class="public__card" data-public-card>
+                    @if (imageUrl(item.images); as url) {
+                      <img [src]="url" [alt]="item.name" loading="lazy" />
+                    } @else {
+                      <div class="public__placeholder" aria-hidden="true">
+                        {{ item.name.charAt(0) }}
+                      </div>
+                    }
+                    <div class="public__card-body">
+                      <h2>{{ item.name }}</h2>
+                      <small>{{ item.categoryName }}</small>
+                      @if (item.price; as price) {
+                        <strong>{{ price.amount }} {{ price.currency }}</strong>
+                      }
+                    </div>
+                  </article>
                 }
               </div>
-            </article>
+            }
           }
-        </div>
+        }
       </main>
     } @else if (notFound()) {
       <main class="public public--error mc-panel">
@@ -78,6 +118,12 @@ import { toPublicShowcaseDisplayItem } from '../../shared/showcase-sections/show
 export class PublicShareComponent {
   private readonly api = inject(ShareService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+
+  /** `?view=` query param。與內部頁共用同一組值與同一個頁籤元件（ADR-0009）。 */
+  readonly view = input<string>();
+
+  readonly activeView = computed<ShowcaseView>(() => parseShowcaseView(this.view()));
 
   readonly share = signal<PublicShareDto | null>(null);
   readonly notFound = signal(false);
@@ -86,6 +132,26 @@ export class PublicShareComponent {
   readonly displayItems = computed(() => (this.share()?.items ?? []).map(toPublicShowcaseDisplayItem));
   readonly heroItems = computed(() => this.displayItems().filter((i) => i.effectiveDisplayMode === 'Hero'));
   readonly statsItems = computed(() => this.displayItems().filter((i) => i.effectiveDisplayMode === 'Stats'));
+
+  readonly tabs = computed<ShowcaseTab[]>(() => {
+    const all = this.displayItems().length;
+
+    return [
+      { id: 'collage', label: '拼貼牆', count: all },
+      { id: 'hero', label: '焦點展品', count: this.heroItems().length },
+      { id: 'stats', label: '遊戲成就', count: this.statsItems().length },
+      { id: 'list', label: '列表', count: all },
+    ];
+  });
+
+  selectView(view: ShowcaseView): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { view },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
 
   constructor() {
     const slug = this.route.snapshot.paramMap.get('slug')!;
