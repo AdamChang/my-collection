@@ -1,11 +1,16 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { API_BASE } from '../../core/api-base';
 import { ShareService } from '../../core/api/share.service';
 import { PublicShareDto } from '../../core/models';
+import { CollageSectionComponent } from '../../shared/showcase-sections/collage-section.component';
+import { HeroSectionComponent } from '../../shared/showcase-sections/hero-section.component';
+import { StatsSectionComponent } from '../../shared/showcase-sections/stats-section.component';
+import { toPublicShowcaseDisplayItem } from '../../shared/showcase-sections/showcase-display-item';
 
 @Component({
   selector: 'app-public-share',
+  imports: [HeroSectionComponent, StatsSectionComponent, CollageSectionComponent],
   template: `
     @if (share(); as data) {
       <main class="public" data-public-terminal>
@@ -16,6 +21,10 @@ import { PublicShareDto } from '../../core/models';
             <p class="mc-muted">{{ data.items.length }} 件</p>
           </div>
         </header>
+
+        <app-hero-section [items]="heroItems()" />
+        <app-stats-section [items]="statsItems()" />
+        <app-collage-section [items]="displayItems()" [slotCount]="data.collageSlotCount" />
 
         <div class="public__wall">
           @for (item of data.items; track item.id) {
@@ -72,6 +81,11 @@ export class PublicShareComponent {
 
   readonly share = signal<PublicShareDto | null>(null);
   readonly notFound = signal(false);
+
+  /** Collage 直接吃全部品項（不篩選展示模式，ADR-0007）；Hero/Stats 各自篩自己的模式。 */
+  readonly displayItems = computed(() => (this.share()?.items ?? []).map(toPublicShowcaseDisplayItem));
+  readonly heroItems = computed(() => this.displayItems().filter((i) => i.effectiveDisplayMode === 'Hero'));
+  readonly statsItems = computed(() => this.displayItems().filter((i) => i.effectiveDisplayMode === 'Stats'));
 
   constructor() {
     const slug = this.route.snapshot.paramMap.get('slug')!;

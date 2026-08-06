@@ -100,6 +100,74 @@ describe('SettingsComponent', () => {
     expect(share.disabled).toBeFalse();
   });
 
+  it('sends the rating and collage slot count preferences when creating a share', async () => {
+    const calls: unknown[][] = [];
+
+    await TestBed.configureTestingModule({
+      imports: [SettingsComponent],
+      providers: [
+        { provide: IngestionService, useValue: { accounts: () => of([]), jobs: () => of([]) } },
+        {
+          provide: ShareService,
+          useValue: {
+            list: () => of([]),
+            create: (...args: unknown[]) => {
+              calls.push(args);
+              return of({});
+            },
+          },
+        },
+        { provide: TransferService, useValue: {} },
+        { provide: NotificationService, useValue: { success: () => undefined } },
+        { provide: ProviderService, useValue: { supports: () => false } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(SettingsComponent);
+    fixture.detectChanges();
+
+    fixture.componentInstance.includeRating = true;
+    fixture.componentInstance.collageSlotCount = 7;
+
+    fixture.nativeElement.querySelector('[data-create-share]').click();
+
+    expect(calls).toEqual([
+      [{ scope: 'Showcase', includeCategoryIds: [], includePrice: false, includeRating: true, collageSlotCount: 7, expiresAt: null }],
+    ]);
+  });
+
+  it('shows the rating and collage slot count of existing shares', async () => {
+    await TestBed.configureTestingModule({
+      imports: [SettingsComponent],
+      providers: [
+        { provide: IngestionService, useValue: { accounts: () => of([]), jobs: () => of([]) } },
+        {
+          provide: ShareService,
+          useValue: {
+            list: () =>
+              of([
+                {
+                  id: 's1', slug: 'abc', scope: 'Showcase', includeCategoryIds: [],
+                  includePrice: false, includeRating: true, collageSlotCount: 6,
+                  expiresAt: null, createdAt: '2026-08-01T00:00:00Z',
+                },
+              ]),
+          },
+        },
+        { provide: TransferService, useValue: {} },
+        { provide: NotificationService, useValue: { success: () => undefined } },
+        { provide: ProviderService, useValue: { supports: () => false } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(SettingsComponent);
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.querySelector('ul').textContent;
+    expect(text).toContain('含評分');
+    expect(text).toContain('照片牆 6 格');
+  });
+
   it('shows the skipped count in the sync log', async () => {
     const job: SyncJobDto = {
       id: 'j1', provider: 'igdb', status: 'Succeeded',

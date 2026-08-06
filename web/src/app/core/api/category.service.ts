@@ -2,12 +2,13 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { API_BASE } from '../api-base';
-import { CategoryDto, CategoryFieldDto } from '../models';
+import { CategoryDto, CategoryFieldDto, DisplayMode } from '../models';
 
 export interface CategoryWritePayload {
   name: string;
   icon: string;
   kind: 'Physical' | 'Digital';
+  defaultDisplayMode: DisplayMode;
   fields: CategoryFieldDto[];
 }
 

@@ -95,7 +95,15 @@ import { ProviderEnrichComponent } from './provider-enrich.component';
 
       <label class="settings__inline">
         <input type="checkbox" [(ngModel)]="includePrice" name="includePrice" />
-        包含購入價格（預設不含）
+        包含購入價格（預設不含，也控制購買日期是否顯示）
+      </label>
+      <label class="settings__inline">
+        <input type="checkbox" [(ngModel)]="includeRating" name="includeRating" />
+        包含收藏評分（預設不含）
+      </label>
+      <label class="settings__inline">
+        照片牆槽位數量
+        <input type="number" min="1" max="10" [(ngModel)]="collageSlotCount" name="collageSlotCount" />
       </label>
       <button type="button" (click)="createShare()" [disabled]="busy()" data-create-share>
         {{ creatingShare() ? '建立中…' : '建立分享連結' }}
@@ -107,6 +115,8 @@ import { ProviderEnrichComponent } from './provider-enrich.component';
             <a [href]="'/p/' + share.slug" target="_blank" rel="noopener">/p/{{ share.slug }}</a>
             <span>{{ share.scope }}</span>
             @if (share.includePrice) { <span>含價格</span> }
+            @if (share.includeRating) { <span>含評分</span> }
+            <span>照片牆 {{ share.collageSlotCount }} 格</span>
             <button type="button" (click)="removeShare(share.id)" [disabled]="busy()">
               {{ removingShareId() === share.id ? '刪除中…' : '刪除' }}
             </button>
@@ -152,6 +162,8 @@ export class SettingsComponent {
   readonly busy = computed(() => this.creatingShare() || this.removingShareId() !== null);
 
   includePrice = false;
+  includeRating = false;
+  collageSlotCount = 4;
 
   constructor() {
     this.reloadJobs();
@@ -165,7 +177,14 @@ export class SettingsComponent {
 
     this.creatingShare.set(true);
     this.shareApi
-      .create({ scope: 'Showcase', includeCategoryIds: [], includePrice: this.includePrice, expiresAt: null })
+      .create({
+        scope: 'Showcase',
+        includeCategoryIds: [],
+        includePrice: this.includePrice,
+        includeRating: this.includeRating,
+        collageSlotCount: this.collageSlotCount,
+        expiresAt: null,
+      })
       .pipe(finalize(() => this.creatingShare.set(false)))
       .subscribe({
         next: () => {

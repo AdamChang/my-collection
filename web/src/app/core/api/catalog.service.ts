@@ -2,7 +2,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { API_BASE } from '../api-base';
-import { ItemDto, ItemImageDto, PagedResult } from '../models';
+import { DisplayMode, ItemDto, ItemImageDto, PagedResult } from '../models';
 
 export interface ItemSearchOptions {
   search?: string;
@@ -28,6 +28,9 @@ export interface ItemWritePayload {
     vendor: string | null;
   } | null;
   locationId?: string | null;
+  displayMode?: DisplayMode | null;
+  rating?: number | null;
+  storageLocation?: string | null;
 }
 
 @Injectable({ providedIn: 'root' })
