@@ -412,12 +412,22 @@ export class ItemDetailComponent {
    * 品類沒宣告的 key 會被後端 AttributeValidator 擋掉，整筆儲存回 400。
    *
    * 不能倚賴 DynamicFormComponent 代為過濾：表單重建不會觸發 valueChanges，
-   * 使用者若套用後直接儲存、中途沒編輯任何欄位，attributes 送出的就是這裡設進去的原值。
+   * 使用者若中途沒編輯任何 schema 欄位，attributes 送出的就是外部來源帶入、
+   * 或 hydrate() 從後端載回的原值。後者在品類把欄位 key 改掉之後就是孤兒 key，
+   * 錯誤訊息還會指向一個表單上根本看不到的欄位。所以 toPayload() 也要再濾一次。
+   *
+   * 品類還沒載回來時不過濾：此時 schema 未知，濾掉等於把使用者的屬性清空。
    *
    * 這條規則與後端 EnrichCommandHandler.ToEnrichment 是同一份政策，兩處要一起改。
    */
   private declaredOnly(source: Record<string, unknown>): Record<string, unknown> {
-    const declared = new Set(this.selectedCategory()?.fields.map((f) => f.key) ?? []);
+    const category = this.selectedCategory();
+
+    if (!category) {
+      return source;
+    }
+
+    const declared = new Set(category.fields.map((f) => f.key));
 
     return Object.fromEntries(Object.entries(source).filter(([key]) => declared.has(key)));
   }
@@ -516,7 +526,7 @@ export class ItemDetailComponent {
       description: this.description.trim() || null,
       tags: this.tags(),
       isShowcased: this.isShowcased,
-      attributes: this.attributes(),
+      attributes: this.declaredOnly(this.attributes()),
       // 讀是巢狀的 AcquisitionDto（price.amount / price.currency），寫是扁平的 AcquisitionInput。
       // 這裡的值在 hydrate() 已經從 item.acquisition?.price?.amount 明確取出攤平，不可用展開運算子。
       acquisition: hasAcquisition

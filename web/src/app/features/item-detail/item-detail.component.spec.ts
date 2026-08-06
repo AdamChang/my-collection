@@ -807,4 +807,81 @@ describe('ItemDetailComponent', () => {
     expect(fixture.componentInstance.name).toBe('Team Fortress 2');
     expect(fixture.componentInstance.attributes()['igdbId']).toBe(1942);
   });
+
+  /**
+   * 品類欄位改 key 之後，既有品項存的還是舊 key。載回來時若原封不動放進 attributes，
+   * 使用者只要改一個非 schema 欄位（品名、購入資訊、評分）就會把孤兒 key 一起送出去，
+   * 後端回 400 且訊息指向一個表單上根本看不到的欄位。
+   *
+   * 動態表單擋不住這個：表單重建不觸發 valueChanges，沒碰過表單就送出這裡設進去的原值。
+   * 與 applyMetadata 是同一個陷阱、同一份 declaredOnly 政策。
+   */
+  it('drops attributes the category no longer declares when hydrating an existing item', async () => {
+    const renamedCategory: CategoryDto = {
+      ...schemaCategory,
+      id: 'renamed',
+      isSystem: false,
+      fields: [
+        {
+          key: 'cost',
+          label: '入手金額',
+          type: 'Number',
+          options: null,
+          required: false,
+          searchable: false,
+          showOnCard: false,
+        },
+      ],
+    };
+
+    // 改名前建立的品項，attributes 仍是舊 key
+    const staleItem = {
+      id: 'aaa',
+      categoryId: renamedCategory.id,
+      name: 'aaa',
+      description: null,
+      tags: [],
+      isShowcased: false,
+      attributes: { purchasePrice: 1200 },
+      images: [],
+      acquisition: null,
+      displayMode: null,
+      rating: null,
+      storageLocation: null,
+    } as unknown as ItemDto;
+
+    const captured: { attributes?: Record<string, unknown> } = {};
+
+    await TestBed.configureTestingModule({
+      imports: [ItemDetailComponent],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => staleItem.id } } } },
+        { provide: CategoryService, useValue: { list: () => of([renamedCategory]) } },
+        {
+          provide: CatalogService,
+          useValue: {
+            get: () => of(staleItem),
+            update: (_id: string, payload: { attributes: Record<string, unknown> }) => {
+              captured.attributes = payload.attributes;
+              return of(staleItem);
+            },
+          },
+        },
+        { provide: IngestionService, useValue: {} },
+        { provide: NotificationService, useValue: { success: () => undefined } },
+        { provide: ProviderService, useValue: { supports: () => false } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(ItemDetailComponent);
+    fixture.detectChanges();
+
+    // 只改品名，完全沒碰動態表單
+    fixture.componentInstance.name = 'aaa 改名';
+    fixture.detectChanges();
+    fixture.nativeElement.querySelector('button[type="submit"]').click();
+
+    expect(captured.attributes).toEqual({});
+  });
 });
