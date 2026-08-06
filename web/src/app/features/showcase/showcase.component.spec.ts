@@ -1,5 +1,5 @@
-import { of } from 'rxjs';
-import { TestBed } from '@angular/core/testing';
+import { Subject, of } from 'rxjs';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { CatalogService } from '../../core/api/catalog.service';
 import { CategoryService } from '../../core/api/category.service';
@@ -29,6 +29,30 @@ function item(overrides: Record<string, unknown> = {}) {
     updatedAt: '2026-08-01T00:00:00Z',
     ...overrides,
   };
+}
+
+/** 一次載滿的精選頁，資料同步到齊——頁籤相關的測試都從這裡開始。 */
+async function createShowcase(
+  items: ReturnType<typeof item>[],
+): Promise<ComponentFixture<ShowcaseComponent>> {
+  await TestBed.configureTestingModule({
+    imports: [ShowcaseComponent],
+    providers: [
+      provideRouter([]),
+      {
+        provide: CatalogService,
+        useValue: {
+          showcase: () => of({ items, total: items.length, page: 1, pageSize: 200 }),
+        },
+      },
+      { provide: CategoryService, useValue: { list: () => of([]) } },
+    ],
+  }).compileComponents();
+
+  const fixture = TestBed.createComponent(ShowcaseComponent);
+  fixture.detectChanges();
+
+  return fixture;
 }
 
 describe('ShowcaseComponent', () => {
@@ -123,26 +147,72 @@ describe('ShowcaseComponent', () => {
     expect(calls.length).toBe(2);
   });
 
-  it('shows the hero and stats sections only for items in the matching display mode', async () => {
+  it('defaults to the collage tab and renders only that section', async () => {
+    const fixture = await createShowcase([
+      item({ id: 'h', effectiveDisplayMode: 'Hero' }),
+      item({ id: 'l', effectiveDisplayMode: 'List' }),
+    ]);
+
+    expect(fixture.nativeElement.querySelector('[data-collage-section]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-hero-section]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-stats-section]')).toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('[data-item-card]').length).toBe(0);
+  });
+
+  it('renders the hero section when the view input selects it', async () => {
+    const fixture = await createShowcase([
+      item({ id: 'h', effectiveDisplayMode: 'Hero' }),
+      item({ id: 'l', effectiveDisplayMode: 'List' }),
+    ]);
+    fixture.componentRef.setInput('view', 'hero');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-hero-section]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-collage-section]')).toBeNull();
+  });
+
+  it('falls back to the collage tab for an unknown view value', async () => {
+    const fixture = await createShowcase([item({ id: 'a', effectiveDisplayMode: 'List' })]);
+    fixture.componentRef.setInput('view', 'not-a-view');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-collage-section]')).toBeTruthy();
+  });
+
+  it('counts hero and stats tabs by display mode and the others by total', async () => {
+    const fixture = await createShowcase([
+      item({ id: 'h1', effectiveDisplayMode: 'Hero' }),
+      item({ id: 's1', effectiveDisplayMode: 'Stats' }),
+      item({ id: 's2', effectiveDisplayMode: 'Stats' }),
+      item({ id: 'l1', effectiveDisplayMode: 'List' }),
+    ]);
+
+    expect(fixture.componentInstance.tabs().map((t) => [t.id, t.count])).toEqual([
+      ['collage', 4],
+      ['hero', 1],
+      ['stats', 2],
+      ['list', 4],
+    ]);
+  });
+
+  it('renders every showcased item in the list tab', async () => {
+    const fixture = await createShowcase([
+      item({ id: 'h', effectiveDisplayMode: 'Hero' }),
+      item({ id: 'l', effectiveDisplayMode: 'List' }),
+    ]);
+    fixture.componentRef.setInput('view', 'list');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelectorAll('[data-item-card]').length).toBe(2);
+  });
+
+  it('hides the tablist until every item has loaded', async () => {
+    // 永不 emit 的 Subject：停在載入中，頁籤列的數字還不是穩定的事實。
     await TestBed.configureTestingModule({
       imports: [ShowcaseComponent],
       providers: [
         provideRouter([]),
-        {
-          provide: CatalogService,
-          useValue: {
-            showcase: () =>
-              of({
-                items: [
-                  item({ id: 'hero-item', effectiveDisplayMode: 'Hero' }),
-                  item({ id: 'list-item', effectiveDisplayMode: 'List' }),
-                ],
-                total: 2,
-                page: 1,
-                pageSize: 200,
-              }),
-          },
-        },
+        { provide: CatalogService, useValue: { showcase: () => new Subject() } },
         { provide: CategoryService, useValue: { list: () => of([]) } },
       ],
     }).compileComponents();
@@ -150,8 +220,7 @@ describe('ShowcaseComponent', () => {
     const fixture = TestBed.createComponent(ShowcaseComponent);
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.querySelector('[data-hero-section]')).toBeTruthy();
-    expect(fixture.nativeElement.querySelector('[data-stats-section]')).toBeNull();
-    expect(fixture.nativeElement.querySelectorAll('[data-item-card]').length).toBe(2);
+    expect(fixture.nativeElement.querySelector('[data-showcase-tabs]')).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('載入中');
   });
 });

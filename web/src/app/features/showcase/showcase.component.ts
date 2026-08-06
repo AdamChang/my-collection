@@ -1,5 +1,5 @@
-import { Component, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Component, computed, inject, input, signal } from '@angular/core';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CatalogService } from '../../core/api/catalog.service';
 import { CategoryService } from '../../core/api/category.service';
 import { CategoryDto, CategoryFieldDto, ItemDto } from '../../core/models';
@@ -8,6 +8,8 @@ import { CollageSectionComponent } from '../../shared/showcase-sections/collage-
 import { HeroSectionComponent } from '../../shared/showcase-sections/hero-section.component';
 import { StatsSectionComponent } from '../../shared/showcase-sections/stats-section.component';
 import { toShowcaseDisplayItem } from '../../shared/showcase-sections/showcase-display-item';
+import { ShowcaseTab, ShowcaseTabsComponent } from '../../shared/showcase-tabs/showcase-tabs.component';
+import { ShowcaseView, parseShowcaseView } from '../../shared/showcase-tabs/showcase-view';
 
 /** 後端驗證器的單頁上限。抓不完就自動續抓下一頁。 */
 const SHOWCASE_PAGE_SIZE = 200;
@@ -20,7 +22,14 @@ const MAX_SHOWCASE_ITEMS = 2000;
 
 @Component({
   selector: 'app-showcase',
-  imports: [ItemCardComponent, RouterLink, HeroSectionComponent, StatsSectionComponent, CollageSectionComponent],
+  imports: [
+    ItemCardComponent,
+    RouterLink,
+    HeroSectionComponent,
+    StatsSectionComponent,
+    CollageSectionComponent,
+    ShowcaseTabsComponent,
+  ],
   template: `
     <header class="showcase__header" data-showcase-terminal>
       <div>
@@ -38,15 +47,41 @@ const MAX_SHOWCASE_ITEMS = 2000;
         還沒有精選品項。到<a routerLink="/catalog">庫存</a>把喜歡的東西設為精選吧。
       </p>
     } @else {
-      <app-hero-section [items]="heroItems()" />
-      <app-stats-section [items]="statsItems()" />
-      <app-collage-section [items]="displayItems()" [slotCount]="4" />
+      <app-showcase-tabs
+        [tabs]="tabs()"
+        [active]="activeView()"
+        (activeChange)="selectView($event)"
+      />
 
-      <div class="showcase__wall">
-        @for (item of items(); track item.id) {
-          <app-item-card [item]="item" [cardFields]="cardFieldsFor(item)" />
+      @switch (activeView()) {
+        @case ('collage') {
+          <div role="tabpanel" id="showcase-panel-collage" aria-labelledby="showcase-tab-collage">
+            <app-collage-section [items]="displayItems()" [slotCount]="4" />
+          </div>
         }
-      </div>
+        @case ('hero') {
+          <div role="tabpanel" id="showcase-panel-hero" aria-labelledby="showcase-tab-hero">
+            <app-hero-section [items]="heroItems()" />
+          </div>
+        }
+        @case ('stats') {
+          <div role="tabpanel" id="showcase-panel-stats" aria-labelledby="showcase-tab-stats">
+            <app-stats-section [items]="statsItems()" />
+          </div>
+        }
+        @case ('list') {
+          <div
+            class="showcase__wall"
+            role="tabpanel"
+            id="showcase-panel-list"
+            aria-labelledby="showcase-tab-list"
+          >
+            @for (item of items(); track item.id) {
+              <app-item-card [item]="item" [cardFields]="cardFieldsFor(item)" />
+            }
+          </div>
+        }
+      }
     }
   `,
   styles: `
@@ -64,6 +99,13 @@ const MAX_SHOWCASE_ITEMS = 2000;
 export class ShowcaseComponent {
   private readonly catalog = inject(CatalogService);
   private readonly categoryApi = inject(CategoryService);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+
+  /** `?view=` query param，靠 app.config.ts 的 withComponentInputBinding() 直接綁進來。 */
+  readonly view = input<string>();
+
+  readonly activeView = computed<ShowcaseView>(() => parseShowcaseView(this.view()));
 
   readonly items = signal<ItemDto[]>([]);
   readonly total = signal(0);
@@ -78,11 +120,36 @@ export class ShowcaseComponent {
   readonly heroItems = computed(() => this.displayItems().filter((i) => i.effectiveDisplayMode === 'Hero'));
   readonly statsItems = computed(() => this.displayItems().filter((i) => i.effectiveDisplayMode === 'Stats'));
 
+  /**
+   * 頁籤是篩選器不是版型選擇器（ADR-0009）：焦點／成就依展示模式篩，
+   * 拼貼牆與列表都是全部精選品項。
+   */
+  readonly tabs = computed<ShowcaseTab[]>(() => {
+    const all = this.displayItems().length;
+
+    return [
+      { id: 'collage', label: '拼貼牆', count: all },
+      { id: 'hero', label: '焦點展品', count: this.heroItems().length },
+      { id: 'stats', label: '遊戲成就', count: this.statsItems().length },
+      { id: 'list', label: '列表', count: all },
+    ];
+  });
+
   constructor() {
     this.categoryApi.list().subscribe((categories) => this.categories.set(categories));
 
     this.loading.set(true);
     this.fetchPage(1);
+  }
+
+  /** 頁籤狀態放在網址上，可分享、可書籤、重新整理保留。replaceUrl 避免切頁籤在瀏覽記錄裡堆成一長串。 */
+  selectView(view: ShowcaseView): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { view },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 
   cardFieldsFor(item: ItemDto): CategoryFieldDto[] {
