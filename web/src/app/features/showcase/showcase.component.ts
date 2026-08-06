@@ -9,8 +9,14 @@ import { HeroSectionComponent } from '../../shared/showcase-sections/hero-sectio
 import { StatsSectionComponent } from '../../shared/showcase-sections/stats-section.component';
 import { toShowcaseDisplayItem } from '../../shared/showcase-sections/showcase-display-item';
 
-/** 精選牆一次抓滿，讓 Hero/Stats/Collage 能在前端對同一份資料做展示模式切分（見 plan §5）。 */
+/** 後端驗證器的單頁上限。抓不完就自動續抓下一頁。 */
 const SHOWCASE_PAGE_SIZE = 200;
+
+/**
+ * 精選品項的安全上限。續抓的終止條件不能只看 `items.length < total`——
+ * 後端若因故謊報 total（大於實際可取得的數量），那個條件會永遠成立而無限發請求。
+ */
+const MAX_SHOWCASE_ITEMS = 2000;
 
 @Component({
   selector: 'app-showcase',
@@ -41,10 +47,6 @@ const SHOWCASE_PAGE_SIZE = 200;
           <app-item-card [item]="item" [cardFields]="cardFieldsFor(item)" />
         }
       </div>
-
-      @if (items().length < total()) {
-        <button type="button" (click)="loadMore()" [disabled]="loading()">載入更多</button>
-      }
     }
   `,
   styles: `
@@ -76,29 +78,37 @@ export class ShowcaseComponent {
   readonly heroItems = computed(() => this.displayItems().filter((i) => i.effectiveDisplayMode === 'Hero'));
   readonly statsItems = computed(() => this.displayItems().filter((i) => i.effectiveDisplayMode === 'Stats'));
 
-  private page = 1;
-
   constructor() {
     this.categoryApi.list().subscribe((categories) => this.categories.set(categories));
-    this.load();
-  }
 
-  loadMore(): void {
-    this.page += 1;
-    this.load();
+    this.loading.set(true);
+    this.fetchPage(1);
   }
 
   cardFieldsFor(item: ItemDto): CategoryFieldDto[] {
     return this.categories().find((c) => c.id === item.categoryId)?.fields ?? [];
   }
 
-  private load(): void {
-    this.loading.set(true);
-
-    this.catalog.showcase(this.page, SHOWCASE_PAGE_SIZE).subscribe({
+  /**
+   * 一路抓到全部精選品項都到齊才收掉 loading。
+   * 頁籤的數字與啟用狀態必須是穩定的事實（ADR-0009）——分批進來會讓焦點頁籤
+   * 先顯示 0 被停用、續抓完又啟用，頁籤列閃動，使用者還可能點到停用的頁籤。
+   */
+  private fetchPage(page: number): void {
+    this.catalog.showcase(page, SHOWCASE_PAGE_SIZE).subscribe({
       next: (result) => {
         this.items.update((current) => [...current, ...result.items]);
         this.total.set(result.total);
+
+        const loaded = this.items().length;
+        const hasMore =
+          result.items.length > 0 && loaded < result.total && loaded < MAX_SHOWCASE_ITEMS;
+
+        if (hasMore) {
+          this.fetchPage(page + 1);
+          return;
+        }
+
         this.loading.set(false);
       },
       error: () => this.loading.set(false),
