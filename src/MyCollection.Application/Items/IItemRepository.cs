@@ -16,6 +16,15 @@ public sealed class ItemQuerySpec
 
     /// <summary>依 category schema 的 searchable 欄位篩選，key 為 field key、value 為精確比對值。</summary>
     public IReadOnlyDictionary<string, string>? Attributes { get; init; }
+
+    /// <summary>要求「未設定」的 field key：該 key 不存在、為 null 或為空字串皆算符合。</summary>
+    public IReadOnlyList<string>? MissingAttributes { get; init; }
+
+    /// <summary>
+    /// 候選品類的限縮，語意與 <see cref="CategoryId"/>（使用者選定的品類）不同：
+    /// 這是由 schema 推導出的護欄，兩者同時存在時取交集。
+    /// </summary>
+    public IReadOnlyList<ObjectId>? CategoryIds { get; init; }
 }
 
 public interface IItemRepository

@@ -25,7 +25,9 @@ public static class ItemEndpoints
                 bool.TryParse(query["isShowcased"], out var showcased) ? showcased : null,
                 int.TryParse(query["page"], out var page) ? page : 1,
                 int.TryParse(query["pageSize"], out var pageSize) ? pageSize : 24,
-                attributes), ct));
+                attributes,
+                // missingAttrs=platform&missingAttrs=region → 該欄位未設定（不存在／null／空字串）
+                query["missingAttrs"].ToArray()!), ct));
         });
 
         // 必須早於 "/{id}"：否則 "tags" 會被當成品項 id。

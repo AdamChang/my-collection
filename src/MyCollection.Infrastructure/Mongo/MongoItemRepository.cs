@@ -30,6 +30,12 @@ public sealed class MongoItemRepository(MongoContext context, IUserContext userC
             filters.Add(Filter.Eq(x => x.CategoryId, categoryId));
         }
 
+        // 空清單代表「沒有任何品類宣告被要求的欄位」，回零筆是正確結果——不可退回不限縮。
+        if (spec.CategoryIds is { } categoryIds)
+        {
+            filters.Add(Filter.In(x => x.CategoryId, categoryIds));
+        }
+
         if (spec.IsShowcased is { } showcased)
         {
             filters.Add(Filter.Eq(x => x.IsShowcased, showcased));
@@ -53,6 +59,15 @@ public sealed class MongoItemRepository(MongoContext context, IUserContext userC
             //   2. value 的型別是 string，無法變成 {$ne: null} 之類的文件
             // 後果僅止於「可以查未宣告的屬性鍵」，查無資料而已，且擁有者條件仍然生效。
             filters.Add(Filter.Eq($"attributes.{key}", value));
+        }
+
+        foreach (var key in spec.MissingAttributes ?? [])
+        {
+            // MongoDB 的 {field: null} 同時匹配「值為 null」與「欄位不存在」，
+            // 所以三態（missing / null / ""）只需要這兩個條件。key 的安全性同上。
+            filters.Add(Filter.Or(
+                Filter.Eq($"attributes.{key}", BsonNull.Value),
+                Filter.Eq($"attributes.{key}", string.Empty)));
         }
 
         if (!string.IsNullOrWhiteSpace(spec.Search))

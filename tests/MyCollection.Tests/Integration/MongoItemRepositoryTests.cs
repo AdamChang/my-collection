@@ -197,7 +197,7 @@ public class MongoItemRepositoryTests(MongoFixture fixture) : IAsyncLifetime
         tags.Should().BeEquivalentTo("FPS", "GSC", "Puzzle", "VOCALOID");
     }
 
-    private Task SetAttributeAsync(string itemName, string key, string value) =>
+    private Task SetAttributeAsync(string itemName, string key, BsonValue value) =>
         fixture.Context.Items.UpdateOneAsync(
             MongoDB.Driver.Builders<Item>.Filter.Eq(x => x.Name, itemName),
             MongoDB.Driver.Builders<Item>.Update.Set($"attributes.{key}", value));
@@ -284,5 +284,51 @@ public class MongoItemRepositoryTests(MongoFixture fixture) : IAsyncLifetime
             CancellationToken.None);
 
         result.Total.Should().Be(3, "空值代表「不篩選」");
+    }
+
+    /// <summary>
+    /// 三態一起驗：正常寫入路徑會剔除空字串，但同步流程與歷史資料沒有被那條保證守住，
+    /// 所以「未設定」必須同時涵蓋 key 不存在、null 與空字串。
+    /// </summary>
+    [Fact]
+    public async Task SearchAsync_missing_attribute_matches_absent_null_and_empty_values()
+    {
+        await fixture.Context.Items.InsertManyAsync(
+        [
+            NewItem(Owner, "有平台", GameCategory),
+            NewItem(Owner, "沒有 platform 這個 key", GameCategory),
+            NewItem(Owner, "platform 為 null", GameCategory),
+            NewItem(Owner, "platform 為空字串", GameCategory)
+        ]);
+        await SetAttributeAsync("有平台", "platform", "Steam");
+        await SetAttributeAsync("platform 為 null", "platform", BsonNull.Value);
+        await SetAttributeAsync("platform 為空字串", "platform", "");
+
+        var result = await _sut.SearchAsync(
+            new ItemQuerySpec { MissingAttributes = ["platform"] }, CancellationToken.None);
+
+        result.Items.Select(i => i.Name).Should()
+            .BeEquivalentTo("沒有 platform 這個 key", "platform 為 null", "platform 為空字串");
+    }
+
+    [Fact]
+    public async Task SearchAsync_restricts_to_supplied_category_ids()
+    {
+        await SeedAsync();
+
+        var result = await _sut.SearchAsync(
+            new ItemQuerySpec { CategoryIds = [GameCategory] }, CancellationToken.None);
+
+        result.Items.Select(i => i.Name).Should().BeEquivalentTo("Team Fortress 2", "Portal 2");
+    }
+
+    [Fact]
+    public async Task SearchAsync_returns_nothing_when_category_ids_is_empty()
+    {
+        await SeedAsync();
+
+        var result = await _sut.SearchAsync(new ItemQuerySpec { CategoryIds = [] }, CancellationToken.None);
+
+        result.Total.Should().Be(0, "空清單代表「沒有品類宣告該欄位」，不是「不限縮」");
     }
 }

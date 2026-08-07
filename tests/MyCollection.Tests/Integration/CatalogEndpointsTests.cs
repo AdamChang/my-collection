@@ -184,6 +184,55 @@ public class CatalogEndpointsTests(MongoFixture mongo) : IAsyncLifetime
         tags.Should().BeEquivalentTo("紅", "限定");
     }
 
+    /// <summary>
+    /// 「未設定平台」的結果只涵蓋有宣告 platform 欄位的品類。音樂專輯根本沒有這個欄位，
+    /// 字面上它的品項全都「未設定平台」，混進來會讓這個篩選失去用途。
+    /// </summary>
+    [Fact]
+    public async Task Missing_attribute_filter_only_covers_categories_that_declare_the_field()
+    {
+        var categories = (await _client.GetFromJsonAsync<CategoryDto[]>("/categories"))!;
+        var physicalGame = categories.Single(c => c.Name == "實體遊戲");
+        var digitalGame = categories.Single(c => c.Name == "數位遊戲");
+        var album = categories.Single(c => c.Name == "音樂專輯");
+
+        await CreateItemAsync(physicalGame.Id, "有填平台", new { platform = "Switch" });
+        await CreateItemAsync(physicalGame.Id, "實體沒填平台", new { });
+        await CreateItemAsync(digitalGame.Id, "數位沒填平台", new { });
+        await CreateItemAsync(album.Id, "音樂專輯沒有平台欄位", new { });
+
+        var result = await _client.GetFromJsonAsync<PagedItemsResponse>("/items?missingAttrs=platform&pageSize=200");
+
+        result!.Items.Select(i => i.Name).Should().BeEquivalentTo("實體沒填平台", "數位沒填平台");
+    }
+
+    [Fact]
+    public async Task Missing_attribute_filter_combines_with_the_selected_category()
+    {
+        var categories = (await _client.GetFromJsonAsync<CategoryDto[]>("/categories"))!;
+        var physicalGame = categories.Single(c => c.Name == "實體遊戲");
+        var digitalGame = categories.Single(c => c.Name == "數位遊戲");
+
+        await CreateItemAsync(physicalGame.Id, "實體沒填平台", new { });
+        await CreateItemAsync(digitalGame.Id, "數位沒填平台", new { });
+
+        var result = await _client.GetFromJsonAsync<PagedItemsResponse>(
+            $"/items?missingAttrs=platform&categoryId={physicalGame.Id}&pageSize=200");
+
+        result!.Items.Select(i => i.Name).Should().BeEquivalentTo("實體沒填平台");
+    }
+
+    [Fact]
+    public async Task Missing_attribute_filter_with_an_unknown_field_returns_nothing()
+    {
+        var category = await CreateFigureCategoryAsync();
+        await CreateItemAsync(category.Id, "A", new { brand = "GSC" });
+
+        var result = await _client.GetFromJsonAsync<PagedItemsResponse>("/items?missingAttrs=nonsense");
+
+        result!.Total.Should().Be(0, "沒有品類宣告 nonsense，語意是回零筆而不是不限縮");
+    }
+
     [Fact]
     public async Task Another_user_cannot_see_or_modify_items()
     {

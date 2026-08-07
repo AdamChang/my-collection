@@ -15,7 +15,8 @@ public record SearchItemsQuery(
     bool? IsShowcased = null,
     int Page = 1,
     int PageSize = 24,
-    IReadOnlyDictionary<string, string>? Attributes = null) : IRequest<PagedResult<ItemDto>>;
+    IReadOnlyDictionary<string, string>? Attributes = null,
+    IReadOnlyList<string>? MissingAttributes = null) : IRequest<PagedResult<ItemDto>>;
 
 public record GetItemQuery(string Id) : IRequest<ItemDto>;
 
@@ -52,6 +53,10 @@ public sealed class SearchItemsQueryHandler(IItemRepository items, ICategoryRepo
 {
     public async Task<PagedResult<ItemDto>> Handle(SearchItemsQuery request, CancellationToken cancellationToken)
     {
+        // 品類清單本來就要拿來組 displayMode；「未設定」的品類限縮沿用同一份，不多打一次。
+        var allCategories = await categories.ListAsync(cancellationToken);
+        var missing = request.MissingAttributes?.Where(k => !string.IsNullOrWhiteSpace(k)).ToArray();
+
         var spec = new ItemQuerySpec
         {
             Search = request.Search,
@@ -60,11 +65,13 @@ public sealed class SearchItemsQueryHandler(IItemRepository items, ICategoryRepo
             IsShowcased = request.IsShowcased,
             Page = request.Page,
             PageSize = request.PageSize,
-            Attributes = request.Attributes
+            Attributes = request.Attributes,
+            MissingAttributes = missing,
+            CategoryIds = DeclaringCategoryIds(allCategories, missing)
         };
 
         var result = await items.SearchAsync(spec, cancellationToken);
-        var displayModes = CategoryMapper.ToDisplayModeLookup(await categories.ListAsync(cancellationToken));
+        var displayModes = CategoryMapper.ToDisplayModeLookup(allCategories);
 
         return new PagedResult<ItemDto>(
             result.Items
@@ -74,6 +81,22 @@ public sealed class SearchItemsQueryHandler(IItemRepository items, ICategoryRepo
             result.Page,
             result.PageSize);
     }
+
+    /// <summary>
+    /// 「未設定 X」只在有宣告 X 的品類裡才有意義——沒宣告 X 的品類，其品項字面上全都「未設定 X」，
+    /// 混進來會讓這個篩選失去用途。判定依據是 schema 宣告而非品類身分，見 docs/adr/0006。
+    /// 多個 key 時取交集（宣告了全部 key 的品類），與篩選條件本身的 AND 語意一致。
+    /// 沒有任何品類宣告時回空清單——語意是「回零筆」，不是「不限縮」。
+    /// </summary>
+    private static IReadOnlyList<ObjectId>? DeclaringCategoryIds(
+        IEnumerable<Category> categories,
+        IReadOnlyList<string>? missingKeys) =>
+        missingKeys is { Count: > 0 }
+            ? categories
+                .Where(c => missingKeys.All(key => c.Fields.Any(f => f.Key == key)))
+                .Select(c => c.Id)
+                .ToArray()
+            : null;
 }
 
 public sealed class GetItemQueryHandler(IItemRepository items, ICategoryRepository categories)
