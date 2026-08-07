@@ -8,3 +8,14 @@
 
 - 前端判斷「這個品類支不支援平台篩選」用 `category.fields` 是否含 `key === 'platform'`，不是比對品類 ID；後端 `ListPlatformsAsync` 在「全部」（`categoryId` 為 null）時用 `Filter.Exists("attributes.platform")`，也不是硬編品類 ID 清單。兩邊都間接依賴 `AttributeValidator` 保證的不變式——非遊戲品類的品項不可能寫入 `platform` 這個 key。這個不變式若未來被打破，「全部」下的平台篩選會連帶跟著錯，屬於已知的耦合，不是意外。
 - 之後如果想讓其他欄位也能跨品類篩選（例如某天新增的品類也想共用某個屬性），需要重新走一次這個決策、明確把該 key 加進白名單，而不會自動生效。這是刻意的，避免欄位命名巧合造成的隱性行為。
+
+## 補充：「未設定」篩選（2026-08-07）
+
+後續加了「把平台未設定的品項篩出來」的能力（規格見 `docs/specs/0002-catalog-missing-value-filter.md`），它跟上面那條白名單是**兩個正交的維度**，不是推翻：
+
+- 上面管的是「哪個欄位可以在**跨品類**的『全部』視圖出現」——仍然只有 `platform`。
+- 「未設定」管的是「一個已經出現的欄位，能不能篩它的**空值**」。這一層的後端機制（`missingAttrs` 參數 → `ItemQuerySpec.MissingAttributes`）刻意做成通用的，任意 key 都吃；限制只存在於前端目前只對 `platform` 渲染那個 checkbox。之後要開放其他欄位，改前端條件即可，不必動後端也不必重走這份 ADR。
+
+「未設定 X」的結果**限縮在有宣告 X 欄位的品類**（`SearchItemsQueryHandler.DeclaringCategoryIds`）。理由跟上面同源：沒宣告 `platform` 的品類，它的品項字面上全都「未設定 platform」，照字面實作會讓「全部＋未設定平台」約等於「全部扣掉有填平台的遊戲」，這個篩選就沒用了。判定依據同樣是 schema 宣告而非品類 ID，所以仰賴的是同一條不變式。
+
+推論出的品類集合為空時（例如有人送了沒有任何品類宣告的 key），語意是**回零筆**，不是「不限縮」。反過來做的話，一個打錯字的 key 會從「查無資料」變成「回傳全部」——這是最糟的失敗方向，已由 `CatalogEndpointsTests` 的 `Missing_attribute_filter_with_an_unknown_field_returns_nothing` 守住。

@@ -57,4 +57,5 @@
 
 - 這份規格文件是回溯性質：透過 `/mattpocock-skills:grill-with-docs`（Socratic 訪談 + domain-modeling）先對齊設計，再直接實作完成，而不是先寫規格交給 agent 去做。
 - 架構決策的完整理由見 `docs/adr/0006-platform-filter-in-all-view-is-a-hardcoded-whitelist.md`。
+- 後續延伸：`docs/specs/0002-catalog-missing-value-filter.md` 在這個平台篩選旁加了「未設定」選項。這份文件維持原狀，不併入那次的決策。
 - `CONTEXT.md` 沒有異動——既有的「平台」／「發行平台」定義已經精確涵蓋這次的詞彙，不需要新的 ubiquitous language 詞條。
