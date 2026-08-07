@@ -12,6 +12,9 @@ export interface ItemSearchOptions {
   page?: number;
   pageSize?: number;
   attributes?: Record<string, string>;
+
+  /** 要求「未設定」的 field key：該欄位不存在／為 null／為空字串都算符合。 */
+  missingAttributes?: string[];
 }
 
 export interface ItemWritePayload {
@@ -52,6 +55,9 @@ export class CatalogService {
       if (value) {
         params = params.set(`attr.${key}`, value);
       }
+    }
+    for (const key of options.missingAttributes ?? []) {
+      params = params.append('missingAttrs', key);
     }
 
     return this.http.get<PagedResult<ItemDto>>(`${API_BASE}/items`, { params });

@@ -27,35 +27,50 @@ import { ItemCardComponent } from '../../shared/item-card/item-card.component';
         </label>
 
         @for (field of searchableFields(); track field.key) {
-          <label>
-            {{ field.label }}
-            @if (field.key === 'platform') {
-              <input type="text"
-                     list="attr_platform_options"
-                     [(ngModel)]="platformDraft"
-                     (change)="commitPlatformFilter()"
-                     name="attr_platform" />
-              <datalist id="attr_platform_options">
-                @for (option of platformOptions(); track option) {
-                  <option [value]="option"></option>
-                }
-              </datalist>
-            } @else if (field.type === 'Select') {
-              <select [ngModel]="filterValue(field.key)"
-                      (ngModelChange)="setAttributeFilter(field.key, $event)"
-                      [name]="'attr_' + field.key">
-                <option value="">全部</option>
-                @for (option of field.options ?? []; track option) {
-                  <option [value]="option">{{ option }}</option>
-                }
-              </select>
-            } @else {
-              <input type="text"
-                     [ngModel]="filterValue(field.key)"
-                     (ngModelChange)="setAttributeFilter(field.key, $event)"
-                     [name]="'attr_' + field.key" />
-            }
-          </label>
+          @if (field.key === 'platform') {
+            <!-- label 不可巢狀，所以這一格用 div 包住「選值」與「選沒有值」兩個控制項。 -->
+            <div class="catalog__filter">
+              <label>
+                {{ field.label }}
+                <input type="text"
+                       list="attr_platform_options"
+                       [(ngModel)]="platformDraft"
+                       (change)="commitPlatformFilter()"
+                       [disabled]="isMissingFilter('platform')"
+                       name="attr_platform" />
+                <datalist id="attr_platform_options">
+                  @for (option of platformOptions(); track option) {
+                    <option [value]="option"></option>
+                  }
+                </datalist>
+              </label>
+              <label class="catalog__missing">
+                <input type="checkbox"
+                       [checked]="isMissingFilter('platform')"
+                       (change)="toggleMissingFilter('platform')" />
+                未設定
+              </label>
+            </div>
+          } @else {
+            <label>
+              {{ field.label }}
+              @if (field.type === 'Select') {
+                <select [ngModel]="filterValue(field.key)"
+                        (ngModelChange)="setAttributeFilter(field.key, $event)"
+                        [name]="'attr_' + field.key">
+                  <option value="">全部</option>
+                  @for (option of field.options ?? []; track option) {
+                    <option [value]="option">{{ option }}</option>
+                  }
+                </select>
+              } @else {
+                <input type="text"
+                       [ngModel]="filterValue(field.key)"
+                       (ngModelChange)="setAttributeFilter(field.key, $event)"
+                       [name]="'attr_' + field.key" />
+              }
+            </label>
+          }
         }
 
         <fieldset>
@@ -98,6 +113,8 @@ import { ItemCardComponent } from '../../shared/item-card/item-card.component';
     .catalog__results-header { display: flex; justify-content: space-between; align-items: end; gap: 1rem; margin-bottom: 1rem; }
     .catalog__results-header span { display: block; margin-top: 0.35rem; color: var(--mc-text-muted); }
     .catalog__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; }
+    .catalog__filter { display: grid; gap: 0.35rem; }
+    .catalog__missing { display: flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; }
     .catalog__tag { display: block; font-size: 0.85rem; }
     @media (max-width: 760px) {
       .catalog { grid-template-columns: 1fr; }
@@ -115,6 +132,9 @@ export class CatalogComponent {
   readonly allTags = signal<string[]>([]);
   readonly selectedTags = signal<string[]>([]);
   readonly attributeFilters = signal<Record<string, string>>({});
+
+  /** 要求「未設定」的欄位 key。與 attributeFilters 是兩件事：一個選值，一個選「沒有值」。 */
+  readonly missingAttributes = signal<string[]>([]);
   readonly categoryId = signal('');
   readonly platformOptions = signal<string[]>([]);
 
@@ -169,6 +189,7 @@ export class CatalogComponent {
     this.attributeFilters.update((current) =>
       Object.fromEntries(Object.entries(current).filter(([key]) => allowed.has(key))),
     );
+    this.missingAttributes.update((keys) => keys.filter((key) => allowed.has(key)));
     this.platformDraft = this.attributeFilters()['platform'] ?? '';
     this.syncPlatformOptions();
 
@@ -228,6 +249,29 @@ export class CatalogComponent {
     this.reload();
   }
 
+  isMissingFilter(key: string): boolean {
+    return this.missingAttributes().includes(key);
+  }
+
+  /**
+   * 「未設定」與「等於某個值」互斥：兩者同時成立必定零結果，不該讓使用者做得到。
+   * 勾選時清掉該欄位的值（reload() 會連帶把 platformDraft 收斂成空字串），
+   * 取消勾選時不還原舊值——比照 commitPlatformFilter() 的「拒絕就是拒絕」立場。
+   */
+  toggleMissingFilter(key: string): void {
+    const enabling = !this.isMissingFilter(key);
+
+    this.missingAttributes.update((keys) =>
+      enabling ? [...keys, key] : keys.filter((k) => k !== key),
+    );
+
+    if (enabling) {
+      this.attributeFilters.update((current) => ({ ...current, [key]: '' }));
+    }
+
+    this.reload();
+  }
+
   private load(): void {
     this.catalog
       .search({
@@ -237,6 +281,7 @@ export class CatalogComponent {
         page: this.page,
         pageSize: 24,
         attributes: this.attributeFilters(),
+        missingAttributes: this.missingAttributes(),
       })
       .subscribe((result) => {
         this.items.update((current) => [...current, ...result.items]);
