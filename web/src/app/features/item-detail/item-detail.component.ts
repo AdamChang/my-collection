@@ -16,6 +16,7 @@ import { CategoryDto, DisplayMode, FetchedMetadataDto, ItemDto } from '../../cor
 import { DynamicFormComponent } from '../../shared/dynamic-form/dynamic-form.component';
 import { IgdbSearchDialogComponent } from '../../shared/igdb-search-dialog/igdb-search-dialog.component';
 import { ImageUploaderComponent } from '../../shared/image-uploader/image-uploader.component';
+import { RatingBarComponent } from '../../shared/rating-bar/rating-bar.component';
 import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
 
 @Component({
@@ -25,6 +26,7 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
     DynamicFormComponent,
     IgdbSearchDialogComponent,
     ImageUploaderComponent,
+    RatingBarComponent,
     TagInputComponent,
   ],
   template: `
@@ -102,8 +104,8 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
             <option value="Stats">Stats</option>
           </select>
         </label>
-        <label>評分（1–10，留空代表未評分）
-          <input type="number" min="1" max="10" [(ngModel)]="rating" name="rating" />
+        <label>評分
+          <app-rating-bar [rating]="rating()" (ratingChange)="rating.set($event)" />
         </label>
         <label>存放位置<input [(ngModel)]="storageLocation" name="storageLocation" placeholder="例：A櫃-第2層" /></label>
       </section>
@@ -279,7 +281,7 @@ export class ItemDetailComponent {
   currency = 'TWD';
   vendor = '';
   displayModeOverride: DisplayMode | '' = '';
-  rating: number | null = null;
+  readonly rating = signal<number | null>(null);
   storageLocation = '';
 
   constructor() {
@@ -508,7 +510,7 @@ export class ItemDetailComponent {
     this.currency = item.acquisition?.price?.currency ?? 'TWD';
     this.vendor = item.acquisition?.vendor ?? '';
     this.displayModeOverride = item.displayMode ?? '';
-    this.rating = item.rating;
+    this.rating.set(item.rating);
     this.storageLocation = item.storageLocation ?? '';
     this.syncSelectedCategory();
   }
@@ -538,7 +540,7 @@ export class ItemDetailComponent {
           }
         : null,
       displayMode: this.displayModeOverride || null,
-      rating: this.rating,
+      rating: this.rating(),
       storageLocation: this.storageLocation.trim() || null,
     };
   }

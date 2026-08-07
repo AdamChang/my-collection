@@ -884,4 +884,67 @@ describe('ItemDetailComponent', () => {
 
     expect(captured.attributes).toEqual({});
   });
+
+  /**
+   * 星星是自訂元件，不再是 ngModel 綁到原生 input。接線只要接錯（忘了接
+   * ratingChange、或送出時讀到舊的 property），畫面依然會亮起星星，
+   * 但存進去的是 null——完全靜默。這條測試守的就是那段接線。
+   */
+  it('sends the score picked on the rating bar when saving', async () => {
+    const unratedItem = {
+      id: 'bbb',
+      categoryId: schemaCategory.id,
+      name: '初音ミク 1/8',
+      description: null,
+      tags: [],
+      isShowcased: false,
+      attributes: {},
+      images: [],
+      acquisition: null,
+      displayMode: null,
+      rating: null,
+      storageLocation: null,
+    } as unknown as ItemDto;
+
+    const captured: { rating?: number | null } = {};
+
+    await TestBed.configureTestingModule({
+      imports: [ItemDetailComponent],
+      providers: [
+        provideRouter([]),
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: { get: () => unratedItem.id } } },
+        },
+        { provide: CategoryService, useValue: { list: () => of([schemaCategory]) } },
+        {
+          provide: CatalogService,
+          useValue: {
+            get: () => of(unratedItem),
+            update: (_id: string, payload: { rating: number | null }) => {
+              captured.rating = payload.rating;
+              return of(unratedItem);
+            },
+          },
+        },
+        { provide: IngestionService, useValue: {} },
+        { provide: NotificationService, useValue: { success: () => undefined } },
+        { provide: ProviderService, useValue: { supports: () => false } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(ItemDetailComponent);
+    fixture.detectChanges();
+
+    // 第 4 顆星的右半 = 8 分
+    const halves: HTMLElement[] = Array.from(
+      fixture.nativeElement.querySelectorAll('[data-rating-half]'),
+    );
+    halves[7].click();
+    fixture.detectChanges();
+
+    fixture.nativeElement.querySelector('button[type="submit"]').click();
+
+    expect(captured.rating).toBe(8);
+  });
 });
