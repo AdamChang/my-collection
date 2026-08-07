@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { ActivatedRoute, provideRouter } from '@angular/router';
+import { ActivatedRoute, Router, provideRouter } from '@angular/router';
 import { Observable, Subject, of, throwError } from 'rxjs';
 import { CatalogService } from '../../core/api/catalog.service';
 import { CategoryService } from '../../core/api/category.service';
@@ -10,12 +10,99 @@ import {
   STEAM_PROVIDER_KEY,
   ProviderService,
 } from '../../core/api/provider.service';
+import { EMPTY_CATALOG_QUERY } from '../../core/catalog-query';
+import { CatalogReturnPointService } from '../../core/catalog-return-point.service';
 import { NotificationService } from '../../core/notification.service';
 import { CategoryDto, FetchedMetadataDto, ItemDto, SyncJobDto } from '../../core/models';
 import { IgdbSearchDialogComponent } from '../../shared/igdb-search-dialog/igdb-search-dialog.component';
 import { ItemDetailComponent } from './item-detail.component';
 
 describe('ItemDetailComponent', () => {
+  beforeEach(() => sessionStorage.clear());
+  afterAll(() => sessionStorage.clear());
+
+  /** 品項頁不知道使用者是從哪一組篩選點進來的——返回點是它唯一的線索。 */
+  async function createWithReturnPoint(seed?: (returnPoint: CatalogReturnPointService) => void) {
+    await TestBed.configureTestingModule({
+      imports: [ItemDetailComponent],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => null } } } },
+        { provide: CategoryService, useValue: { list: () => of([]) } },
+        { provide: CatalogService, useValue: {} },
+        { provide: IngestionService, useValue: {} },
+        { provide: NotificationService, useValue: { success: () => undefined } },
+        { provide: ProviderService, useValue: { supports: () => false } },
+      ],
+    }).compileComponents();
+
+    seed?.(TestBed.inject(CatalogReturnPointService));
+
+    const fixture = TestBed.createComponent(ItemDetailComponent);
+    fixture.detectChanges();
+
+    return fixture.nativeElement.querySelector('[data-back-to-catalog]') as HTMLAnchorElement | null;
+  }
+
+  it('carries the remembered filters back to the catalog', async () => {
+    const back = await createWithReturnPoint((returnPoint) =>
+      returnPoint.remember(
+        { ...EMPTY_CATALOG_QUERY, attributes: { platform: 'PS5' }, tags: ['RPG'] },
+        1,
+      ),
+    );
+
+    expect(back?.getAttribute('href')).toBe('/catalog?tags=RPG&attr.platform=PS5');
+  });
+
+  /**
+   * 從「新增品項」進來、或直接把網址貼進新分頁時沒有返回點。一顆時有時無的按鈕
+   * 比一顆偶爾回到未篩選列表的按鈕更難用，所以它永遠在，只是回到乾淨的列表。
+   */
+  it('still offers a way back when there is no return point', async () => {
+    const back = await createWithReturnPoint();
+
+    expect(back?.getAttribute('href')).toBe('/catalog');
+  });
+
+  /**
+   * 刪除也是一條回到列表的路徑。你在一批篩選結果裡刪掉一筆，接著就是處理下一筆
+   * ——這條路若不帶篩選回去，等於在整個流程中間開了一個洞。
+   */
+  it('returns to the filtered list after deleting an item', async () => {
+    await TestBed.configureTestingModule({
+      imports: [ItemDetailComponent],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => 'i1' } } } },
+        { provide: CategoryService, useValue: { list: () => of([]) } },
+        {
+          provide: CatalogService,
+          useValue: { get: () => of({ ...steamItem, id: 'i1' }), remove: () => of(undefined) },
+        },
+        { provide: IngestionService, useValue: {} },
+        { provide: NotificationService, useValue: { success: () => undefined } },
+        { provide: ProviderService, useValue: { supports: () => false } },
+      ],
+    }).compileComponents();
+
+    TestBed.inject(CatalogReturnPointService).remember(
+      { ...EMPTY_CATALOG_QUERY, attributes: { platform: 'PS5' } },
+      1,
+    );
+
+    const router = TestBed.inject(Router);
+    const navigate = spyOn(router, 'navigate').and.resolveTo(true);
+
+    const fixture = TestBed.createComponent(ItemDetailComponent);
+    fixture.detectChanges();
+    fixture.componentInstance.remove();
+
+    expect(navigate).toHaveBeenCalledWith(['/catalog'], {
+      queryParams: { 'attr.platform': 'PS5' },
+    });
+  });
+
   const schemaCategory: CategoryDto = {
     id: 'figures',
     name: '模型',

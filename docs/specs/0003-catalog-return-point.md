@@ -27,7 +27,8 @@
 7. As a collector, I want the filters in the address bar, so that reloading the page keeps them and I can keep a link to a filter I use often.
 8. As a collector who opened an item URL directly in a new tab, I want 返回列表 to still work, so that the button is never a dead control.
 9. As a collector, I want my filters gone when I close the tab, so that tomorrow's catalog opens showing my whole collection rather than a filter I no longer remember setting.
-10. As a developer, I want the browser URL and the API query string to use one vocabulary, so that there is no translation layer to keep in sync.
+10. As a collector who deleted an item, I want to land back on the filtered list, so that I can carry on with the next item in the same batch.
+11. As a developer, I want the browser URL and the API query string to use one vocabulary, so that there is no translation layer to keep in sync.
 
 ## Implementation Decisions
 
@@ -37,15 +38,25 @@
 
 - **陣列一律用重複 key，不用分隔符**：`?tags=a&tags=b`。tags 與 attribute 值都是使用者自由輸入的字串，逗號串接會在值本身含逗號時炸開。這也與後端 `query["tags"].ToArray()` 的解析一致。
 
-- **query param 綁進元件後必須正規化形狀**：`app.config.ts` 已啟用 `withComponentInputBinding()`，而它對 query param 的形狀是**一個值給 `string`、多個值給 `string[]`**。所以要有一支解析函式把輸入收斂成確定形狀，比照 `shared/showcase-tabs/showcase-view.ts` 的 `parseShowcaseView`：壞值或缺值一律退回預設，不讓畫面壞掉。
+- **從 `ActivatedRoute.queryParams` 讀，不走 `withComponentInputBinding()`**。精選頁的 `?view=` 是靠 component input binding 綁進去的，但那條路在這裡走不通：它按**名字**把 query param 綁到預先宣告的 input 上，而 `attr.<key>` 的 key 由品類動態宣告，無法預先宣告成 input。
+
+- **query param 必須正規化形狀**：`Params` 的值是**一個值給 `string`、多個值給 `string[]`**，而網址是使用者可以隨手亂打的東西。要有一支解析函式把輸入收斂成確定形狀，比照 `shared/showcase-tabs/showcase-view.ts` 的 `parseShowcaseView`：壞值或缺值一律退回預設，不讓畫面壞掉。
 
 - **`attr.` 前綴只切前 5 個字元，不可 `split('.')`**：attribute 的 key 由品類宣告、是使用者自訂的，可能含 `.` 或非 ASCII。後端用的是 `kv.Key[5..]`，前端解析必須用同樣的規則，否則 key 含點的欄位會在兩端解出不同結果。
 
 - **「未設定」勾選也走網址**（`missingAttrs=platform`）。它是篩選條件的一部分，跟其他條件一起進 URL，不另外處理。
 
+- **品類 schema 不宣告的條件要被剪掉，而且要在品類清單到齊後重跑一次。** 0002 立下的規則是「不留下畫面上看不到、卻仍在生效的隱形篩選」。品類把某個欄位拿掉之後，舊網址上的條件就會變成這種東西：沒有任何控制項渲染得出來，結果卻是空的，使用者看不出原因。剪枝**不能**在解析網址的當下就做——品類清單是非同步載入的，第一次進頁面時它還是空的，那時 schema 是「還不知道」而不是「沒宣告」，照著剪會把網址上帶進來的條件全部剪掉。
+
 - **已載入頁數與錨點品項只進記憶、不進網址。** 它們回答的是「使用者剛才看到哪」——瀏覽進度，不是列表的身分。而且 `?page=3` 在這裡的語意是「載入第 1..3 頁」，與一般分頁的「第 3 頁」不同，放進可貼可改的網址等於埋一個誤解。
 
 - **返回點的內容是 `{查詢字串, 已載入頁數, 錨點品項 id}`，還原時先比對查詢字串。** 與當前網址的查詢字串不一致就只還原第一頁、不捲動。否則使用者手改網址換了篩選，卻套用了上一組篩選的頁數與錨點。
+
+- **比對用的查詢字串是 JSON，不是手工串接的 `key=value&…`。** 條件的值是使用者自由輸入的，可能含 `&`、`=`、`,`；手工串接會讓 `{search: 'x&tags=RPG'}` 與 `{search: 'x', tags: ['RPG']}` 壓成同一個字串，於是兩個不同的列表互相還原對方的頁數與錨點——正好踩進上一條要防的那個坑。分隔符不可靠的理由與網址不用逗號串接完全相同。
+
+- **錨點屬於它被記下時的那組條件，換條件即作廢。** `ctrl`／中鍵點卡片會觸發記錄錨點，但 `RouterLink` 刻意不為修飾鍵導覽——使用者留在列表上、手裡卻多了一個錨點。若寫入記憶時無條件沿用舊錨點，那個錨點會跟著飄到下一組篩選，讓使用者回到一個他從未在該篩選下點開過的位置。
+
+- **只有最新的一次查詢有資格寫回畫面。** 搜尋框每按一次鍵就送一次查詢，慢的那一次若後到，畫面會永久停在舊的結果集上——網址與輸入框都寫著新的關鍵字，而沒有任何東西會再去糾正它。每次查詢帶一個遞增序號，回應時序號不是最新的就丟棄。
 
 - **記憶在每次篩選變更時覆寫**（`reload()` 與 `loadMore()` 是所有狀態變更的匯流點），不是在離開路由時才寫。這讓「清除全部篩選」**不需要任何額外的清記憶邏輯**——清除本身就走 `reload()`，記憶當場被覆寫成無篩選。若改成離開時才寫，使用者按了清除卻從某條沒觸發寫入的路徑離開，下次回來又被還原成舊篩選，那是最惡劣的一種 bug：他明明按了清除。
 
@@ -58,6 +69,8 @@
 - **錨點品項已不在結果中時，靜靜捲到頂端，不提示。** 要判斷「它是被使用者剛才的編輯改掉才消失的」得比對前後兩份結果集，成本不成比例；而那個消失多半正是使用者自己剛做的動作造成的。也不捲到「它原本的位置」——網格是 `repeat(auto-fill, …)`，重排後那個位置就是錯的。
 
 - **錨點在點擊卡片時記下。** `ItemCardComponent` 目前整張卡片是 `[routerLink]`，沒有 click handler，需要由 catalog 這一側在卡片被啟動時記錄品項 id。捲動還原以 `scrollIntoView` 對準該卡片元素，不還原像素位移——網格寬度一變，像素位置就沒有意義。
+
+- **刪除後也帶著返回點回列表**。`remove()` 原本 `navigate(['/catalog'])`，是第四條回到列表的路徑——訪談時只列了三條。你在一批篩選結果裡刪掉一筆，接著就是處理下一筆，這條路不帶篩選回去等於在流程中間開一個洞。
 
 - **「← 返回列表」按鈕永遠顯示**，沒有返回點時導向乾淨的 `/catalog`。涵蓋兩個情境：從「新增品項」進 `/items/new`（不是從卡片點進去的），以及直接把 `/items/:id` 貼進新分頁。一顆時有時無的按鈕比一顆偶爾回到未篩選列表的按鈕更難用；而且新增品項存檔後會 `navigate(['/items', saved.id])`，那時想回列表看看新東西是很自然的需求。
 
