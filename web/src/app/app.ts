@@ -3,6 +3,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 import { AuthService } from './core/auth.service';
+import { CatalogReturnPointService } from './core/catalog-return-point.service';
 import { LoadingService } from './core/loading.service';
 import { NotificationService } from './core/notification.service';
 
@@ -24,7 +25,8 @@ import { NotificationService } from './core/notification.service';
           <div class="nav__links">
             <a routerLink="/" routerLinkActive="nav--active"
                [routerLinkActiveOptions]="{ exact: true }">精選</a>
-            <a routerLink="/catalog" routerLinkActive="nav--active">庫存</a>
+            <a routerLink="/catalog" [queryParams]="returnPoint.queryParams()"
+               routerLinkActive="nav--active">庫存</a>
             <a routerLink="/categories" routerLinkActive="nav--active">品類</a>
             <a routerLink="/settings" routerLinkActive="nav--active">設定</a>
           </div>
@@ -93,6 +95,9 @@ export class App {
   readonly auth = inject(AuthService);
   readonly loading = inject(LoadingService);
   readonly notifications = inject(NotificationService);
+
+  /** 導覽列的「庫存」與品項頁的「返回列表」必須一致：一個記得、一個忘記比兩個都忘記更糟。 */
+  readonly returnPoint = inject(CatalogReturnPointService);
   private readonly router = inject(Router);
   private readonly navigationEnd = toSignal(
     this.router.events.pipe(filter((event) => event instanceof NavigationEnd)),

@@ -7,6 +7,8 @@ import { App } from './app';
 import { routes } from './app.routes';
 import { ShareService } from './core/api/share.service';
 import { AuthService } from './core/auth.service';
+import { EMPTY_CATALOG_QUERY } from './core/catalog-query';
+import { CatalogReturnPointService } from './core/catalog-return-point.service';
 import { NotificationService } from './core/notification.service';
 
 const SESSION = JSON.stringify({
@@ -18,6 +20,7 @@ const SESSION = JSON.stringify({
 describe('App', () => {
   beforeEach(async () => {
     localStorage.clear();
+    sessionStorage.clear();
     await TestBed.configureTestingModule({
       imports: [App],
       providers: [
@@ -38,7 +41,28 @@ describe('App', () => {
     }).compileComponents();
   });
 
-  afterEach(() => localStorage.clear());
+  afterEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  /**
+   * 導覽列的「庫存」是使用者的肌肉記憶。它與品項頁的「返回列表」若行為不一致，
+   * 會比兩者都忘記篩選更糟——使用者無法預期哪一條路是安全的。
+   */
+  it('carries the remembered filters on the catalog nav link', () => {
+    localStorage.setItem('mycollection.session', SESSION);
+    TestBed.inject(CatalogReturnPointService).remember(
+      { ...EMPTY_CATALOG_QUERY, attributes: { platform: 'PS5' } },
+      1,
+    );
+
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    const catalog: HTMLAnchorElement = fixture.nativeElement.querySelector('nav a[href^="/catalog"]');
+    expect(catalog.getAttribute('href')).toBe('/catalog?attr.platform=PS5');
+  });
 
   it('should create the app', () => {
     const fixture = TestBed.createComponent(App);

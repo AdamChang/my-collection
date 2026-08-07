@@ -1,6 +1,6 @@
 import { Component, computed, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { finalize } from 'rxjs';
 import { CatalogService, ItemWritePayload } from '../../core/api/catalog.service';
 import { CategoryService } from '../../core/api/category.service';
@@ -10,6 +10,7 @@ import {
   STEAM_PROVIDER_KEY,
   ProviderService,
 } from '../../core/api/provider.service';
+import { CatalogReturnPointService } from '../../core/catalog-return-point.service';
 import { IGNORE_HANDLED_BY_INTERCEPTOR } from '../../core/error.interceptor';
 import { NotificationService } from '../../core/notification.service';
 import { CategoryDto, DisplayMode, FetchedMetadataDto, ItemDto } from '../../core/models';
@@ -23,6 +24,7 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
   selector: 'app-item-detail',
   imports: [
     FormsModule,
+    RouterLink,
     DynamicFormComponent,
     IgdbSearchDialogComponent,
     ImageUploaderComponent,
@@ -33,6 +35,8 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
     <form class="detail" (ngSubmit)="save()">
       <header class="detail__header">
         <div>
+          <a class="detail__back" data-back-to-catalog
+             routerLink="/catalog" [queryParams]="returnPoint.queryParams()">← 返回列表</a>
           <div class="mc-eyebrow">OBJECT EDITOR</div>
           <h1>{{ itemId() ? '編輯品項' : '新增品項' }}</h1>
         </div>
@@ -180,6 +184,7 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
   styles: `
     .detail { display: grid; gap: 1rem; max-width: 46rem; }
     .detail__header { display: flex; justify-content: space-between; align-items: center; }
+    .detail__back { display: inline-block; margin-block-end: 0.35rem; font-size: 0.85rem; }
     .detail__actions { display: flex; gap: 0.5rem; }
     .detail__panel { display: grid; gap: 1rem; }
     .detail label { display: grid; gap: 0.25rem; }
@@ -202,6 +207,9 @@ export class ItemDetailComponent {
   private readonly notifications = inject(NotificationService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+
+  /** 品項頁不知道使用者是從哪一組篩選點進來的，返回點是它唯一的線索。 */
+  readonly returnPoint = inject(CatalogReturnPointService);
 
   readonly itemId = signal<string | null>(this.route.snapshot.paramMap.get('id'));
   readonly item = signal<ItemDto | null>(null);
@@ -471,7 +479,8 @@ export class ItemDetailComponent {
       .subscribe({
         next: () => {
           this.notifications.success('已刪除。');
-          void this.router.navigate(['/catalog']);
+          // 刪除也是回到列表的一條路：帶著返回點回去，才接得上「處理下一筆」。
+          void this.router.navigate(['/catalog'], { queryParams: this.returnPoint.queryParams() });
         },
         error: IGNORE_HANDLED_BY_INTERCEPTOR,
       });

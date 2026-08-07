@@ -7,7 +7,8 @@ import { CategoryFieldDto, ItemDto } from '../../core/models';
   selector: 'app-item-card',
   imports: [RouterLink],
   template: `
-    <a class="card" data-item-card [attr.aria-label]="'查看 ' + item().name" [routerLink]="['/items', item().id]">
+    <a class="card" data-item-card [attr.data-item-id]="item().id"
+       [attr.aria-label]="'查看 ' + item().name" [routerLink]="['/items', item().id]">
       @if (imageUrl(); as url) {
         <img [src]="url" [alt]="item().name" loading="lazy" />
       } @else {
