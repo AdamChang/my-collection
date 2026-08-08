@@ -2,15 +2,16 @@ import { Component, computed, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { API_BASE } from '../../core/api-base';
 import { CategoryFieldDto, ItemDto } from '../../core/models';
+import { AuthenticatedMediaDirective } from '../authenticated-media.directive';
 
 @Component({
   selector: 'app-item-card',
-  imports: [RouterLink],
+  imports: [RouterLink, AuthenticatedMediaDirective],
   template: `
     <a class="card" data-item-card [attr.data-item-id]="item().id"
        [attr.aria-label]="'查看 ' + item().name" [routerLink]="['/items', item().id]">
       @if (imageUrl(); as url) {
-        <img [src]="url" [alt]="item().name" loading="lazy" />
+        <img [appAuthenticatedMedia]="url" [alt]="item().name" loading="lazy" />
       } @else {
         <div class="card__placeholder" data-placeholder>{{ item().name.charAt(0) }}</div>
       }

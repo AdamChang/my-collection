@@ -1,5 +1,6 @@
 import { Component, DestroyRef, NgZone, effect, inject, input, signal } from '@angular/core';
 import { ShowcaseDisplayItem } from './showcase-display-item';
+import { AuthenticatedMediaDirective } from '../authenticated-media.directive';
 
 interface CollageSlot {
   item: ShowcaseDisplayItem;
@@ -12,6 +13,7 @@ interface CollageSlot {
  */
 @Component({
   selector: 'app-collage-section',
+  imports: [AuthenticatedMediaDirective],
   template: `
     @if (slots().length) {
       <section class="collage" data-collage-section>
@@ -20,7 +22,7 @@ interface CollageSlot {
           @for (slot of slots(); track slot.item.id) {
             <figure class="collage__card" [style.transform]="'rotate(' + slot.tiltDeg + 'deg)'" data-collage-card>
               @if (slot.item.imageUrl; as url) {
-                <img [src]="url" [alt]="slot.item.name" loading="lazy" />
+                <img [appAuthenticatedMedia]="url" [alt]="slot.item.name" loading="lazy" />
               } @else {
                 <div class="collage__placeholder" aria-hidden="true">{{ slot.item.name.charAt(0) }}</div>
               }

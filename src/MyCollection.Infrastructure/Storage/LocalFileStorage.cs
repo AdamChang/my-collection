@@ -62,15 +62,7 @@ public sealed class LocalFileStorage : IFileStorage
     /// </summary>
     private string Resolve(string relativePath)
     {
-        if (string.IsNullOrWhiteSpace(relativePath))
-        {
-            throw new ArgumentException("Path must not be empty.", nameof(relativePath));
-        }
-
-        if (Path.IsPathRooted(relativePath) || relativePath.Contains(':'))
-        {
-            throw new ArgumentException("Path must be relative.", nameof(relativePath));
-        }
+        relativePath = StoragePath.Validate(relativePath);
 
         var candidate = Path.GetFullPath(Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar)));
 

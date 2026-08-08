@@ -1,15 +1,17 @@
 import { Component, input, output, signal } from '@angular/core';
 import { API_BASE } from '../../core/api-base';
 import { ItemImageDto } from '../../core/models';
+import { AuthenticatedMediaDirective } from '../authenticated-media.directive';
 
 @Component({
   selector: 'app-image-uploader',
+  imports: [AuthenticatedMediaDirective],
   template: `
     <div class="uploader">
       <div class="uploader__grid">
         @for (image of images(); track image.id) {
           <figure class="uploader__item" [class.uploader__item--primary]="image.isPrimary">
-            <img [src]="mediaUrl(image.cardPath)" alt="" />
+            <img [appAuthenticatedMedia]="mediaUrl(image.cardPath)" alt="" />
             <figcaption>
               @if (image.isPrimary) {
                 <span

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Google.Cloud.Storage.V1;
 using MyCollection.Application.Auth;
 using MyCollection.Application.Categories;
 using MyCollection.Application.Common;
@@ -45,7 +46,24 @@ public static class DependencyInjection
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
         services.AddSingleton<ITokenService, JwtTokenService>();
         services.AddSingleton<IAttributeValidator, AttributeValidator>();
-        services.AddSingleton<IFileStorage, LocalFileStorage>();
+        var storage = configuration.GetSection(StorageOptions.SectionName).Get<StorageOptions>() ?? new StorageOptions();
+        switch (storage.Provider.ToUpperInvariant())
+        {
+            case "LOCAL":
+                services.AddSingleton<IFileStorage, LocalFileStorage>();
+                break;
+            case "GCS":
+                if (string.IsNullOrWhiteSpace(storage.Bucket))
+                {
+                    throw new InvalidOperationException("Storage:Bucket is required when Storage:Provider is Gcs.");
+                }
+
+                services.AddSingleton(_ => StorageClient.Create());
+                services.AddSingleton<IFileStorage, GcsFileStorage>();
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported storage provider '{storage.Provider}'.");
+        }
         services.AddSingleton<IImageProcessor, ImageSharpProcessor>();
 
         services.AddSingleton<ISecretProtector, AesGcmSecretProtector>();

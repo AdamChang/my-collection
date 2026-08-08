@@ -137,9 +137,12 @@ export class PublicShareComponent {
 
   readonly share = signal<PublicShareDto | null>(null);
   readonly notFound = signal(false);
+  readonly slug = this.route.snapshot.paramMap.get('slug')!;
 
   /** Collage 直接吃全部品項（不篩選展示模式，ADR-0007）；Hero/Stats 各自篩自己的模式。 */
-  readonly displayItems = computed(() => (this.share()?.items ?? []).map(toPublicShowcaseDisplayItem));
+  readonly displayItems = computed(() =>
+    (this.share()?.items ?? []).map((item) => toPublicShowcaseDisplayItem(item, this.slug)),
+  );
   readonly heroItems = computed(() => this.displayItems().filter((i) => i.effectiveDisplayMode === 'Hero'));
   readonly statsItems = computed(() => this.displayItems().filter((i) => i.effectiveDisplayMode === 'Stats'));
 
@@ -164,9 +167,7 @@ export class PublicShareComponent {
   }
 
   constructor() {
-    const slug = this.route.snapshot.paramMap.get('slug')!;
-
-    this.api.getPublic(slug).subscribe({
+    this.api.getPublic(this.slug).subscribe({
       next: (data) => this.share.set(data),
       error: () => this.notFound.set(true),
     });
@@ -174,6 +175,6 @@ export class PublicShareComponent {
 
   imageUrl(images: PublicShareDto['items'][number]['images']): string | null {
     const primary = images.find((i) => i.isPrimary) ?? images[0];
-    return primary ? `${API_BASE}/media/${primary.cardPath}` : null;
+    return primary ? `${API_BASE}/public/${this.slug}/media/${primary.cardPath}` : null;
   }
 }

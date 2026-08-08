@@ -1,4 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { ItemDto } from '../../core/models';
 import { ItemCardComponent } from './item-card.component';
@@ -33,7 +35,7 @@ describe('ItemCardComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [ItemCardComponent],
-      providers: [provideRouter([])],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
     fixture = TestBed.createComponent(ItemCardComponent);
   });
@@ -57,11 +59,15 @@ describe('ItemCardComponent', () => {
     expect(card.getAttribute('aria-label')).toBe('查看 初音ミク 1/8');
   });
 
-  it('uses the local card image when present', () => {
+  it('loads the local card image through HttpClient', () => {
+    const http = TestBed.inject(HttpTestingController);
+    spyOn(URL, 'createObjectURL').and.returnValue('blob:card');
     render(item({ images: [{ id: 'x', path: 'p/full.webp', cardPath: 'p/card.webp', thumbPath: 'p/thumb.webp', isPrimary: true, order: 0 }] }));
 
+    http.expectOne('/api/media/p/card.webp').flush(new Blob(['image']));
+
     const img: HTMLImageElement = fixture.nativeElement.querySelector('img');
-    expect(img.getAttribute('src')).toBe('/api/media/p/card.webp');
+    expect(img.src).toContain('blob:card');
   });
 
   it('falls back to the remote header url for synced items without local images', () => {

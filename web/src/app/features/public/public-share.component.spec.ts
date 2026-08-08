@@ -112,4 +112,20 @@ describe('PublicShareComponent', () => {
 
     expect(fixture.nativeElement.querySelectorAll('[data-public-card]').length).toBe(2);
   });
+
+  it('uses the share-scoped media endpoint for public images', async () => {
+    const fixture = await createPublicShare([
+      publicItem({
+        id: 'with-image',
+        images: [
+          { cardPath: 'owner/item/card.webp', thumbPath: 'owner/item/thumb.webp', isPrimary: true, order: 0 },
+        ],
+      }),
+    ]);
+    fixture.componentRef.setInput('view', 'list');
+    fixture.detectChanges();
+
+    const image: HTMLImageElement = fixture.nativeElement.querySelector('[data-public-card] img');
+    expect(image.getAttribute('src')).toBe('/api/public/demo/media/owner/item/card.webp');
+  });
 });

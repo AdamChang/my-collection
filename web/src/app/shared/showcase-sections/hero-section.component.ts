@@ -1,17 +1,18 @@
 import { DatePipe } from '@angular/common';
 import { Component, NgZone, computed, effect, inject, input, signal } from '@angular/core';
 import { ShowcaseDisplayItem } from './showcase-display-item';
+import { AuthenticatedMediaDirective } from '../authenticated-media.directive';
 
 /** 焦點展品模式：單品項輪播，大圖 Ken Burns 微縮放 + 側欄資訊。適合公仔模型／珍藏卡。 */
 @Component({
   selector: 'app-hero-section',
-  imports: [DatePipe],
+  imports: [DatePipe, AuthenticatedMediaDirective],
   template: `
     @if (current(); as item) {
       <section class="hero" data-hero-section>
         <div class="hero__image">
           @if (item.imageUrl; as url) {
-            <img [src]="url" [alt]="item.name" />
+            <img [appAuthenticatedMedia]="url" [alt]="item.name" />
           } @else {
             <div class="hero__placeholder" aria-hidden="true">{{ item.name.charAt(0) }}</div>
           }
