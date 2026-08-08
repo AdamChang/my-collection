@@ -34,6 +34,10 @@ export class IngestionService {
     });
   }
 
+  retry(jobId: string): Observable<SyncJobDto> {
+    return this.http.post<SyncJobDto>(`${API_BASE}/ingest/jobs/${jobId}/retry`, null);
+  }
+
   fetchByUrl(url: string): Observable<FetchedMetadataDto> {
     return this.http.post<FetchedMetadataDto>(`${API_BASE}/ingest/fetch`, null, {
       params: new HttpParams().set('url', url),
