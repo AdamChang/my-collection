@@ -46,6 +46,15 @@ public class GlobalExceptionHandlerTests
         (await HandleAsync(new ConflictException("dup"))).Should().Be(409);
 
     [Fact]
+    public async Task UnreadableCredentialException_maps_to_409_and_keeps_its_message()
+    {
+        var status = await HandleAsync(new UnreadableCredentialException());
+
+        status.Should().Be(409);
+        Captured!.ProblemDetails.Detail.Should().Contain("re-link");
+    }
+
+    [Fact]
     public async Task ProviderException_maps_to_502() =>
         (await HandleAsync(new ProviderException("steam", "boom"))).Should().Be(502);
 

@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
@@ -43,10 +42,6 @@ public sealed class PsnProvider(
         catch (ProviderException)
         {
             throw;
-        }
-        catch (CryptographicException)
-        {
-            throw new ProviderException(ProviderKey, "PSN credential decryption failed.");
         }
         catch (Exception ex) when (ex is HttpRequestException
                                    or JsonException

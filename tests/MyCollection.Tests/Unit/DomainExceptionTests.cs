@@ -43,6 +43,17 @@ public class DomainExceptionTests
     }
 
     [Fact]
+    public void UnreadableCredentialException_tells_the_user_how_to_recover()
+    {
+        var inner = new InvalidOperationException("tag mismatch");
+
+        var ex = new UnreadableCredentialException(innerException: inner);
+
+        ex.Message.Should().Contain("re-link");
+        ex.InnerException.Should().BeSameAs(inner);
+    }
+
+    [Fact]
     public void ProviderException_preserves_the_inner_exception()
     {
         var inner = new HttpRequestException("timeout");

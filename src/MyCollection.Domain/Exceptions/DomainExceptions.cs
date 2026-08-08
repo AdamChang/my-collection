@@ -15,6 +15,16 @@ public sealed class ForbiddenException(string message = "Access to the requested
 /// <summary>唯一性衝突（email、share slug）。對應 HTTP 409。</summary>
 public sealed class ConflictException(string message) : Exception(message);
 
+/// <summary>
+/// 保存的憑證無法以現行金鑰解密——輪替 SecretProtection:Key 之後，先前綁定的外部帳號都會落入這個狀態。
+/// 這不是伺服器故障也不是外部服務故障，使用者重新綁定即可自行修復，因此對應 HTTP 409 而非 500。
+/// </summary>
+public sealed class UnreadableCredentialException(
+    string message =
+        "The stored credential could not be decrypted with the current SecretProtection key; re-link the account to store it again.",
+    Exception? innerException = null)
+    : Exception(message, innerException);
+
 /// <summary>外部 Provider 呼叫失敗。對應 HTTP 502。</summary>
 public sealed class ProviderException(string providerKey, string message, Exception? innerException = null)
     : Exception(message, innerException)

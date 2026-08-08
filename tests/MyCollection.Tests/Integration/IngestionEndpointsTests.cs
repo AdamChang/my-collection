@@ -1,7 +1,12 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.Options;
+using MongoDB.Driver;
+using MyCollection.Domain.Entities;
+using MyCollection.Infrastructure.Security;
 using MyCollection.Tests.Fixtures;
 
 namespace MyCollection.Tests.Integration;
@@ -52,6 +57,33 @@ public class IngestionEndpointsTests(MongoFixture mongo) : IAsyncLifetime
         listed.Should().NotContain("SUPER-SECRET-KEY");
         listed.Should().Contain("76561197960287930");
     }
+
+    /// <summary>輪替 SecretProtection:Key 之後既有綁定的下場：可自行修復，所以是 409 而不是 500。</summary>
+    [Fact]
+    public async Task Sync_with_a_credential_from_an_older_key_returns_409()
+    {
+        await _client.PostAsJsonAsync("/external-accounts", new
+        {
+            provider = "steam", externalUserId = "76561197960287930", apiKey = "SUPER-SECRET-KEY"
+        });
+
+        await mongo.Context.ExternalAccounts.UpdateOneAsync(
+            Builders<ExternalAccount>.Filter.Eq(x => x.Provider, "steam"),
+            Builders<ExternalAccount>.Update.Set(x => x.ProtectedApiKey, ProtectedWithAnotherKey("SUPER-SECRET-KEY")));
+
+        var response = await _client.PostAsync("/ingest/sync/steam", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("re-link");
+        body.Should().NotContain("SUPER-SECRET-KEY");
+    }
+
+    private static string ProtectedWithAnotherKey(string plaintext) =>
+        new AesGcmSecretProtector(Options.Create(new SecretProtectionOptions
+        {
+            Key = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+        })).Protect(plaintext);
 
     [Fact]
     public async Task Sync_without_a_linked_account_returns_404()

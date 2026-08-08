@@ -16,7 +16,7 @@
 
 **資料在雲端，圖片在本地。** MongoDB 由 Atlas 託管，每台機器看到的收藏資料本來就是同一份，不需要搬運；但上傳的圖片存在各自的本地儲存區，換一台機器就是一堆破圖。所以 `/images/export`、`/images/import` 只搬圖檔：zip 內的 entry 名就是 storage 相對路徑，匯入端把檔案寫回同一個位置就完成還原，全程不碰資料庫，也因此沒有破壞性——只補上缺的檔案，永不覆蓋、永不刪除。
 
-**同步是冪等的。** Steam 同步以 `(ownerId, provider, externalId)` 為鍵做單次 `BulkWrite` upsert：provider 擁有的欄位用 `$set`，使用者擁有的欄位（Showcase 旗標、標籤、購入資訊）用 `$setOnInsert`。重跑同步不會蓋掉你的手動編輯。
+**同步是冪等的。** Steam／PSN 同步以 `(ownerId, provider, externalId)` 為鍵做單次 `BulkWrite` upsert：來源擁有的欄位會更新，使用者擁有的欄位（精選旗標、標籤、購入資訊等）只在建立時初始化。重跑同步不會產生重複品項；手動編輯是否保留則依欄位擁有權決定，詳見下方「遊戲資料同步與補完」。
 
 ---
 
@@ -149,11 +149,26 @@ cd web && npm test -- --watch=false --browsers=ChromeHeadless # 135 個
 | `Mongo` | `ConnectionString`、`Database` | Atlas 或本機皆可；預設值指向 `localhost:27017` |
 | `Jwt` | `Key`、`Issuer`、`Audience`、`AccessTokenMinutes`、`RefreshTokenDays` | `Key` 是 HMAC 簽章金鑰 |
 | `Storage` | `Provider`、`LocalRoot` | 第一版僅實作 `Local`；`IFileStorage` 介面預留了換成 GCS 的空間 |
-| `SecretProtection` | `Key` | Base64 的 32 bytes，加密外部帳號憑證 |
+| `SecretProtection` | `Key` | Base64 的 32 bytes，加密外部帳號憑證。**換掉這把金鑰等於作廢所有既有綁定**，見下 |
 | `Steam` | `BaseAddress`、`TimeoutSeconds` | |
 | `Igdb` | `ClientId`、`ClientSecret` | 選配，見下 |
 
 環境變數用雙底線對應階層：`Mongo__ConnectionString`、`Jwt__Key`。
+
+### 輪替 `SecretProtection:Key`
+
+外部帳號的憑證（Steam API key、PSN npsso）以這把金鑰用 AES-GCM 加密後存在 `externalAccounts.protectedApiKey`，
+**沒有再加密流程**。換掉金鑰之後，先前綁定的憑證就再也解不開，而且不會在啟動時報錯——
+要等到下次同步呼叫 `Unprotect` 才會浮現。
+
+因此換金鑰時（包含正式機重建 `.env`、或把本機 dev 金鑰的資料接到部署環境）必須連帶處理既有綁定：
+
+1. 換上新的 `SECRET_PROTECTION_KEY` 並重啟 API。
+2. 請每位使用者到設定頁重新綁定所有外部帳號（`POST /ingest/accounts` 會用現行金鑰重新加密並覆寫舊密文）。
+
+漏做第 2 步的話，同步會回 **409 `Stored credential could not be decrypted.`**——
+看到這個回應就代表該筆憑證屬於舊金鑰世代，重新綁定即可，不必動資料庫。
+在那之前，舊金鑰仍是唯一能解開既有密文的東西，別急著丟掉。
 
 ### IGDB 遊戲中繼資料（選配）
 
@@ -165,6 +180,44 @@ cd web && npm test -- --watch=false --browsers=ChromeHeadless # 135 個
 該流程不會使用它。
 
 不設定就整組停用：provider 不註冊，前端不顯示相關入口。
+
+### 遊戲資料同步與補完
+
+Steam、PSN 與 IGDB 不是三份會互相合併的遊戲庫，而是兩種不同能力：
+
+| 來源 | 能力 | 建立品項 | 主要資料 |
+|---|---|---:|---|
+| Steam | 帳號同步、商店本地化補完 | 同步會 | 已擁有／玩過的遊戲、遊玩時數、圖片；商店補完另提供名稱、簡介與類型 |
+| PSN | 帳號同步 | 會 | 有獎盃紀錄的作品、獎盃完成度、最後遊玩時間與圖示 |
+| IGDB | 搜尋建檔、遊戲中繼資料補完 | 搜尋建檔會；補完不會 | 開發商、發行商、發售日期、類型、發行平台、評分與封面 |
+
+同步的識別鍵是 `(使用者, provider, externalId)`。因此同一款遊戲同時存在於 Steam 與
+PlayStation 時，會保留為兩筆品項，不會自動去重或合併；請用「平台／商店」欄位辨識自己持有的是哪一份。
+IGDB 是補充作品資料的來源，不是第三個帳號遊戲庫。
+
+#### 欄位會不會互相覆蓋？
+
+會，但只限來源擁有的欄位；規則如下：
+
+| 操作 | 會覆蓋既有值 | 不會覆蓋既有值 |
+|---|---|---|
+| Steam 同步 | 遊玩時數、Steam 圖片／識別資料 | 名稱、平台／商店，以及精選、標籤、購入資訊、儲存位置、使用者上傳圖片 |
+| PSN 同步 | 獎盃完成度、最後遊玩時間、PSN 圖示；來源有提供時也會更新簡介 | 名稱、平台／商店，以及精選、標籤、購入資訊、儲存位置、使用者上傳圖片 |
+| IGDB 補完 | 名稱、開發商、發行商、發售日期、發行平台、IGDB 評分、IGDB 封面與 IGDB ID | 既有的簡介、類型與 Steam App ID；這三欄只有目前為空時才補入 |
+| Steam 商店補完 | 名稱、簡介、類型、Steam App ID 與補完時間 | 精選、標籤、購入資訊等使用者欄位 |
+
+特別注意：
+
+- 手動修改「名稱」後，再執行 Steam／PSN **同步**不會被改回去；但執行 IGDB 或 Steam 商店
+  **補完**時，名稱可能被來源資料覆蓋。Steam 商店補完以繁體中文資料為目的，因此也會覆蓋簡介與類型。
+- IGDB 對簡介、類型與 Steam App ID 採軟寫入，所以先做 Steam 商店補完或先做 IGDB 補完，
+  最終都會讓 Steam 商店資料優先；其餘 IGDB 欄位則以最新一次補完結果為準。
+- PSN 同步取的是「獎盃清單」，不是購買／持有清單。買了但沒開過、沒有獎盃的遊戲不會出現；
+  PS Plus 玩過但未購買的遊戲可能會出現。NPSSO 約兩個月會過期，屆時需重新綁定。
+- PSN 只提供獎盃組識別碼 `npCommunicationId`，無法自動對應 IGDB。若要補完 PSN 品項，
+  必須先手動填入 `igdbId`；Steam 品項則可用 Steam App ID 自動對應 IGDB。
+- 「平台／商店」表示你持有的這一份在哪裡；IGDB 的「發行平台」表示作品曾在哪些平台發行。
+  兩者是不同欄位，不會互相覆蓋。
 
 ---
 
@@ -193,7 +246,7 @@ cd web && npm test -- --watch=false --browsers=ChromeHeadless # 135 個
 
 品項查詢支援依 schema 屬性篩選：`GET /items?attr.brand=GSC&attr.scale=1/8`。
 
-三個 provider：`steam`（`POST /ingest/sync/steam`，需先在設定頁綁 API Key 與 SteamID）、`opengraph`（`POST /ingest/fetch`，貼商品網址自動帶入名稱與描述，不支援批次同步），以及選配的 `igdb`（`GET /ingest/search` 關鍵字搜尋、`POST /ingest/enrich/igdb` 補完既有品項，不支援批次同步）。`GET /ingest/providers` 只列出實際註冊的 provider，前端據此決定顯示哪些入口。分享頁的前端網址是 `/p/{slug}`。
+四個 provider：`steam`（`POST /ingest/sync/steam`，需先在設定頁綁 API Key 與 SteamID）、`psn`（`POST /ingest/sync/psn`，需綁 NPSSO）、`opengraph`（`POST /ingest/fetch`，貼商品網址自動帶入名稱與描述，不支援批次同步），以及選配的 `igdb`（`GET /ingest/search` 關鍵字搜尋、`POST /ingest/enrich/igdb` 補完既有品項，不支援帳號同步）。`GET /ingest/providers` 只列出實際註冊的 provider，前端據此決定顯示哪些入口。分享頁的前端網址是 `/p/{slug}`。
 
 錯誤一律回 RFC 9457 ProblemDetails，由單一 `IExceptionHandler` 產生，不在各處 try-catch。
 
@@ -201,7 +254,7 @@ cd web && npm test -- --watch=false --browsers=ChromeHeadless # 135 個
 
 ## 第一版不做
 
-位置階層 UI · 估值曲線與匯率 · 保固到期提醒 · PSN 整合 · Discogs/IGDB · CSV 匯入匯出 · 多人共享 group · 行動 App · 虛擬捲動（先用「載入更多」，資料量到數千筆再說）
+位置階層 UI · 估值曲線與匯率 · 保固到期提醒 · Discogs · CSV 匯入匯出 · 多人共享 group · 行動 App · 虛擬捲動（先用「載入更多」，資料量到數千筆再說）
 
 ---
 

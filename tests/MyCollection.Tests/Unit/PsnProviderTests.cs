@@ -474,8 +474,12 @@ public class PsnProviderTests
             .Which.ProviderKey.Should().Be("psn");
     }
 
+    /// <summary>
+    /// 解密失敗不是 PSN 的錯，包成 ProviderException（502）會把「請重新綁定」誤導成外部服務故障，
+    /// 因此原樣冒泡讓 API 層轉成 409。訊息本身仍不得帶出任何祕密材料。
+    /// </summary>
     [Fact]
-    public async Task Sync_wraps_secret_decryption_failure_without_leaking_secret_material()
+    public async Task Sync_surfaces_secret_decryption_failure_without_leaking_secret_material()
     {
         var handler = SuccessfulHandler(Fixture("psn-trophy-titles-page-0.json"));
         var protector = new ThrowingSecretProtector();
@@ -483,12 +487,10 @@ public class PsnProviderTests
         var act = () => CreateSut(handler, protector).SyncAsync(Account(), CancellationToken.None);
 
         var exception = (await act.Should()
-            .ThrowAsync<MyCollection.Domain.Exceptions.ProviderException>()).Which;
-        exception.ProviderKey.Should().Be("psn");
+            .ThrowAsync<MyCollection.Domain.Exceptions.UnreadableCredentialException>()).Which;
         exception.Message.Should().NotContain("protected-fake-npsso");
         exception.Message.Should().NotContain("NPSSO");
         exception.Message.Should().NotContain("fake-secret-material");
-        exception.InnerException.Should().BeNull();
     }
 
     [Fact]
@@ -552,8 +554,10 @@ public class PsnProviderTests
     {
         public string Protect(string plaintext) => throw new NotSupportedException();
 
+        // inner 帶祕密材料，用來確認外露的訊息取自例外本身而不是內層
         public string Unprotect(string ciphertext) =>
-            throw new CryptographicException(
-                "protected-fake-npsso npsso=fake-secret-material");
+            throw new MyCollection.Domain.Exceptions.UnreadableCredentialException(
+                innerException: new CryptographicException(
+                    "protected-fake-npsso npsso=fake-secret-material"));
     }
 }

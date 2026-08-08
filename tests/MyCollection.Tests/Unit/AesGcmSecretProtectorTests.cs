@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.Extensions.Options;
+using MyCollection.Domain.Exceptions;
 using MyCollection.Infrastructure.Security;
 
 namespace MyCollection.Tests.Unit;
@@ -32,14 +33,15 @@ public class AesGcmSecretProtectorTests
         sut.Protect("same").Should().NotBe(sut.Protect("same"));
     }
 
+    /// <summary>金鑰輪替後既有密文解不開，這是要引導使用者重新綁定的情境，不是伺服器錯誤。</summary>
     [Fact]
-    public void Unprotect_with_a_different_key_throws()
+    public void Unprotect_with_a_different_key_throws_UnreadableCredential()
     {
         var cipher = CreateSut().Protect("secret");
 
         var act = () => CreateSut().Unprotect(cipher);
 
-        act.Should().Throw<CryptographicException>();
+        act.Should().Throw<UnreadableCredentialException>();
     }
 
     [Fact]
@@ -52,7 +54,23 @@ public class AesGcmSecretProtectorTests
 
         var act = () => sut.Unprotect(Convert.ToBase64String(bytes));
 
-        act.Should().Throw<CryptographicException>();
+        act.Should().Throw<UnreadableCredentialException>();
+    }
+
+    [Fact]
+    public void Unprotect_rejects_a_value_that_is_not_base64()
+    {
+        var act = () => CreateSut().Unprotect("not base64!!");
+
+        act.Should().Throw<UnreadableCredentialException>();
+    }
+
+    [Fact]
+    public void Unprotect_rejects_a_payload_shorter_than_nonce_and_tag()
+    {
+        var act = () => CreateSut().Unprotect(Convert.ToBase64String(new byte[27]));
+
+        act.Should().Throw<UnreadableCredentialException>();
     }
 
     [Fact]

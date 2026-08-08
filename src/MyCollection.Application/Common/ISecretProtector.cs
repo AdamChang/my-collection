@@ -5,6 +5,10 @@ public interface ISecretProtector
 {
     string Protect(string plaintext);
 
-    /// <summary>金鑰不符或密文被竄改時擲 <see cref="System.Security.Cryptography.CryptographicException"/>。</summary>
+    /// <summary>
+    /// 金鑰不符、密文被竄改或格式壞掉時擲
+    /// <see cref="MyCollection.Domain.Exceptions.UnreadableCredentialException"/>——
+    /// 三種情形使用者能做的都是重新綁定，呼叫端不必分辨。
+    /// </summary>
     string Unprotect(string ciphertext);
 }

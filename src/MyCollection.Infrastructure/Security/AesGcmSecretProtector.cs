@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Options;
 using MyCollection.Application.Common;
+using MyCollection.Domain.Exceptions;
 
 namespace MyCollection.Infrastructure.Security;
 
@@ -51,6 +52,10 @@ public sealed class AesGcmSecretProtector : ISecretProtector
         return Convert.ToBase64String(payload);
     }
 
+    /// <summary>
+    /// 解不開一律是 <see cref="UnreadableCredentialException"/>：無論是金鑰對不上、密文被改過還是格式壞掉，
+    /// 使用者能做的都只有重新綁定。放任 <see cref="CryptographicException"/> 冒泡只會變成無從解讀的 500。
+    /// </summary>
     public string Unprotect(string ciphertext)
     {
         byte[] payload;
@@ -60,12 +65,12 @@ public sealed class AesGcmSecretProtector : ISecretProtector
         }
         catch (FormatException ex)
         {
-            throw new CryptographicException("Ciphertext is not valid Base64.", ex);
+            throw new UnreadableCredentialException(innerException: ex);
         }
 
         if (payload.Length < NonceSize + TagSize)
         {
-            throw new CryptographicException("Ciphertext is too short.");
+            throw new UnreadableCredentialException();
         }
 
         var nonce = payload.AsSpan(0, NonceSize);
@@ -74,7 +79,14 @@ public sealed class AesGcmSecretProtector : ISecretProtector
         var plainBytes = new byte[cipherBytes.Length];
 
         using var aes = new AesGcm(_key, TagSize);
-        aes.Decrypt(nonce, cipherBytes, tag, plainBytes);
+        try
+        {
+            aes.Decrypt(nonce, cipherBytes, tag, plainBytes);
+        }
+        catch (CryptographicException ex)
+        {
+            throw new UnreadableCredentialException(innerException: ex);
+        }
 
         return Encoding.UTF8.GetString(plainBytes);
     }

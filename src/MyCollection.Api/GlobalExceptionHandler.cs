@@ -75,6 +75,12 @@ public sealed class GlobalExceptionHandler(
 
             ConflictException c => (StatusCodes.Status409Conflict, "Conflict.", c.Message, null),
 
+            UnreadableCredentialException u => (
+                StatusCodes.Status409Conflict,
+                "Stored credential could not be decrypted.",
+                u.Message,
+                null),
+
             ProviderException p => (
                 StatusCodes.Status502BadGateway,
                 $"Provider '{p.ProviderKey}' failed.",
