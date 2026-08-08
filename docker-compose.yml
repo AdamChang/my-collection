@@ -18,8 +18,11 @@ services:
       # 走 Twitch client credentials（server-to-server），不需要 HTTPS 或重新導向網址。
       Igdb__ClientId: ${IGDB_CLIENT_ID:-}
       Igdb__ClientSecret: ${IGDB_CLIENT_SECRET:-}
+      Cors__AllowedOrigins__0: http://localhost:8080
     volumes:
       - ./data/media:/app/data/media
+    ports:
+      - "5080:8080"
 
   web:
     build:
@@ -28,5 +31,7 @@ services:
     restart: unless-stopped
     depends_on:
       - api
+    environment:
+      API_BASE_URL: http://localhost:5080
     ports:
-      - "8080:80"
+      - "8080:8080"

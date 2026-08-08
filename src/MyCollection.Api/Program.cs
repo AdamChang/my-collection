@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
 using MyCollection.Api;
 using MyCollection.Api.Endpoints;
@@ -36,6 +37,30 @@ builder.Services.AddScoped<IUserContext>(sp =>
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Web", policy =>
+    {
+        if (allowedOrigins.Length > 0)
+        {
+            policy.WithOrigins(allowedOrigins)
+                .AllowAnyHeader()
+                .AllowAnyMethod();
+        }
+    });
+});
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 1;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
+builder.Services.AddSingleton<StartupHealthState>();
 
 // 關閉 sub → ClaimTypes.NameIdentifier 的預設映射，HttpUserContext 才讀得到原始 sub
 JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
@@ -73,7 +98,9 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(optio
 
 var app = builder.Build();
 
+app.UseForwardedHeaders();
 app.UseExceptionHandler();
+app.UseCors("Web");
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -90,7 +117,13 @@ app.MapShowcaseEndpoints();
 app.MapShareEndpoints();
 app.MapIngestionEndpoints();
 app.MapImageTransferEndpoints();
-app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
+app.MapGet("/health/live", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
+app.MapGet("/health/startup", (StartupHealthState state) =>
+        state.IsReady
+            ? Results.Ok(new { status = "ok" })
+            : Results.Json(new { status = "starting" }, statusCode: StatusCodes.Status503ServiceUnavailable))
+    .AllowAnonymous();
+app.MapGet("/health", () => Results.Redirect("/health/live")).AllowAnonymous();
 
 await using (var scope = app.Services.CreateAsyncScope())
 {
@@ -101,7 +134,20 @@ await using (var scope = app.Services.CreateAsyncScope())
     await SystemCategorySeeder.SeedAsync(context, timeProvider, CancellationToken.None);
 }
 
+app.Services.GetRequiredService<StartupHealthState>().MarkReady();
+
 app.Run();
 
 /// <summary>供 WebApplicationFactory 取得進入點組件。</summary>
 public partial class Program;
+
+public sealed class StartupHealthState
+{
+    private int _isReady;
+
+    public bool IsReady => Volatile.Read(ref _isReady) == 1;
+
+    public void MarkReady() => Volatile.Write(ref _isReady, 1);
+
+    public void MarkNotReady() => Volatile.Write(ref _isReady, 0);
+}

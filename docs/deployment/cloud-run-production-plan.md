@@ -1,6 +1,6 @@
 # MyCollection Cloud Run Production 部署計畫
 
-- 狀態：已確認，尚未實作
+- 狀態：執行中（Phase 0、Phase 1 與 Phase 4 資料搬移已完成；Phase 4 acceptance 待服務部署後驗證）
 - 日期：2026-08-08
 - 決策依據：[ADR-0011](../adr/0011-low-cost-production-on-cloud-run-and-atlas-free.md)
 
