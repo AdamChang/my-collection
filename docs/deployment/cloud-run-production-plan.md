@@ -135,7 +135,7 @@
 1. 執行 backend／frontend tests 與 production builds。
 2. 建立 Web/API images，以 commit SHA 標記並推至 Artifact Registry。
 3. 部署 API 0% traffic tagged revision，對 tag URL 執行 health、登入、Mongo CRUD、GCS、Share Link smoke tests。
-4. API 切入 10% traffic，以 synthetic requests 觀察 15 分鐘；失敗自動切回前一 revision，成功升至 100%。
+4. API 切入 40% traffic，以 synthetic requests 觀察 15 分鐘；失敗自動切回前一 revision，成功升至 100%。
 5. 以相同流程部署 Web；Web runtime config 指向穩定 API service URL。
 6. 記錄 deployed commit、revision names 與驗證結果，供手動 rollback workflow 使用。
 7. Artifact Registry cleanup policy 保留近期與目前仍被 revision 使用的 images。

@@ -32,3 +32,8 @@ output "backup_image_repository" {
   description = "Artifact Registry repository for the MongoDB backup image."
   value       = google_artifact_registry_repository.backup.name
 }
+
+output "app_image_repository" {
+  description = "Artifact Registry repository for production API and Web images."
+  value       = google_artifact_registry_repository.app.name
+}

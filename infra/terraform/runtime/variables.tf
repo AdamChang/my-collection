@@ -51,3 +51,9 @@ variable "backup_alert_email" {
   type        = string
   default     = "adamcha0516@gmail.com"
 }
+
+variable "app_repository_id" {
+  description = "Artifact Registry repository for production API and Web images."
+  type        = string
+  default     = "mycollection"
+}
