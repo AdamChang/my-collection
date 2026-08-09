@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { Directive, ElementRef, OnDestroy, effect, inject, input } from '@angular/core';
+import { Directive, ElementRef, OnDestroy, effect, inject, input, untracked } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { API_BASE } from '../core/api-base';
 
@@ -17,7 +17,13 @@ export class AuthenticatedMediaDirective implements OnDestroy {
   readonly source = input.required<string>({ alias: 'appAuthenticatedMedia' });
 
   constructor() {
-    effect(() => this.load(this.source()));
+    // 只有 source 該讓這個 effect 重跑。load() 會同步啟動 HTTP，攔截器鏈在那段路徑上
+    // 讀到的任何 signal（載入計數、access token）都會被登記成相依——一旦它們變動，
+    // effect 重跑、取消原請求、再發一次，同一張圖就被無限重打。
+    effect(() => {
+      const source = this.source();
+      untracked(() => this.load(source));
+    });
   }
 
   ngOnDestroy(): void {

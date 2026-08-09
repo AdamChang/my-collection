@@ -1,4 +1,4 @@
-import { Injectable, computed, signal } from '@angular/core';
+import { Injectable, computed, signal, untracked } from '@angular/core';
 
 /** 短請求不值得閃一下進度條，那比不顯示更像壞掉。 */
 const INDICATOR_DELAY_MS = 200;
@@ -17,8 +17,13 @@ export class LoadingService {
   /** 進度條是否該顯示。忙碌超過 INDICATOR_DELAY_MS 才為 true。 */
   readonly showIndicator = signal(false);
 
+  /**
+   * untracked 不是最佳化：請求常在 effect 裡發出，若計數器在這裡被反應式讀取，
+   * 呼叫端的 effect 就會相依於它，而下一行的寫入立刻讓那個 effect 變髒——
+   * 重跑、取消原請求、再發一次，無限迴圈。計數的讀取永遠不該建立相依。
+   */
   start(): void {
-    const pending = this.pending() + 1;
+    const pending = untracked(this.pending) + 1;
     this.pending.set(pending);
 
     if (pending === 1) {
@@ -28,7 +33,7 @@ export class LoadingService {
 
   stop(): void {
     // 夾在 0 以上：多餘的 stop() 若讓計數變負，之後的進度條就再也不會消失。
-    const pending = Math.max(0, this.pending() - 1);
+    const pending = Math.max(0, untracked(this.pending) - 1);
     this.pending.set(pending);
 
     if (pending === 0) {

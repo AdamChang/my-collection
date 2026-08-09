@@ -1,3 +1,4 @@
+import { effect } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
@@ -59,6 +60,32 @@ describe('loadingInterceptor', () => {
     subscription.unsubscribe();
 
     expect(loading.isBusy()).toBe(false);
+  });
+
+  /**
+   * 計數器若在 start()／stop() 內被反應式讀取，從 effect 發出的請求會把計數器登記成
+   * 該 effect 的相依，接著的寫入立刻讓 effect 變髒——effect 重跑、取消原請求、再發一次，
+   * 無限迴圈。上限判斷是安全閥：迴歸時別把瀏覽器凍死。
+   */
+  it('does not make a calling effect depend on the pending counter', () => {
+    const RUN_LIMIT = 5;
+    let runs = 0;
+
+    TestBed.runInInjectionContext(() => {
+      effect(() => {
+        runs++;
+
+        if (runs <= RUN_LIMIT) {
+          http.get('/api/items').subscribe({ error: () => undefined });
+        }
+      });
+    });
+
+    TestBed.tick();
+
+    expect(runs).toBe(1);
+
+    controller.match(() => true);
   });
 
   it('stays busy until the last of several overlapping requests finishes', () => {
