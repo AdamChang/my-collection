@@ -54,7 +54,7 @@ jobs:
         with:
           project_id: ${{ env.PROJECT_ID }}
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_DEPLOYER_SERVICE_ACCOUNT }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
 
       - uses: google-github-actions/setup-gcloud@v3
 
@@ -81,7 +81,7 @@ jobs:
           HEALTH_PATH: /health/startup
           RELEASE_TAG: sha-${{ github.sha }}
           SMOKE_SCRIPT: .github/scripts/smoke-api.sh
-          SMOKE_EMAIL: ${{ secrets.PRODUCTION_SMOKE_EMAIL }}
+          SMOKE_EMAIL: ${{ vars.PRODUCTION_SMOKE_EMAIL }}
           SMOKE_PASSWORD: ${{ secrets.PRODUCTION_SMOKE_PASSWORD }}
         run: bash .github/scripts/rollout-cloud-run.sh
 

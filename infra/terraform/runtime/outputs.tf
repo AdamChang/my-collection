@@ -37,3 +37,23 @@ output "app_image_repository" {
   description = "Artifact Registry repository for production API and Web images."
   value       = google_artifact_registry_repository.app.name
 }
+
+output "api_service_name" {
+  description = "Production API Cloud Run service."
+  value       = google_cloud_run_v2_service.api.name
+}
+
+output "api_service_url" {
+  description = "Stable production API URL."
+  value       = google_cloud_run_v2_service.api.uri
+}
+
+output "web_service_name" {
+  description = "Production Web Cloud Run service."
+  value       = google_cloud_run_v2_service.web.name
+}
+
+output "web_service_url" {
+  description = "Stable production Web URL."
+  value       = google_cloud_run_v2_service.web.uri
+}
