@@ -17,3 +17,18 @@ output "task_invoker_service_account" {
   description = "OIDC identity used by Cloud Tasks when calling the ingestion handler."
   value       = google_service_account.task_invoker.email
 }
+
+output "backup_bucket_name" {
+  description = "Private bucket containing MongoDB backup archives."
+  value       = google_storage_bucket.backups.name
+}
+
+output "backup_job_name" {
+  description = "Cloud Run Job that creates the MongoDB backup archive."
+  value       = google_cloud_run_v2_job.mongo_backup.name
+}
+
+output "backup_image_repository" {
+  description = "Artifact Registry repository for the MongoDB backup image."
+  value       = google_artifact_registry_repository.backup.name
+}

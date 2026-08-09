@@ -21,3 +21,33 @@ variable "storage_operator_email" {
   type        = string
   default     = "adamcha0516@gmail.com"
 }
+
+variable "backup_bucket_name" {
+  description = "Private bucket containing MongoDB backup archives."
+  type        = string
+  default     = "mycollection-504914-backups"
+}
+
+variable "backup_repository_id" {
+  description = "Artifact Registry repository that hosts the backup job image."
+  type        = string
+  default     = "mycollection-backup"
+}
+
+variable "backup_image" {
+  description = "Immutable image reference for the MongoDB backup Cloud Run Job."
+  type        = string
+  default     = "asia-east1-docker.pkg.dev/mycollection-504914/mycollection-backup/mongo-backup@sha256:27cf6d12380dbc2b5c3f3760b75b06323bf17c0d796ab55e95699e43518657c8"
+}
+
+variable "backup_schedule" {
+  description = "Cloud Scheduler cron expression for the production backup."
+  type        = string
+  default     = "0 2 * * *"
+}
+
+variable "backup_alert_email" {
+  description = "Address notified when the backup job logs an error."
+  type        = string
+  default     = "adamcha0516@gmail.com"
+}
