@@ -13,6 +13,15 @@ OBSERVE_MINUTES="${OBSERVE_MINUTES:-15}"
 PREVIOUS_PERCENT=$((100 - CANARY_PERCENT))
 traffic_shifted=false
 
+max_traffic_tag_length=$((46 - ${#SERVICE}))
+if ((max_traffic_tag_length < 1)); then
+  echo "Service name is too long to create a Cloud Run traffic tag." >&2
+  exit 1
+fi
+candidate_tag="candidate-$RELEASE_TAG"
+candidate_tag="${candidate_tag:0:max_traffic_tag_length}"
+candidate_tag="${candidate_tag%-}"
+
 service_json="$(gcloud run services describe "$SERVICE" \
   --project "$PROJECT_ID" \
   --region "$REGION" \
@@ -45,7 +54,7 @@ gcloud run deploy "$SERVICE" \
   --region "$REGION" \
   --image "$IMAGE" \
   --revision-suffix "$RELEASE_TAG" \
-  --tag "candidate-$RELEASE_TAG" \
+  --tag "$candidate_tag" \
   --no-traffic \
   --quiet
 
@@ -53,9 +62,9 @@ service_json="$(gcloud run services describe "$SERVICE" \
   --project "$PROJECT_ID" \
   --region "$REGION" \
   --format json)"
-new_revision="$(jq -r --arg tag "candidate-$RELEASE_TAG" \
+new_revision="$(jq -r --arg tag "$candidate_tag" \
   '.status.traffic[] | select(.tag == $tag) | .revisionName' <<<"$service_json")"
-candidate_url="$(jq -r --arg tag "candidate-$RELEASE_TAG" \
+candidate_url="$(jq -r --arg tag "$candidate_tag" \
   '.status.traffic[] | select(.tag == $tag) | .url' <<<"$service_json")"
 stable_url="$(jq -r '.status.url' <<<"$service_json")"
 

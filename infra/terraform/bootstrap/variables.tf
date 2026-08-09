@@ -29,5 +29,5 @@ variable "github_repository" {
 variable "github_branch" {
   description = "Only this branch can authenticate for production deployment."
   type        = string
-  default     = "refs/heads/master"
+  default     = "refs/heads/deploy"
 }
