@@ -1,0 +1,114 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: mycollection-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: mycollection-504914
+  REGION: asia-east1
+  REPOSITORY: mycollection
+  API_SERVICE: mycollection-api
+  WEB_SERVICE: mycollection-web
+  CANARY_PERCENT: "40"
+  OBSERVE_MINUTES: "15"
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/deploy'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test backend
+        run: dotnet test MyCollection.slnx --configuration Release
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Test and build frontend
+        working-directory: web
+        run: |
+          npm ci
+          npm test -- --watch=false --browsers=ChromeHeadless
+          npm run build
+
+      - uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Artifact Registry authentication
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and push immutable images
+        env:
+          API_IMAGE: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/api:${{ github.sha }}
+          WEB_IMAGE: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/web:${{ github.sha }}
+        run: |
+          docker build --file src/MyCollection.Api/Dockerfile --tag "$API_IMAGE" .
+          docker build --file web/Dockerfile --tag "$WEB_IMAGE" .
+          docker push "$API_IMAGE"
+          docker push "$WEB_IMAGE"
+          echo "API_IMAGE=$API_IMAGE" >> "$GITHUB_ENV"
+          echo "WEB_IMAGE=$WEB_IMAGE" >> "$GITHUB_ENV"
+
+      - name: Roll out API canary
+        id: api
+        env:
+          SERVICE: ${{ env.API_SERVICE }}
+          IMAGE: ${{ env.API_IMAGE }}
+          HEALTH_PATH: /health/startup
+          RELEASE_TAG: sha-${{ github.sha }}
+          SMOKE_SCRIPT: .github/scripts/smoke-api.sh
+          SMOKE_EMAIL: ${{ vars.PRODUCTION_SMOKE_EMAIL }}
+          SMOKE_PASSWORD: ${{ secrets.PRODUCTION_SMOKE_PASSWORD }}
+        run: bash .github/scripts/rollout-cloud-run.sh
+
+      - name: Roll out Web canary
+        id: web
+        env:
+          SERVICE: ${{ env.WEB_SERVICE }}
+          IMAGE: ${{ env.WEB_IMAGE }}
+          HEALTH_PATH: /
+          RELEASE_TAG: sha-${{ github.sha }}
+        run: bash .github/scripts/rollout-cloud-run.sh
+
+      - name: Record deployment
+        if: always()
+        run: |
+          cat > deployment.json <<JSON
+          {
+            "commit": "${GITHUB_SHA}",
+            "apiRevision": "${{ steps.api.outputs.new_revision }}",
+            "webRevision": "${{ steps.web.outputs.new_revision }}",
+            "result": "${{ job.status }}"
+          }
+          JSON
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-deployment-${{ github.sha }}
+          path: deployment.json
+          retention-days: 30
