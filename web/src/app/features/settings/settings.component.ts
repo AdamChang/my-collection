@@ -61,6 +61,11 @@ import { ProviderEnrichComponent } from './provider-enrich.component';
                   @if (job.error) {
                     <span class="sync-status__detail">{{ job.error }}</span>
                   }
+                  @if (job.status === 'Failed') {
+                    <button type="button" (click)="retry(job.id)" [disabled]="retryingJobId() !== null">
+                      {{ retryingJobId() === job.id ? '重排中…' : '重新執行' }}
+                    </button>
+                  }
                 </td>
                 <td>{{ job.created }}</td>
                 <td>{{ job.updated }}</td>
@@ -157,6 +162,7 @@ export class SettingsComponent {
   readonly shares = signal<ShareLinkDto[]>([]);
   readonly creatingShare = signal(false);
   readonly removingShareId = signal<string | null>(null);
+  readonly retryingJobId = signal<string | null>(null);
 
   /** 分享連結的兩個動作互相排斥；各來源面板的忙碌狀態由面板自己管。 */
   readonly busy = computed(() => this.creatingShare() || this.removingShareId() !== null);
@@ -212,6 +218,23 @@ export class SettingsComponent {
 
   protected reloadJobs(): void {
     this.ingestion.jobs().subscribe((jobs) => this.jobs.set(jobs));
+  }
+
+  protected retry(jobId: string): void {
+    if (this.retryingJobId() !== null) {
+      return;
+    }
+
+    this.retryingJobId.set(jobId);
+    this.ingestion.retry(jobId)
+      .pipe(finalize(() => this.retryingJobId.set(null)))
+      .subscribe({
+        next: () => {
+          this.notifications.success('失敗作業已重新排入佇列。');
+          this.reloadJobs();
+        },
+        error: IGNORE_HANDLED_BY_INTERCEPTOR,
+      });
   }
 
   private reloadShares(): void {

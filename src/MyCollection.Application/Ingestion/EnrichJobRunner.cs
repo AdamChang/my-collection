@@ -48,11 +48,13 @@ public sealed class EnrichJobRunner(
             job.Status = SyncStatus.Failed;
             job.Error = ex.Message;
             job.FinishedAt = timeProvider.GetUtcNow().UtcDateTime;
+            job.LeaseUntil = null;
             await jobs.UpdateAsync(job, ct);
             throw;
         }
 
         job.FinishedAt = timeProvider.GetUtcNow().UtcDateTime;
+        job.LeaseUntil = null;
         await jobs.UpdateAsync(job, ct);
 
         return job;

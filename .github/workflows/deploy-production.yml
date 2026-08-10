@@ -79,7 +79,7 @@ jobs:
           SERVICE: ${{ env.API_SERVICE }}
           IMAGE: ${{ env.API_IMAGE }}
           HEALTH_PATH: /health/startup
-          RELEASE_TAG: sha-${{ github.sha }}
+          RELEASE_TAG: run-${{ github.run_id }}-${{ github.run_attempt }}
           SMOKE_SCRIPT: .github/scripts/smoke-api.sh
           SMOKE_EMAIL: ${{ vars.PRODUCTION_SMOKE_EMAIL }}
           SMOKE_PASSWORD: ${{ secrets.PRODUCTION_SMOKE_PASSWORD }}
@@ -91,7 +91,7 @@ jobs:
           SERVICE: ${{ env.WEB_SERVICE }}
           IMAGE: ${{ env.WEB_IMAGE }}
           HEALTH_PATH: /
-          RELEASE_TAG: sha-${{ github.sha }}
+          RELEASE_TAG: run-${{ github.run_id }}-${{ github.run_attempt }}
         run: bash .github/scripts/rollout-cloud-run.sh
 
       - name: Record deployment

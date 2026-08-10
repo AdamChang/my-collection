@@ -1,5 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, input } from '@angular/core';
+import { AuthenticatedMediaDirective } from '../authenticated-media.directive';
 import { ShowcaseDisplayItem } from '../showcase-sections/showcase-display-item';
 
 interface PreviewField {
@@ -18,6 +19,7 @@ interface PreviewField {
  */
 @Component({
   selector: 'app-item-preview-overlay',
+  imports: [AuthenticatedMediaDirective],
   template: `
     @if (item(); as preview) {
       <div class="preview" data-preview-overlay aria-hidden="true">
@@ -25,8 +27,8 @@ interface PreviewField {
 
         <figure class="preview__frame">
           @if (imageUrl(); as url) {
-            <div class="preview__backdrop" [style.background-image]="'url(' + url + ')'"></div>
-            <img class="preview__image" [src]="url" [alt]="preview.name" data-preview-image />
+            <div class="preview__backdrop" [appAuthenticatedMedia]="url"></div>
+            <img class="preview__image" [appAuthenticatedMedia]="url" [alt]="preview.name" data-preview-image />
           } @else {
             <div class="preview__placeholder" data-preview-placeholder>
               {{ preview.name.charAt(0) }}

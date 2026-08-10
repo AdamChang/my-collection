@@ -18,6 +18,7 @@ public class SyncCommandTests
     private readonly Mock<IBulkSyncProvider> _steam = new();
     private readonly Mock<Application.Common.IUserContext> _userContext = new();
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 7, 25, 3, 0, 0, TimeSpan.Zero));
+    private readonly StubIngestionTaskDispatcher _dispatcher = new();
 
     private static readonly ObjectId Owner = ObjectId.GenerateNewId();
     private static readonly ObjectId GameCategoryId = ObjectId.GenerateNewId();
@@ -65,8 +66,16 @@ public class SyncCommandTests
 
     private SyncCommandHandler CreateSut() => new(
         new ProviderRegistry([_steam.Object]),
-        _accounts.Object, _jobs.Object, _writer.Object, _categories.Object,
-        _userContext.Object, _time);
+        _accounts.Object, _jobs.Object, _dispatcher, CreateRunner(), _time);
+
+    private SyncJobRunner CreateRunner() => new(
+        new ProviderRegistry([_steam.Object]),
+        _accounts.Object,
+        _jobs.Object,
+        _writer.Object,
+        _categories.Object,
+        _userContext.Object,
+        _time);
 
     [Fact]
     public async Task Records_a_running_job_then_marks_it_succeeded_with_counts()
@@ -217,11 +226,38 @@ public class SyncCommandTests
 
         var sut = new SyncCommandHandler(
             new ProviderRegistry([opengraph.Object]),
-            _accounts.Object, _jobs.Object, _writer.Object, _categories.Object,
-            _userContext.Object, _time);
+            _accounts.Object, _jobs.Object, _dispatcher,
+            CreateRunner(), _time);
 
         var act = () => sut.Handle(new SyncCommand("opengraph"), CancellationToken.None);
 
         await act.Should().ThrowAsync<ProviderException>();
+    }
+
+    [Fact]
+    public async Task Durable_dispatch_persists_before_enqueue_and_does_not_run_in_the_request()
+    {
+        _dispatcher.IsDurable = true;
+
+        var result = await CreateSut().Handle(new SyncCommand("steam"), CancellationToken.None);
+
+        result.Status.Should().Be(nameof(SyncStatus.Running));
+        _savedJobs.Should().ContainSingle().Which.Kind.Should().Be(SyncJobKind.Sync);
+        _dispatcher.Enqueued.Should().Equal(_savedJobs[0].Id);
+        _steam.Verify(
+            provider => provider.SyncAsync(It.IsAny<ExternalAccount>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    private sealed class StubIngestionTaskDispatcher : IIngestionTaskDispatcher
+    {
+        public bool IsDurable { get; set; }
+        public List<ObjectId> Enqueued { get; } = [];
+
+        public Task DispatchAsync(ObjectId operationId, CancellationToken ct)
+        {
+            Enqueued.Add(operationId);
+            return Task.CompletedTask;
+        }
     }
 }

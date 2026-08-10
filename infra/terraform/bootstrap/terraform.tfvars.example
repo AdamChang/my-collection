@@ -1,0 +1,7 @@
+project_id      = "mycollection-504914"
+region          = "asia-east1"
+billing_account = "000000-000000-000000"
+budget_email    = "owner@example.com"
+
+github_repository = "AdamChang/my-collection"
+github_branch     = "refs/heads/master"

@@ -1,5 +1,10 @@
-/**
- * 開發時由 proxy.conf.json 轉發到 localhost:5080，
- * 部署時由 nginx 反代到 api 容器。前端永遠只認 /api。
- */
-export const API_BASE = '/api';
+type RuntimeConfig = { apiBase?: string };
+type RuntimeConfiguredWindow = Window & { __MYCOLLECTION_CONFIG__?: RuntimeConfig };
+
+export function resolveApiBase(configuredValue?: string): string {
+  const value = configuredValue?.trim() || '/api';
+  return value.length > 1 ? value.replace(/\/+$/, '') : value;
+}
+
+const runtimeConfig = (window as RuntimeConfiguredWindow).__MYCOLLECTION_CONFIG__;
+export const API_BASE = resolveApiBase(runtimeConfig?.apiBase);

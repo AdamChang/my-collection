@@ -49,10 +49,11 @@ function cardAttributesFor(
 function coverImageUrl(
   images: { cardPath: string; isPrimary: boolean }[],
   attributes: Record<string, unknown>,
+  mediaBase = `${API_BASE}/media`,
 ): string | null {
   const primary = images.find((i) => i.isPrimary) ?? images[0];
   if (primary) {
-    return `${API_BASE}/media/${primary.cardPath}`;
+    return `${mediaBase}/${primary.cardPath}`;
   }
 
   for (const key of ['headerUrl', 'coverUrl', 'iconUrl']) {
@@ -85,12 +86,12 @@ export function toShowcaseDisplayItem(item: ItemDto, categories: CategoryDto[]):
 }
 
 /** 公開分享頁（/p/:slug）使用：storageLocation 恆為 null（ADR-0008），cardFields 隨 PublicItemDto 附帶。 */
-export function toPublicShowcaseDisplayItem(item: PublicItemDto): ShowcaseDisplayItem {
+export function toPublicShowcaseDisplayItem(item: PublicItemDto, slug: string): ShowcaseDisplayItem {
   return {
     id: item.id,
     name: item.name,
     description: item.description,
-    imageUrl: coverImageUrl(item.images, item.attributes),
+    imageUrl: coverImageUrl(item.images, item.attributes, `${API_BASE}/public/${slug}/media`),
     effectiveDisplayMode: item.effectiveDisplayMode,
     acquiredAt: item.acquiredAt,
     price: item.price,

@@ -18,5 +18,6 @@ COPY --from=build /app ./
 
 ENV ASPNETCORE_HTTP_PORTS=8080
 EXPOSE 8080
+USER $APP_UID
 
 ENTRYPOINT ["dotnet", "MyCollection.Api.dll"]

@@ -36,9 +36,8 @@ public sealed class EnrichCommandValidator : AbstractValidator<EnrichCommand>
 public sealed class EnrichCommandHandler(
     ProviderRegistry registry,
     ISyncJobRepository jobs,
-    IEnrichJobQueue queue,
+    IIngestionTaskDispatcher dispatcher,
     EnrichJobRunner runner,
-    IUserContext userContext,
     TimeProvider timeProvider) : IRequestHandler<EnrichCommand, SyncJobDto>
 {
     public async Task<SyncJobDto> Handle(EnrichCommand request, CancellationToken cancellationToken)
@@ -49,22 +48,23 @@ public sealed class EnrichCommandHandler(
         {
             Id = ObjectId.GenerateNewId(),
             Provider = provider.Key,
+            Kind = SyncJobKind.Enrich,
+            ItemIds = request.ItemIds?.ToList(),
+            Limit = Math.Clamp(request.Limit, 1, 200),
             Status = SyncStatus.Running,
             StartedAt = timeProvider.GetUtcNow().UtcDateTime
         };
         await jobs.InsertAsync(job, cancellationToken);
 
-        if (provider.PrefersBackgroundExecution)
+        if (dispatcher.IsDurable || provider.PrefersBackgroundExecution)
         {
-            // InsertAsync 已把 OwnerId 填成目前使用者；背景端要用它重建身分脈絡
-            queue.Enqueue(new EnrichJobRequest(
-                job, userContext.UserId, provider.Key, request.ItemIds, request.Limit));
-
+            await IngestionTaskDispatch.PersistedAsync(
+                dispatcher, jobs, job, timeProvider, cancellationToken);
             return SyncJobMapper.ToDto(job);
         }
 
         var finished = await runner.RunAsync(
-            job, provider, request.ItemIds, request.Limit, cancellationToken);
+            job, provider, job.ItemIds, job.Limit, cancellationToken);
 
         return SyncJobMapper.ToDto(finished);
     }

@@ -1,4 +1,5 @@
 using MediatR;
+using MongoDB.Bson;
 using MyCollection.Application.Ingestion;
 
 namespace MyCollection.Api.Endpoints;
@@ -27,6 +28,9 @@ public static class IngestionEndpoints
         group.MapGet("/jobs", async (int? limit, ISender sender, CancellationToken ct) =>
             Results.Ok(await sender.Send(new ListSyncJobsQuery(limit ?? 20), ct)));
 
+        group.MapPost("/jobs/{jobId}/retry", async (string jobId, ISender sender, CancellationToken ct) =>
+            Results.Accepted("/ingest/jobs", await sender.Send(new RetrySyncJobCommand(jobId), ct)));
+
         group.MapPost("/fetch", async (string url, string? provider, ISender sender, CancellationToken ct) =>
             Results.Ok(await sender.Send(new FetchByUrlQuery(url, provider ?? "opengraph"), ct)));
 
@@ -48,9 +52,40 @@ public static class IngestionEndpoints
             return Results.NoContent();
         });
 
+        app.MapPost("/internal/tasks/ingestion", async (
+                IngestionTaskBody body,
+                HttpContext context,
+                ICloudTaskAuthenticator authenticator,
+                IngestionOperationExecutor executor,
+                CancellationToken ct) =>
+            {
+                if (!await authenticator.IsAuthorizedAsync(context.Request.Headers.Authorization, ct))
+                {
+                    return Results.Unauthorized();
+                }
+
+                if (!ObjectId.TryParse(body.OperationId, out var operationId))
+                {
+                    return Results.BadRequest();
+                }
+
+                return (await executor.ExecuteAsync(operationId, ct)) switch
+                {
+                    IngestionExecutionResult.Succeeded => Results.NoContent(),
+                    IngestionExecutionResult.AlreadyCompleted => Results.NoContent(),
+                    IngestionExecutionResult.FailedTerminal => Results.NoContent(),
+                    IngestionExecutionResult.Busy => Results.StatusCode(StatusCodes.Status503ServiceUnavailable),
+                    _ => Results.NotFound()
+                };
+            })
+            .AllowAnonymous()
+            .WithTags("Internal");
+
         return app;
     }
 
     /// <summary>兩個欄位都可省略：不給 ItemIds 就是批次補完。</summary>
     public record EnrichRequest(IReadOnlyList<string>? ItemIds, int? Limit);
+
+    public record IngestionTaskBody(string OperationId);
 }

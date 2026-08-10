@@ -23,7 +23,7 @@ public class EnrichCommandTests
     private readonly Mock<ISyncJobRepository> _jobs = new();
     private readonly Mock<IItemEnrichWriter> _writer = new();
     private readonly Mock<IUserContext> _userContext = new();
-    private readonly StubEnrichJobQueue _queue = new();
+    private readonly StubIngestionTaskDispatcher _dispatcher = new();
 
     private readonly List<ItemEnrichment> _written = [];
 
@@ -101,9 +101,8 @@ public class EnrichCommandTests
     private EnrichCommandHandler CreateSut() => new(
         new ProviderRegistry([_provider.Object]),
         _jobs.Object,
-        _queue,
+        _dispatcher,
         CreateRunner(),
-        _userContext.Object,
         _time);
 
     private EnrichJobRunner CreateRunner() => new(
@@ -361,7 +360,7 @@ public class EnrichCommandTests
         var job = await CreateSut().Handle(new EnrichCommand(ProviderKeys.Igdb), CancellationToken.None);
 
         job.Status.Should().Be("Running");
-        _queue.Enqueued.Should().ContainSingle();
+        _dispatcher.Enqueued.Should().ContainSingle();
         _provider.Verify(
             p => p.FetchByExternalIdsAsync(It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()),
             Times.Never,
@@ -392,8 +391,8 @@ public class EnrichCommandTests
         bulkOnly.SetupGet(p => p.Key).Returns(ProviderKeys.Steam);
 
         var sut = new EnrichCommandHandler(
-            new ProviderRegistry([bulkOnly.Object]), _jobs.Object, _queue,
-            CreateRunner(), _userContext.Object, _time);
+            new ProviderRegistry([bulkOnly.Object]), _jobs.Object, _dispatcher,
+            CreateRunner(), _time);
 
         var act = () => sut.Handle(new EnrichCommand(ProviderKeys.Steam), CancellationToken.None);
 
@@ -417,13 +416,31 @@ public class EnrichCommandTests
 
     private static HashSet<string> SoftWrite(params string[] keys) => new(keys, StringComparer.Ordinal);
 
-    private sealed class StubEnrichJobQueue : IEnrichJobQueue
+    private sealed class StubIngestionTaskDispatcher : IIngestionTaskDispatcher
     {
-        public List<EnrichJobRequest> Enqueued { get; } = [];
+        public List<ObjectId> Enqueued { get; } = [];
 
-        public void Enqueue(EnrichJobRequest request) => Enqueued.Add(request);
+        public bool IsDurable { get; set; }
 
-        public ValueTask<EnrichJobRequest> DequeueAsync(CancellationToken ct) =>
-            throw new NotSupportedException("測試不消費佇列。");
+        public Task DispatchAsync(ObjectId operationId, CancellationToken ct)
+        {
+            Enqueued.Add(operationId);
+            return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task Durable_dispatch_queues_even_a_normally_inline_provider()
+    {
+        _dispatcher.IsDurable = true;
+
+        var job = await CreateSut().Handle(new EnrichCommand(ProviderKeys.Igdb), CancellationToken.None);
+
+        job.Status.Should().Be(nameof(SyncStatus.Running));
+        _dispatcher.Enqueued.Should().ContainSingle();
+        _provider.Verify(
+            provider => provider.FetchByExternalIdsAsync(
+                It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 }

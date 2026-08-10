@@ -39,28 +39,25 @@ public static class MediaEndpoints
             return Results.NoContent();
         });
 
-        // 匿名：分享頁需要讀得到圖片。路徑本身含 ObjectId，難以枚舉。
-        app.MapGet("/media/{**path}", async (string path, IFileStorage storage, CancellationToken ct) =>
+        app.MapGet("/media/{**path}", async (string path, ISender sender, HttpContext context, CancellationToken ct) =>
             {
-                // 這是匿名端點。限定副檔名，避免它變成 media root 的任意檔案讀取器。
-                if (!path.EndsWith(".webp", StringComparison.OrdinalIgnoreCase))
-                {
-                    return Results.NotFound();
-                }
+                var media = await sender.Send(new OpenOwnedMediaQuery(path), ct);
+                context.Response.Headers.CacheControl = "private, max-age=300";
+                return Results.Stream(media.Content, media.ContentType);
+            })
+            .RequireAuthorization()
+            .WithTags("Media");
 
-                Stream? stream;
-                try
-                {
-                    stream = await storage.OpenReadAsync(path, ct);
-                }
-                catch (ArgumentException)
-                {
-                    return Results.NotFound();
-                }
-
-                return stream is null
-                    ? Results.NotFound()
-                    : Results.Stream(stream, "image/webp");
+        app.MapGet("/public/{slug}/media/{**path}", async (
+                string slug,
+                string path,
+                ISender sender,
+                HttpContext context,
+                CancellationToken ct) =>
+            {
+                var media = await sender.Send(new OpenPublicMediaQuery(slug, path), ct);
+                context.Response.Headers.CacheControl = "no-store";
+                return Results.Stream(media.Content, media.ContentType);
             })
             .AllowAnonymous()
             .WithTags("Media");

@@ -325,9 +325,11 @@ describe('ShowcaseComponent', () => {
       }),
     ]);
 
-    const src = hoverCard(fixture)?.querySelector('[data-preview-image]')?.getAttribute('src');
+    const source = hoverCard(fixture)
+      ?.querySelector<HTMLElement>('[data-preview-image]')
+      ?.dataset['mediaSource'];
 
-    expect(src).toBe(`${API_BASE}/media/o/a/img1-card.webp`);
+    expect(source).toBe(`${API_BASE}/media/o/a/img1-card.webp`);
   }));
 
   it('falls back to an initial in the preview when the item has no image', fakeAsync(async () => {

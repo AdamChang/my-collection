@@ -1,5 +1,7 @@
+import { HttpClient } from '@angular/common/http';
 import { Component, DestroyRef, NgZone, computed, inject, input, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { API_BASE } from '../../core/api-base';
 import { CatalogService } from '../../core/api/catalog.service';
 import { CategoryService } from '../../core/api/category.service';
@@ -119,6 +121,7 @@ const HOVER_PREVIEW_DELAY_MS = 200;
 export class ShowcaseComponent {
   private readonly catalog = inject(CatalogService);
   private readonly categoryApi = inject(CategoryService);
+  private readonly http = inject(HttpClient, { optional: true });
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
 
@@ -169,6 +172,8 @@ export class ShowcaseComponent {
 
   private readonly zone = inject(NgZone);
   private hoverTimer: ReturnType<typeof setTimeout> | undefined;
+  private fullImageRequest?: Subscription;
+  private fullImageObjectUrl?: string;
   private pendingId: string | null = null;
 
   constructor() {
@@ -177,7 +182,10 @@ export class ShowcaseComponent {
     this.loading.set(true);
     this.fetchPage(1);
 
-    inject(DestroyRef).onDestroy(() => this.clearHoverTimer());
+    inject(DestroyRef).onDestroy(() => {
+      this.clearHoverTimer();
+      this.clearFullImage();
+    });
   }
 
   /**
@@ -188,6 +196,7 @@ export class ShowcaseComponent {
    */
   onCardEnter(item: ItemDto): void {
     this.clearHoverTimer();
+    this.clearFullImage();
     this.pendingId = item.id;
     this.hoveredFullUrl.set(null);
 
@@ -205,6 +214,7 @@ export class ShowcaseComponent {
 
   onCardLeave(): void {
     this.clearHoverTimer();
+    this.clearFullImage();
     this.pendingId = null;
     this.hovered.set(null);
     this.hoveredFullUrl.set(null);
@@ -221,16 +231,34 @@ export class ShowcaseComponent {
       return; // 只有 CDN 網址的同步品項沒有 full 版本，直接用 card 圖那層。
     }
 
+    if (!this.http) {
+      return;
+    }
+
     const url = `${API_BASE}/media/${primary.path}`;
-    const image = new Image();
+    this.fullImageRequest = this.http.get(url, { responseType: 'blob' }).subscribe({
+      next: (blob) => {
+        if (this.pendingId !== item.id) {
+          return;
+        }
 
-    image.onload = () => {
-      if (this.pendingId === item.id) {
-        this.zone.run(() => this.hoveredFullUrl.set(url));
-      }
-    };
+        this.fullImageObjectUrl = URL.createObjectURL(blob);
+        this.zone.run(() => this.hoveredFullUrl.set(this.fullImageObjectUrl!));
+      },
+      error: () => {
+        // Card image remains visible when the full-size preload fails.
+      },
+    });
+  }
 
-    image.src = url;
+  private clearFullImage(): void {
+    this.fullImageRequest?.unsubscribe();
+    this.fullImageRequest = undefined;
+
+    if (this.fullImageObjectUrl) {
+      URL.revokeObjectURL(this.fullImageObjectUrl);
+      this.fullImageObjectUrl = undefined;
+    }
   }
 
   private clearHoverTimer(): void {
