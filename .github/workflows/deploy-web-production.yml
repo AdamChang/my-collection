@@ -1,0 +1,88 @@
+name: Deploy Web production
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: mycollection-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: mycollection-504914
+  REGION: asia-east1
+  REPOSITORY: mycollection
+  WEB_SERVICE: mycollection-web
+  CANARY_PERCENT: "40"
+  OBSERVE_MINUTES: "10"
+
+jobs:
+  deploy-web:
+    if: github.ref == 'refs/heads/deploy'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build Angular frontend
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Artifact Registry authentication
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and push immutable Web image
+        env:
+          WEB_IMAGE: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/web:${{ github.sha }}
+        run: |
+          docker build --file web/Dockerfile --tag "$WEB_IMAGE" .
+          docker push "$WEB_IMAGE"
+          echo "WEB_IMAGE=$WEB_IMAGE" >> "$GITHUB_ENV"
+
+      - name: Roll out Web canary
+        id: web
+        env:
+          SERVICE: ${{ env.WEB_SERVICE }}
+          IMAGE: ${{ env.WEB_IMAGE }}
+          HEALTH_PATH: /
+          RELEASE_TAG: run-${{ github.run_id }}-${{ github.run_attempt }}
+        run: bash .github/scripts/rollout-cloud-run.sh
+
+      - name: Record deployment
+        if: always()
+        run: |
+          cat > deployment.json <<JSON
+          {
+            "commit": "${GITHUB_SHA}",
+            "webRevision": "${{ steps.web.outputs.new_revision }}",
+            "result": "${{ job.status }}"
+          }
+          JSON
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-production-deployment-${{ github.sha }}
+          path: deployment.json
+          retention-days: 30
