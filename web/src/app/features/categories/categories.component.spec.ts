@@ -54,6 +54,41 @@ describe('CategoriesComponent', () => {
     expect(select.value).toBe('List');
   });
 
+  it('opens the editor as a modal dialog and closes it on cancel', async () => {
+    const custom = {
+      id: 'c1', name: '公仔', icon: 'box', kind: 'Physical', isSystem: false,
+      defaultDisplayMode: 'List', fields: [],
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [CategoriesComponent],
+      providers: [
+        { provide: CategoryService, useValue: { list: () => of([custom]) } },
+        { provide: NotificationService, useValue: { success: () => undefined, error: () => undefined } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(CategoriesComponent);
+    fixture.detectChanges();
+
+    const dialog: HTMLDialogElement = fixture.nativeElement.querySelector('dialog[data-category-editor]');
+    expect(dialog).toBeTruthy();
+    expect(dialog.open).toBeFalse();
+
+    fixture.nativeElement.querySelector('[data-custom-category] button').click();
+    fixture.detectChanges();
+
+    // 編輯表單必須在置中的 modal 內：showModal() 才會進 top layer 並畫出 backdrop。
+    expect(dialog.open).toBeTrue();
+    expect(dialog.querySelector('form')).toBeTruthy();
+
+    dialog.querySelector<HTMLButtonElement>('[data-category-editor-cancel]')!.click();
+    fixture.detectChanges();
+
+    expect(dialog.open).toBeFalse();
+    expect(fixture.componentInstance.draft()).toBeNull();
+  });
+
   it('hydrates an existing category default display mode into the editor', async () => {
     const custom = {
       id: 'c1', name: '公仔', icon: 'box', kind: 'Physical', isSystem: false,
