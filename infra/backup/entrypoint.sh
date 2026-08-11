@@ -3,6 +3,19 @@ set -eu
 
 : "${BACKUP_BUCKET:?BACKUP_BUCKET must be set}"
 : "${MONGODB_URI_FILE:=/var/run/secrets/mongo-uri/uri}"
+: "${GCE_METADATA_HOST:=metadata.google.internal}"
+
+# 取代 python3 的 urllib.parse.quote(safe="")，避免為了兩行字串編碼而裝整個 python。
+urlencode() {
+  awk -v input="$1" 'BEGIN {
+    for (i = 0; i < 256; i++) ord[sprintf("%c", i)] = i
+    for (i = 1; i <= length(input); i++) {
+      c = substr(input, i, 1)
+      if (c ~ /[A-Za-z0-9._~-]/) printf "%s", c
+      else printf "%%%02X", ord[c]
+    }
+  }'
+}
 
 work_dir="$(mktemp -d)"
 config_file="$work_dir/mongodump.yaml"
@@ -34,11 +47,22 @@ object_name="mycollection-prod/$timestamp/mongodump.archive.gz"
 mongodump --config="$config_file" --archive="$archive_file" --gzip
 test -s "$archive_file"
 
-encoded_bucket="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$BACKUP_BUCKET")"
-encoded_object="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$object_name")"
-access_token="$(gcloud auth print-access-token --quiet)"
-printf 'header = "Authorization: Bearer %s"\n' "$access_token" > "$curl_config"
-unset access_token
+encoded_bucket="$(urlencode "$BACKUP_BUCKET")"
+encoded_object="$(urlencode "$object_name")"
+
+# 直接向 metadata server 換 access token，token 只流經 pipe 後落在 curl config，
+# 不會出現在 shell 變數或 process 參數中。
+curl --silent --show-error --fail \
+  --header 'Metadata-Flavor: Google' \
+  "http://$GCE_METADATA_HOST/computeMetadata/v1/instance/service-accounts/default/token" \
+  | sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/header = "Authorization: Bearer \1"/p' \
+  > "$curl_config"
+test -s "$curl_config" || {
+  printf '%s\n' 'Failed to obtain an access token from the metadata server.' >&2
+  exit 1
+}
+printf '\n' >> "$curl_config"
+
 upload_status="$(curl --silent --show-error \
   --config "$curl_config" \
   --output "$response_file" \
