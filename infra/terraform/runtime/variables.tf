@@ -37,7 +37,7 @@ variable "backup_repository_id" {
 variable "backup_image" {
   description = "Immutable image reference for the MongoDB backup Cloud Run Job."
   type        = string
-  default     = "asia-east1-docker.pkg.dev/mycollection-504914/mycollection-backup/mongo-backup@sha256:5f04d31c41460ab168da26dad3d5f88cb6b68bb2661e791c3832d8237370e98d"
+  default     = "asia-east1-docker.pkg.dev/mycollection-504914/mycollection-backup/mongo-backup@sha256:0e1a7b9d7520c7f107c7ec4f61f3922f8e4e611b54b5b474d296150fa5dcf609"
 }
 
 variable "backup_schedule" {
