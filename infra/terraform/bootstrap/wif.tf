@@ -1,6 +1,7 @@
 locals {
   github_deployer_roles = toset([
     "roles/artifactregistry.writer",
+    "roles/logging.viewer",
     "roles/run.admin",
     "roles/serviceusage.serviceUsageConsumer",
   ])
