@@ -22,7 +22,7 @@ env:
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/deploy'
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 60
