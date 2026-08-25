@@ -22,6 +22,18 @@ config_file="$work_dir/mongodump.yaml"
 archive_file="$work_dir/mongodump.archive.gz"
 response_file="$work_dir/upload-response.json"
 curl_config="$work_dir/curl.conf"
+dump_log="$work_dir/mongodump.log"
+
+# mongodump 連線失敗時會把它從 --config 讀進來的完整 URI（含密碼）原樣印到 stderr，
+# 而 Cloud Run 的 stderr 直接進 Cloud Logging。憑證沒進 argv 不代表不會外洩，
+# 錯誤路徑才是實際漏出來的地方（2026-08-16 的失敗即為實例）。
+#
+# 遮蔽比對 URI 的 userinfo 結構而非密碼值本身：把密碼取出來當 sed pattern，
+# 會讓它出現在 sed 的 argv 裡，等於自己打破「憑證不進 argv」這條原則。
+# 保留 host 以便診斷連線問題。
+redact_uris() {
+  sed -e 's|://[^/@[:space:]]*@|://<redacted>@|g'
+}
 
 on_exit() {
   status="$?"
@@ -44,7 +56,23 @@ unset uri
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 object_name="mycollection-prod/$timestamp/mongodump.archive.gz"
 
-mongodump --config="$config_file" --archive="$archive_file" --gzip
+# 不用 pipeline 過濾：/bin/sh 是 dash，沒有 PIPESTATUS，
+# set -e 之下 mongodump 的失敗會被 sed 的成功蓋掉，變成靜默失敗。
+# 改成先落檔、保留 exit code、再輸出遮蔽後的內容。
+set +e
+mongodump --config="$config_file" --archive="$archive_file" --gzip 2>"$dump_log"
+dump_status="$?"
+set -e
+
+if [ -s "$dump_log" ]; then
+  redact_uris < "$dump_log" >&2
+fi
+
+if [ "$dump_status" -ne 0 ]; then
+  printf 'mongodump exited with status %s.\n' "$dump_status" >&2
+  exit "$dump_status"
+fi
+
 test -s "$archive_file"
 
 encoded_bucket="$(urlencode "$BACKUP_BUCKET")"
