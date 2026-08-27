@@ -13,6 +13,13 @@ data "google_secret_manager_secret" "secret_protection_key" {
   secret_id = "secret-protection-key"
 }
 
+data "google_secret_manager_secret" "igdb_client_secret" {
+  count = var.igdb_enabled ? 1 : 0
+
+  project   = var.project_id
+  secret_id = "igdb-client-secret"
+}
+
 resource "google_service_account" "web_runtime" {
   project      = var.project_id
   account_id   = "mycollection-web-runtime"
@@ -37,6 +44,15 @@ resource "google_secret_manager_secret_iam_member" "api_reads_jwt_key" {
 resource "google_secret_manager_secret_iam_member" "api_reads_protection_key" {
   project   = var.project_id
   secret_id = data.google_secret_manager_secret.secret_protection_key.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.api_runtime.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "api_reads_igdb_secret" {
+  count = var.igdb_enabled ? 1 : 0
+
+  project   = var.project_id
+  secret_id = data.google_secret_manager_secret.igdb_client_secret[0].secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.api_runtime.email}"
 }
@@ -173,6 +189,31 @@ resource "google_cloud_run_v2_service" "api" {
         }
       }
 
+      # 兩個變數必須同進同出：API 只在兩者皆非空時才註冊 IGDB provider，
+      # 少一個就是「設定了卻不會生效」的無聲狀態。
+      dynamic "env" {
+        for_each = var.igdb_enabled ? [1] : []
+
+        content {
+          name  = "Igdb__ClientId"
+          value = var.igdb_client_id
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.igdb_enabled ? [1] : []
+
+        content {
+          name = "Igdb__ClientSecret"
+          value_source {
+            secret_key_ref {
+              secret  = data.google_secret_manager_secret.igdb_client_secret[0].secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+
       startup_probe {
         initial_delay_seconds = 0
         timeout_seconds       = 3
@@ -216,6 +257,7 @@ resource "google_cloud_run_v2_service" "api" {
     google_secret_manager_secret_iam_member.api_reads_mongo_uri,
     google_secret_manager_secret_iam_member.api_reads_jwt_key,
     google_secret_manager_secret_iam_member.api_reads_protection_key,
+    google_secret_manager_secret_iam_member.api_reads_igdb_secret,
   ]
 }
 

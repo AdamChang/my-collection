@@ -107,3 +107,31 @@ variable "web_public_url" {
     error_message = "web_public_url must be an HTTPS run.app URL."
   }
 }
+
+variable "service_alert_email" {
+  description = "Address notified when the API or Web service returns 5xx."
+  type        = string
+  default     = "adamcha0516@gmail.com"
+}
+
+# IGDB 是選配的中繼資料來源，API 沒有憑證就整組不註冊 provider。
+# 開關預設關閉，因為 igdb-client-secret 這個 Secret Manager secret 必須先存在
+# 且至少有一個版本，Cloud Run revision 才起得來——先建 secret 再翻開關。
+variable "igdb_enabled" {
+  description = "Whether the API service receives IGDB credentials. Requires the igdb-client-secret secret to exist with a version."
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.igdb_enabled || length(var.igdb_client_id) > 0
+    error_message = "igdb_client_id must be set when igdb_enabled is true."
+  }
+}
+
+# Twitch 的 Client ID 是公開識別碼（OAuth 請求會原樣送出），不是機密；
+# 機密的 Client Secret 走 Secret Manager，絕不進 Terraform state 或版控。
+variable "igdb_client_id" {
+  description = "Public Twitch application client ID used for IGDB requests."
+  type        = string
+  default     = "wksiw0stv623a024l8linckyubuv0f"
+}
