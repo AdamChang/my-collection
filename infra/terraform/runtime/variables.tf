@@ -115,12 +115,14 @@ variable "service_alert_email" {
 }
 
 # IGDB 是選配的中繼資料來源，API 沒有憑證就整組不註冊 provider。
-# 開關預設關閉，因為 igdb-client-secret 這個 Secret Manager secret 必須先存在
-# 且至少有一個版本，Cloud Run revision 才起得來——先建 secret 再翻開關。
+# 正式環境已於 2026-08-27 啟用，所以預設為 true——留在 false 會讓任何不帶
+# -var 的 apply 靜默拆掉線上的 IGDB 設定。前提是 igdb-client-secret 這個
+# Secret Manager secret 存在且至少有一個版本，否則 revision 會啟動失敗；
+# 重建環境時先建 secret，或以 -var="igdb_enabled=false" 先跳過這一段。
 variable "igdb_enabled" {
   description = "Whether the API service receives IGDB credentials. Requires the igdb-client-secret secret to exist with a version."
   type        = bool
-  default     = false
+  default     = true
 
   validation {
     condition     = !var.igdb_enabled || length(var.igdb_client_id) > 0

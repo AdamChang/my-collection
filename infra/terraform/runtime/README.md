@@ -12,9 +12,11 @@ terraform plan -out runtime.tfplan
 terraform apply runtime.tfplan
 ```
 
-## Enabling IGDB
+## IGDB credentials
 
-IGDB is optional and ships disabled (`igdb_enabled = false`). The API registers the provider only when both credentials are present, so enabling it is a two-step sequence — the secret must exist **before** the flag flips, otherwise the new revision fails to start on an unresolvable secret reference.
+IGDB is enabled in production (`igdb_enabled = true`). The API registers the provider only when both credentials are present, and the `igdb-client-secret` secret must exist with at least one version **before** any apply that carries the flag — otherwise the new revision fails to start on an unresolvable secret reference.
+
+Bootstrapping a fresh environment therefore starts with the secret, or with `-var="igdb_enabled=false"` to skip IGDB until the secret is in place:
 
 ```powershell
 gcloud secrets create igdb-client-secret --project mycollection-504914 --replication-policy automatic
@@ -23,7 +25,13 @@ $secret = Read-Host -AsSecureString "Twitch client secret"
   gcloud secrets versions add igdb-client-secret --project mycollection-504914 --data-file=-
 ```
 
-Then set `igdb_enabled = true` (via `-var` or a tfvars file) and apply. The apply creates the secret accessor binding and a new API revision carrying `Igdb__ClientId` and `Igdb__ClientSecret`. Verify with `GET /ingest/providers`: the response must list `igdb`.
+The apply creates the secret accessor binding and a new API revision carrying `Igdb__ClientId` and `Igdb__ClientSecret`. That revision receives **no traffic** — `traffic` is in `ignore_changes` because the canary script owns it, so verify against `status.traffic` rather than `spec.template`, and either shift traffic explicitly or let the next deployment inherit the setting:
+
+```powershell
+gcloud run services update-traffic mycollection-api --project mycollection-504914 --region asia-east1 --to-revisions <revision>=100
+```
+
+Verify with `GET /ingest/providers`: the response must list `igdb`.
 
 Rotating the Twitch secret only needs a new secret version — the container reads `latest`, so a revision restart picks it up without a Terraform change.
 
