@@ -1,8 +1,9 @@
 # MyCollection Cloud Run Production 部署計畫
 
-- 狀態：Phase 0–6 已完成並經正式環境實測；**Phase 7 Production Acceptance 尚未開始**
-- 日期：2026-08-08（最後回寫：2026-08-25）
+- 狀態：Phase 0–6 已完成；**Phase 7 Production Acceptance 七項中五項完成**，7-2 部分完成、7-3 未開始
+- 日期：2026-08-08（最後回寫：2026-08-27）
 - 決策依據：[ADR-0011](../adr/0011-low-cost-production-on-cloud-run-and-atlas-free.md)
+- 日常維運座標與操作步驟：[production-operations.md](./production-operations.md)
 - 各 Phase 的實際執行結果、與計畫的偏離、未通過的 Gate：見文末〈執行紀錄〉
 
 > 以下 Phase 0–7 的內容為 2026-08-08 訂定的原始計畫，**刻意不隨執行結果改寫**，以保留「當初打算怎麼做」的紀錄。
@@ -18,18 +19,18 @@
 
 ## 執行狀態總覽
 
-> 更新於 2026-08-25，依據 GitHub Actions run 紀錄與 `gcloud` 對正式環境的查詢。
+> 更新於 2026-08-27，依據 GitHub Actions run 紀錄與 `gcloud` 對正式環境的查詢。
 
 | Phase | 執行 | Gate | 依據 |
 |---|---|---|---|
 | 0 Preflight 與 Bootstrap | ✅ 完成 | ✅ 通過 | 2026-08-09 建立；bootstrap 於 08-24 另 apply 兩次（`logging.viewer` 綁定、WIF 分支改 `master`） |
-| 1 API／Web 基線 | ✅ 完成 | ✅ 通過 | 現行 revision `mycollection-api-run-32749490889-1`／`mycollection-web-run-32749490889-1` |
-| 2 GCS Media Storage | ✅ 完成 | ⚠️ 部分 | 「revision 更換後圖片仍可讀取」未在正式環境實測 → 併入 Phase 7-4 |
-| 3 Cloud Tasks | ✅ 完成 | ⚠️ 部分 | 重送冪等、五次 attempts 後手動重跑未在正式環境實測 → 併入 Phase 7-3 |
-| 4 Atlas／Secrets／資料搬移 | ✅ 完成 | ⚠️ 部分 | smoke tests 已由 canary 涵蓋；Provider 憑證重新輸入尚未進行 → 併入 Phase 7-2 |
-| 5 Backup 與 Restore Drill | ⚠️ 部分 | ❌ 未通過 | 每日備份確實在跑；log 回顯連線字串已於 2026-08-25 修正（待下次部署生效）；**restore drill 仍從未執行** |
+| 1 API／Web 基線 | ✅ 完成 | ✅ 通過 | 非白名單 origin 的 CORS preflight 無 `Access-Control-Allow-Origin`，08-27 實測補上 Gate 最後一項 |
+| 2 GCS Media Storage | ✅ 完成 | ✅ 通過 | 08-27 實測：08-08 上傳的物件由 08-24 之後的 revision 讀取成功；匿名列舉 `401`、直讀 `403`、share 範圍外的圖片被拒 |
+| 3 Cloud Tasks | ✅ 完成 | ❌ 未通過 | **正式環境 30 天零執行**：無任何 task handler 呼叫或佇列日誌。重送冪等、五次 attempts 後手動重跑皆未驗證 → Phase 7-3 |
+| 4 Atlas／Secrets／資料搬移 | ✅ 完成 | ⚠️ 部分 | smoke tests 已由 canary 涵蓋；IGDB 憑證 08-27 完成重新輸入並實際呼叫成功，Steam／PSN 已輸入但未觸發 → Phase 7-2 |
+| 5 Backup 與 Restore Drill | ✅ 完成 | ✅ 通過 | **restore drill 於 2026-08-27 首次執行並通過**（229 documents／6 collections／索引全建／3 秒）；URI 遮蔽修正已於 08-25 生效並連續兩次排程實跑 |
 | 6 Terraform 與 Workflow | ✅ 完成 | ✅ 通過 | run `32749490889`（2026-08-24）首次完整成功 |
-| 7 Production Acceptance | ❌ 未開始 | — | 自 2026-08-09 起零進度 |
+| 7 Production Acceptance | ⚠️ 部分 | ⚠️ 部分 | 七項中 7-1／7-4／7-5／7-6／7-7 完成；7-2 僅 IGDB 通過；7-3 未開始 |
 
 ## Phase 0：Preflight 與 Bootstrap
 
@@ -53,7 +54,10 @@
 
 ## Phase 1：API 與 Web 的 Cloud Run 基線
 
-> **現況（2026-08-25）**：✅ 完成。`min=0`／`max=1`、health 拆兩支、runtime API config 皆已在正式環境運行。
+> **現況（2026-08-27）**：✅ 完成，Gate 全數通過。`min=0`／`max=1`、health 拆兩支、runtime API config 皆已在正式環境運行。
+> Gate 的「非 allowlisted origin 的 CORS preflight 被拒絕」於 08-27 補上實證：非白名單 origin 得到 `204` 但**回應不含
+> `Access-Control-Allow-Origin`**，瀏覽器端即阻擋；白名單 origin 則正常帶回該 header。
+> 附帶發現：兩者皆缺 `Vary: Origin`，目前無共用快取層故不構成風險，列為待辦。
 
 ### API
 
@@ -80,8 +84,12 @@
 
 ## Phase 2：GCS Media Storage
 
-> **現況（2026-08-25）**：✅ 實作完成，⚠️ Gate 未全數實測。私有 bucket、owned／share-scoped 兩條授權路徑已上線；
-> 「Cloud Run revision 更換後圖片仍可讀取」與「匿名授權沒有擴權」留待 Phase 7-4 在正式環境驗。
+> **現況（2026-08-27）**：✅ 完成，Gate 全數通過。
+> 「revision 更換後圖片仍可讀取」由既有資料實證：media bucket 的 51 個物件全部建立於 2026-08-08～08-10，
+> 而現行 revision 建立於 08-24 —— 用現行 revision 讀得到 08-08 的圖，即為跨 revision 存活，不需製造新資料。
+> 「匿名授權沒有擴權」實測：匿名列舉 bucket `401`、直讀物件 `403`、API `/media` `401`。
+> share scope 邊界改以自帶 fixture 的雙向測試驗證（範圍內可讀、範圍外拒絕）——
+> 先前只驗拒絕的單向斷言證明不了任何事：一個對所有路徑都回 404 的壞掉端點也會通過。
 
 ### 工作
 
@@ -100,8 +108,12 @@
 
 ## Phase 3：Cloud Tasks Reliable Work
 
-> **現況（2026-08-25）**：✅ 實作完成，⚠️ Gate 未全數實測。原子 claim + lease + 五次 attempts 已上線；
-> 重送冪等、terminal failure 後由設定頁手動重跑，留待 Phase 7-3 在正式環境驗。
+> **現況（2026-08-27）**：✅ 實作完成，**❌ Gate 未通過**。
+> 2026-08-27 查證：正式環境 30 天內**沒有任何** task handler 呼叫，也沒有任何 `cloud_tasks_queue` 佇列日誌。
+> 佇列 `mycollection-ingestion` 狀態 `RUNNING`、`maxAttempts: 5` 設定都在，但這條路徑從未被真實流量走過。
+> 「實作已部署」與「路徑已驗證」是兩回事，此處先前記為 ✅ 完成是把前者當成了後者。
+> IGDB 走的是同步 enrich、不經佇列，因此**光靠 IGDB 永遠驗不到本 Phase** ——
+> 解鎖條件是觸發一次 Steam 或 PSN 同步。
 
 ### 工作
 
@@ -120,9 +132,15 @@
 
 ## Phase 4：Atlas、Secrets 與初次資料搬移
 
-> **現況（2026-08-25）**：✅ 完成，⚠️ Gate 部分未驗。資料已搬入 `mycollection-prod`，舊 JWT 全失效。
-> Gate 的 smoke tests（health／登入／CRUD／GCS／Share Link）已由 canary 在每次部署自動執行並通過；
-> 但「Provider credentials 由使用者重新輸入」至今未做 —— 這是 Phase 7-2 的前置，也是 PSN 真實 NPSSO 的首次驗證機會。
+> **現況（2026-08-27）**：✅ 完成，⚠️ Gate 部分未驗。舊 JWT 全失效，smoke tests 已由 canary 每次部署自動執行並通過。
+> Provider credentials 已於 08-27 由使用者重新輸入三組，但只觸發了 IGDB：
+> `POST https://api.igdb.com/v4/games` 回 200（164.98ms），圖片下載與 retry policy 均正常，
+> 這是正式環境**第一個**經端對端驗證的外部整合。
+> **Steam 與 PSN 已輸入但未觸發，因此仍未驗證** —— 憑證存得進去不等於可用：
+> 本 Phase 工作 6 清除舊憑證的理由，正是它們無法用 production key 解密。
+>
+> 另：工作 1 把 `mycollection-prod` 寫成 database 是**記載錯誤**。`mycollection-prod` 是 Atlas **cluster** 名，
+> database 名為 `mycollection`；備份物件路徑前綴取自 cluster 名。原始計畫刻意不改寫，錯誤記於此。
 
 ### 工作
 
@@ -142,12 +160,17 @@
 
 ## Phase 5：Backup 與 Restore Drill
 
-> **現況（2026-08-25）**：⚠️ 部分完成，**Gate 未通過**。每日排程備份確實在跑（明細見〈執行紀錄〉）。
-> Gate 的兩項關鍵中，②「備份與 restore logs 不包含 Mongo URI 或 credentials」原本實測不成立 —— 連線失敗時 `mongodump`
-> 會把它從 `--config` 讀進來的完整連線字串（含密碼）寫進 stderr 並落入 Cloud Logging，2026-08-16 發生過一次實例。
-> **已於 2026-08-25 在 `infra/backup/entrypoint.sh` 修正**（遮蔽 URI userinfo，保留 host 與 exit code），下次部署備份 image 後生效；
-> restore 路徑的對應做法寫進 runbook 的〈Credential exposure in tool output〉。
-> ①「每季還原到暫時 database」仍從未執行 —— 這是 Phase 5 Gate 目前唯一未達成的項目。
+> **現況（2026-08-27）**：✅ 完成，**Gate 全數通過**。自 2026-08-09 起未通過的最後一項已於本日關閉。
+>
+> ①「每季還原到暫時 database」**於 2026-08-27 首次執行並通過**：229 documents、6 個 collection、
+> 索引全數重建、耗時 3 秒（Gate 上限 4 小時），寫入的是暫時庫，production 未被觸碰。
+> 腳本為 `infra/acceptance/restore-drill.ps1` 與 `restore-drill-container.sh`，三項對 runbook 的刻意偏離見〈偏離 7〉。
+>
+> ②「備份與 restore logs 不包含 Mongo URI 或 credentials」的遮蔽修正**已生效**：
+> 備份 Job 現行 image 為 `sha256:258a4bad`（tag `e37b39d`），08-25 與 08-26 兩次排程執行皆跑在此 image 上且成功。
+> 08-25 當時記為「待下次部署生效」，實際上 terraform apply 已完成，該記載已過期。
+> 但需注意：本次還原演練走的是**成功路徑**，mongo tools 只在連線失敗時才回顯 URI，
+> 因此 restore 側的遮蔽**尚未被真實失敗路徑驗證**，目前依據是該函式與 `entrypoint.sh` 逐字相同、而後者已在 production 驗證過。
 >
 > 附帶收穫：2026-08-16 那次失敗**確實寄達了告警信**（使用者信箱佐證），
 > 這是 Phase 7-6「backup failure 通知可送達」目前唯一的端對端實證，不需另外製造失敗來測。
@@ -203,9 +226,17 @@
 
 ## Phase 7：Production Acceptance
 
-> **現況（2026-08-25）**：❌ 尚未開始，自 2026-08-09 起零進度。先前被連續的部署失敗擋住，**該阻塞已於 2026-08-24 解除**。
-> 第 5 項（restore drill）同時也是 Phase 5 未通過的 Gate。
-> 第 6 項的「backup failure 通知」已由 2026-08-16 的真實失敗實證送達（見 Phase 5），剩 budget 與 Cloud Run errors 兩條通知待驗。
+> **現況（2026-08-27）**：⚠️ 七項中五項完成。本 Phase 於 2026-08-27 開始執行，當日完成 7-1、7-4、7-5、7-6、7-7。
+>
+> | 項目 | 狀態 | 依據 |
+> |---|---|---|
+> | 7-1 登入／CRUD／篩選／精選／公開分享 | ⚠️ API 層通過 | `infra/acceptance/phase7-acceptance.ps1` 15 項全數 PASS；篩選與精選的**版面語意屬 UI 行為**（ADR-0006／0007／0009），仍待人工確認 |
+> | 7-2 三個 provider 憑證與外部呼叫 | ⚠️ 僅 IGDB | IGDB 端對端通過；Steam／PSN 已輸入未觸發 |
+> | 7-3 同步重試與手動重跑 | ❌ 未開始 | 依賴 7-2 的 Steam／PSN；Cloud Tasks 正式環境零執行 |
+> | 7-4 圖片跨 revision／匿名授權 | ✅ 通過 | 見 Phase 2 現況 |
+> | 7-5 restore drill | ✅ 通過 | 見 Phase 5 現況 |
+> | 7-6 三條通知 | ⚠️ 實作補齊 | backup failure 已由 08-16 真實失敗實證；**Cloud Run errors 告警先前根本不存在**，08-27 補實作（見〈偏離 5〉）；budget 與 5xx 兩條尚未被真實事件觸發 |
+> | 7-7 維運文件 | ✅ 完成 | [production-operations.md](./production-operations.md) |
 
 1. 驗證登入、品項 CRUD、篩選、精選與公開 Share Link。
 2. 驗證 Steam／PSN／IGDB credentials 重新輸入與實際外部整合。
@@ -239,7 +270,8 @@
 | 2026-08-11 | 備份 image 瘦身（拔除 Cloud SDK 與 python3）並重釘 digest；canary 補 `logging.viewer`。**此交付自此分裂成兩半長達兩週** |
 | 2026-08-11 → 08-23 | 無部署活動。每日備份持續執行 |
 | 2026-08-24 | 分支分裂收斂、WIF 綁定改 `master`、Testcontainers 升版解 GHSA；**run `32749490889` 首次完整成功**，正式環境切至 `master` HEAD |
-| 2026-08-25 | 本節回寫 |
+| 2026-08-25 | 本節回寫；URI 遮蔽修正與備份 image 重新 pin 一併落地並 apply |
+| 2026-08-27 | **Phase 7 開始執行**。補上從未實作的 Cloud Run 5xx 告警；IGDB 憑證上線並實證外部呼叫；7-1／7-4 驗收腳本全數通過；**restore drill 首次執行並通過**，關閉 Phase 5 最後一項 Gate；維運文件建立 |
 
 ## 部署 run 紀錄
 
@@ -274,14 +306,26 @@ Cloud Run Job `mycollection-mongo-backup`，2026-08-09 → 08-24 共 19 次 exec
 2. **授權分支的綁定有兩處，不是一處**。WIF 的 `attribute_condition` 與兩個 workflow 的 `if: github.ref` 各綁一次；2026-08-24 只改前者，導致首次 dispatch 直接 `skipped`。改分支策略時兩處必須同時改。
 3. **`backup_image` 曾釘向不存在的 image 長達兩週**。瘦身 Dockerfile 進了 `master`、對應的 digest pin 卻留在 `deploy`，兩半各自看起來完整。期間對 `infra/terraform/runtime` 執行 `apply` 會打壞正常運作中的每日備份。已釘回線上實跑的 digest。
 4. **pipeline 久未執行會累積時間炸彈**。`TreatWarningsAsErrors` + NuGetAudit 之下，一則新的傳遞相依公告就能讓 restore 失敗、擋住整條部署，而程式碼一行未改（本次為 `SSH.NET 2025.1.0` 的 GHSA-q939-rpr3-3284，經 Testcontainers 傳遞）。判準：上游已修就升上游，上游未修才覆寫 pin。
+5. **Atlas 完全不由 Terraform 管理**。Phase 6 的「Terraform ownership」列了「Atlas project、Free cluster、network access list」，但 `infra/terraform` 的 `required_providers` 只有 `hashicorp/google`，**沒有任何 Atlas provider**。Atlas 目前 100% 手動維護。同一節還宣告了 Cloud Run，實際情形見偏離 1 —— 這一節整體上是「打算怎麼分工」而非「實際怎麼分工」。
+6. **`terraform apply` 會繞過 canary gate**。2026-08-27 為了讓 IGDB 憑證進入 API service template 而執行 apply，Cloud Run 隨即建立新 revision 並使其取得 100% 流量，完全沒有經過 smoke test 與 15 分鐘觀察期 —— 而「canary gate 通過後才取得 100% 流量」是〈完成定義〉的條目之一。同次 apply 也讓 Web 產生了一個新 revision，但 Web 的流量未跟著移動，兩者不對稱的原因未查明。**結論：對 service template 的變更應走 workflow，不要用 apply。**
+7. **restore drill 對 runbook 有三項刻意偏離**，理由記在 `infra/acceptance/restore-drill.ps1` 的 `.DESCRIPTION`：(a) 執行環境為本機 Docker 而非 runbook 所寫的 secured environment，URI 走 stdin 進入容器 tmpfs；(b) **不使用 `--drop`** —— production 連線字串釘住 `mycollection`，導致無法用同一份 config 讀取暫時庫（mongo tools 拒絕 URI 與 `--db` 指向不同資料庫），因此做不了「目標庫不存在」的前置檢查，與其補檢查再保留破壞性旗標，不如讓旗標消失；(c) 丟棄暫時庫改為手動 —— 備份 image 內沒有 mongosh，而 mongosh 沒有 `--config`，連線字串只能進 argv 或環境變數，兩者 runbook 都明文禁止。
+8. **budget 門檻的幣別與金額與計畫不符**。Phase 0 工作 4 寫的是 US$5（50%／90%／100%）與 US$10 高優先，實際建立的是 **TWD 150**（三段）與 **TWD 300**（一段）。金額量級相近，但計畫文字未回寫。
 
 ## 未通過的 Gate 與待辦
 
+> 更新於 2026-08-27。
+
 | 項目 | 來源 | 狀態 |
 |---|---|---|
-| 季度 restore drill 從未執行 | Phase 5 Gate | 🔴 待執行，同為 Phase 7-5 |
-| 備份失敗時 log 回顯連線字串（含密碼） | Phase 5 Gate | ✅ 2026-08-25 已修（entrypoint 遮蔽 URI userinfo）；**待重建備份 image 並部署才生效**。既有的歷史 log entry 需另行決定是否輪替憑證 |
-| Provider credentials 尚未由使用者重新輸入 | Phase 4 工作 6 | 🟡 Phase 7-2 的前置；PSN 真實 NPSSO 至今未驗證 |
+| 季度 restore drill 從未執行 | Phase 5 Gate | ✅ **2026-08-27 首次執行並通過**（229 documents／6 collections／索引全建／3 秒）。下次到期 2026-11 |
+| 備份失敗時 log 回顯連線字串（含密碼） | Phase 5 Gate | ✅ 已生效。08-25 與 08-26 兩次排程執行皆跑在含遮蔽的 `sha256:258a4bad` 上。**惟 restore 側的遮蔽尚未被真實失敗路徑驗證**。既有的歷史 log entry 仍需決定是否輪替憑證 |
+| Cloud Tasks 正式環境零執行 | Phase 3 Gate | 🔴 30 天內無 task handler 呼叫、無佇列日誌。重送冪等、五次 attempts 後手動重跑皆未驗證。解鎖條件：觸發一次 Steam 或 PSN 同步 |
+| Steam／PSN 憑證未經實際外部呼叫驗證 | Phase 4 工作 6／Phase 7-2 | 🟡 已輸入未觸發。IGDB 已於 08-27 完成端對端驗證 |
+| 篩選與精選的 UI 語意未人工確認 | Phase 7-1 | 🟡 API 層已通過；版面語意屬 UI 行為（ADR-0006／0007／0009），驗收腳本不涵蓋 |
+| budget 與 Cloud Run 5xx 通知未被真實事件觸發 | Phase 7-6 | 🟡 政策與 channel 均已上線且 enabled，但兩條皆未實際送達過 |
+| Atlas 完全不由 Terraform 管理 | 偏離 5 | 🟡 需決定是否納管，或正式把 Atlas 標為手動維運範圍 |
+| `terraform apply` 繞過 canary gate | 偏離 6 | 🟡 已知行為，暫以「service template 變更走 workflow」的紀律規避；Web 流量未跟隨移動的原因未查明 |
 | `backup_image` 缺 apply 前的 digest 存在性檢查 | 偏離 3 的後續 | 🟡 格式 `validation` 擋不掉「digest 不存在」，`plan` 不查 registry |
-| 孤兒 revision 未清理 | Phase 6 工作 7 | 🟡 `mycollection-api-sha-3a8bc116…`（已 False）、`mycollection-web-web-9a85fb9-1` 等舊命名殘骸 |
-| Phase 7 全部七項 | Phase 7 | 🔴 未開始 |
+| 孤兒 revision 未清理 | Phase 6 工作 7 | 🟡 `mycollection-api-sha-3a8bc116…`、`mycollection-web-web-9a85fb9-1` 等舊命名殘骸，另有 08-27 apply 產生的自動命名 revision |
+| 備份桶實際可回溯範圍小於 30 天 | 本次查證 | 🟡 2026-08-24 14:55–14:57 UTC 有一次手動刪除，移除 6 份 archive（hard delete 排程 08-31）。lifecycle 設定本身正確 |
+| API 回應缺 `Vary: Origin` | 本次查證 | 🟡 目前無共用快取層，不構成實際風險，屬正確性缺口 |
