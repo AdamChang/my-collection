@@ -1,6 +1,6 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { TestBed } from '@angular/core/testing';
+import { TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { firstValueFrom } from 'rxjs';
 import { SyncJobDto } from '../models';
 import { IngestionService } from './ingestion.service';
@@ -93,5 +93,56 @@ describe('IngestionService', () => {
     request.flush(job);
 
     await pending;
+  });
+  describe('awaitJob', () => {
+    const running: SyncJobDto = { ...job, status: 'Running', updated: 0, finishedAt: null };
+
+    /** 本機 in-process 時作業已跑完，不該多打任何一次 /jobs。 */
+    it('returns a finished job immediately without polling', async () => {
+      expect(await firstValueFrom(service.awaitJob(job))).toEqual(job);
+      http.expectNone('/api/ingest/jobs');
+    });
+
+    /**
+     * 沒有單筆 job 端點，只能從最近清單裡撈同 id 的那筆。
+     * 清單裡別的作業（例如同時在跑的 Steam sync）不能被誤認成結果。
+     */
+    it('polls the recent jobs until the matching one leaves Running', fakeAsync(() => {
+      let result: SyncJobDto | undefined;
+      service.awaitJob(running, 1000, 5).subscribe((j) => (result = j));
+
+      tick(1000);
+      http.expectOne((r) => r.url === '/api/ingest/jobs').flush([
+        { ...job, id: 'other' },
+        running,
+      ]);
+      expect(result).toBeUndefined();
+
+      tick(1000);
+      http.expectOne((r) => r.url === '/api/ingest/jobs').flush([{ ...job, id: 'other' }, job]);
+      expect(result).toEqual(job);
+
+      // 拿到終態就停，不會再多打一拍。
+      tick(1000);
+      http.expectNone('/api/ingest/jobs');
+    }));
+
+    /**
+     * 逾時回最後一次看到的 Running 快照而不是擲錯：作業仍會在背景完成，
+     * 呼叫端要的是「還沒好」而不是「壞了」。
+     */
+    it('gives up after maxPolls and hands back the still-running snapshot', fakeAsync(() => {
+      let result: SyncJobDto | undefined;
+      service.awaitJob(running, 1000, 2).subscribe((j) => (result = j));
+
+      tick(1000);
+      http.expectOne((r) => r.url === '/api/ingest/jobs').flush([]);
+      tick(1000);
+      http.expectOne((r) => r.url === '/api/ingest/jobs').flush([running]);
+
+      expect(result).toEqual(running);
+      tick(1000);
+      http.expectNone('/api/ingest/jobs');
+    }));
   });
 });

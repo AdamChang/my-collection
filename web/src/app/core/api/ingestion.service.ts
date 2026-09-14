@@ -1,6 +1,6 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, concatMap, last, map, of, take, takeWhile, timer } from 'rxjs';
 import { API_BASE } from '../api-base';
 import { ExternalAccountDto, FetchedMetadataDto, ProviderDto, SyncJobDto } from '../models';
 
@@ -63,5 +63,30 @@ export class IngestionService {
     return this.http.post<SyncJobDto>(`${API_BASE}/ingest/enrich/${provider}`, {
       itemIds: itemIds ?? null,
     });
+  }
+
+  /**
+   * enrich 的回應在兩種部署下語意不同：本機 in-process 時作業已跑完；Cloud Run 上
+   * 走 Cloud Tasks，回應時作業才剛排入，Status 仍是 Running 且統計數字全是 0。
+   * 呼叫端若直接拿 Running 的統計判斷結果，會把「還沒開始」誤報成「查無對應」。
+   *
+   * 這裡把差異收掉：Running 就輪詢 /ingest/jobs 直到作業結束。沒有單筆 job 端點，
+   * 所以從最近清單裡撈；剛建立的作業必在最前面。輪詢上限到了仍未結束就回最後一次
+   * 看到的快照（Status 仍是 Running），由呼叫端決定怎麼告知使用者，這裡不擲錯——
+   * 逾時不是失敗，作業仍會在背景完成。
+   */
+  awaitJob(job: SyncJobDto, intervalMs = 1500, maxPolls = 20): Observable<SyncJobDto> {
+    if (job.status !== 'Running') {
+      return of(job);
+    }
+
+    return timer(intervalMs, intervalMs).pipe(
+      take(maxPolls),
+      // concatMap 而非 switchMap：慢回應不該被下一拍取消，否則永遠看不到結果。
+      concatMap(() => this.jobs()),
+      map((recent) => recent.find((candidate) => candidate.id === job.id) ?? job),
+      takeWhile((snapshot) => snapshot.status === 'Running', true),
+      last(),
+    );
   }
 }

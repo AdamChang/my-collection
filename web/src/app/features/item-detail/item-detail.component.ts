@@ -1,7 +1,7 @@
 import { Component, computed, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { finalize } from 'rxjs';
+import { finalize, switchMap } from 'rxjs';
 import { CatalogService, ItemWritePayload } from '../../core/api/catalog.service';
 import { CategoryService } from '../../core/api/category.service';
 import { IngestionService } from '../../core/api/ingestion.service';
@@ -372,14 +372,25 @@ export class ItemDetailComponent {
     this.enriching.set(true);
     this.ingestion
       .enrich(IGDB_PROVIDER_KEY, [id])
-      .pipe(finalize(() => this.enriching.set(false)))
+      .pipe(
+        // 雲端部署時 enrich 是背景作業，回應的 job 還是 Running、統計全是 0；
+        // 直接判斷會把「還沒開始」報成「查無對應」。等作業結束再看數字。
+        switchMap((job) => this.ingestion.awaitJob(job)),
+        finalize(() => this.enriching.set(false)),
+      )
       .subscribe({
         next: (job) => {
+          // 輪詢逾時：作業仍會在背景完成，不是失敗，但也不能說「已更新」。
+          if (job.status === 'Running') {
+            this.notifications.success('IGDB 仍在背景處理中，稍後重新整理即可看到結果。');
+            return;
+          }
+
           // 誠實比樂觀重要：什麼都沒變時說「完成」，使用者會以為資料已更新。
           // failed 與 skipped 要分開講——一個是該重試，一個是重試也沒用。
-          // 注意 job.Status 在這兩種情況下都還是 Succeeded（provider 內部接住了
+          // 注意 job.Status 在這兩種情況下多半仍是 Succeeded（provider 內部接住了
           // ProviderException），所以 errorInterceptor 不會出手，只能靠這裡判斷。
-          if (job.failed > 0) {
+          if (job.status === 'Failed' || job.failed > 0) {
             this.notifications.error('IGDB 查詢失敗，請稍後再試。');
             return;
           }

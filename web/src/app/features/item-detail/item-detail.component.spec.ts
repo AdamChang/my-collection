@@ -747,7 +747,10 @@ describe('ItemDetailComponent', () => {
    * 通報通道分開收集：把 error 換成 success 訊息文字不會變，只有通道會變。
    * enrich 的參數也記下來——不給 itemIds 會變成批次補完 50 筆使用者沒選的品項。
    */
-  async function createRefetchable(response: Observable<SyncJobDto>) {
+  async function createRefetchable(
+    response: Observable<SyncJobDto>,
+    awaitJob: (job: SyncJobDto) => Observable<SyncJobDto> = (job) => of(job),
+  ) {
     const successes: string[] = [];
     const errors: string[] = [];
     const enrichCalls: unknown[][] = [];
@@ -776,6 +779,7 @@ describe('ItemDetailComponent', () => {
               enrichCalls.push(args);
               return response;
             },
+            awaitJob,
           },
         },
         {
@@ -854,6 +858,56 @@ describe('ItemDetailComponent', () => {
     expect(h.gets.count).toBe(2);
     // 不給 itemIds 就會變成批次補完使用者沒選的品項。
     expect(h.enrichCalls).toEqual([[IGDB_PROVIDER_KEY, [steamItem.id]]]);
+  });
+
+  /**
+   * 後端 runner 整個 chunk 炸掉時 job.Status 是 Failed、統計全零——
+   * 只看 failed 計數會掉進「查無對應」，叫使用者別再試，但其實該重試。
+   */
+  it('reports a failed job as a failure even when the counters are all zero', async () => {
+    const h = await createRefetchable(of(enrichJob({ status: 'Failed', error: 'boom' })));
+
+    h.fixture.nativeElement.querySelector('[data-igdb-refetch]').click();
+
+    expect(h.errors).toEqual(['IGDB 查詢失敗，請稍後再試。']);
+    expect(h.gets.count).toBe(1);
+  });
+
+  /**
+   * Cloud Run 上 enrich 走 Cloud Tasks，回應的 job 是 Running 且統計全零。
+   * 直接判斷會報「查無對應」，但幾秒後資料其實已經更新——這正是線上回報的症狀。
+   * 結果必須來自 awaitJob 等到的終態，而不是回應本身。
+   */
+  it('waits for a background job to finish before judging the outcome', async () => {
+    const awaited: SyncJobDto[] = [];
+    const h = await createRefetchable(
+      of(enrichJob({ status: 'Running', finishedAt: null })),
+      (job) => {
+        awaited.push(job);
+        return of(enrichJob({ updated: 1 }));
+      },
+    );
+
+    h.fixture.nativeElement.querySelector('[data-igdb-refetch]').click();
+
+    expect(awaited.map((j) => j.status)).toEqual(['Running']);
+    expect(h.errors).toEqual([]);
+    expect(h.successes).toEqual(['已從 IGDB 更新。']);
+    expect(h.gets.count).toBe(2);
+  });
+
+  /** 輪詢逾時不是失敗：作業仍會在背景完成，但也不能說「已更新」或重載半成品。 */
+  it('tells the user the job is still running when polling gives up', async () => {
+    const h = await createRefetchable(
+      of(enrichJob({ status: 'Running', finishedAt: null })),
+      (job) => of(job),
+    );
+
+    h.fixture.nativeElement.querySelector('[data-igdb-refetch]').click();
+
+    expect(h.errors).toEqual([]);
+    expect(h.successes).toEqual(['IGDB 仍在背景處理中，稍後重新整理即可看到結果。']);
+    expect(h.gets.count).toBe(1);
   });
 
   /** 沒有這道鎖，連點三下就是三個 enrich 請求。與儲存那道鎖是同一個理由。 */
