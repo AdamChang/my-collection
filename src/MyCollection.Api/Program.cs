@@ -27,12 +27,12 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddHttpContextAccessor();
 
 // 背景作業在自己的 scope 裡先設定 BackgroundUserContext，其餘情況照舊讀 HTTP 身分。
-// 兩者都是 scoped，所以互不干擾。
+// 分支必須延後到存取當下：背景作業是先建好整棵服務圖、Claim 到 job 之後才 Set，
+// 在 factory 裡就選定實作會讓背景路徑永遠拿到 HttpUserContext。
 builder.Services.AddScoped<HttpUserContext>();
-builder.Services.AddScoped<IUserContext>(sp =>
-    sp.GetRequiredService<BackgroundUserContext>().UserId is { } userId
-        ? new FixedUserContext(userId)
-        : sp.GetRequiredService<HttpUserContext>());
+builder.Services.AddScoped<IUserContext>(sp => new ScopedUserContext(
+    sp.GetRequiredService<BackgroundUserContext>(),
+    sp.GetRequiredService<HttpUserContext>()));
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();

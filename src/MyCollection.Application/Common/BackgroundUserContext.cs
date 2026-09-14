@@ -26,3 +26,17 @@ public sealed class FixedUserContext(ObjectId userId) : IUserContext
 
     public bool IsAuthenticated => true;
 }
+
+/// <summary>
+/// 每次存取才決定身分來源，不在解析時定案。
+///
+/// 背景作業的服務圖（SyncJobRunner、各 Repository）是在 <see cref="BackgroundUserContext.Set"/>
+/// 被呼叫之前就整棵建好的，注入的 IUserContext 又是 scoped 快取，
+/// 若在 factory 裡用三元運算子選實作，背景路徑永遠會落在 HTTP 分支並擲 ForbiddenException。
+/// </summary>
+public sealed class ScopedUserContext(BackgroundUserContext background, IUserContext httpFallback) : IUserContext
+{
+    public ObjectId UserId => background.UserId ?? httpFallback.UserId;
+
+    public bool IsAuthenticated => background.UserId is not null || httpFallback.IsAuthenticated;
+}
