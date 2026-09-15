@@ -89,6 +89,7 @@ const FIELD_TYPES: FieldType[] = ['Text', 'Number', 'Date', 'Select', 'Bool', 'U
                 <input
                   [(ngModel)]="field.key"
                   [name]="'key' + $index"
+                  [readonly]="isExistingField(field)"
                   [attr.aria-label]="'欄位 ' + ($index + 1) + ' key'"
                   placeholder="key（camelCase）"
                   required
@@ -125,6 +126,26 @@ const FIELD_TYPES: FieldType[] = ['Text', 'Number', 'Date', 'Select', 'Bool', 'U
                 <label><input type="checkbox" [(ngModel)]="field.searchable" [name]="'searchable' + $index" /> 可搜尋</label>
                 <label><input type="checkbox" [(ngModel)]="field.showOnCard" [name]="'card' + $index" /> 顯示於卡片</label>
 
+                @if (editingId() && isExistingField(field)) {
+                  <button type="button" [attr.data-rename]="$index" [disabled]="busy()" (click)="startRename($index)">
+                    重新命名
+                  </button>
+                }
+                @if (renaming(); as r) {
+                  @if (r.index === $index) {
+                    <div class="editor__rename" role="group" aria-label="重新命名欄位">
+                      <input
+                        [ngModel]="r.newKey"
+                        (ngModelChange)="setRenameKey($event)"
+                        name="renameKey"
+                        aria-label="新的 key"
+                        placeholder="新的 key（camelCase）"
+                      />
+                      <button type="button" data-rename-confirm [disabled]="busy()" (click)="confirmRename()">確認</button>
+                      <button type="button" data-rename-cancel (click)="cancelRename()">取消</button>
+                    </div>
+                  }
+                }
                 <button type="button" (click)="removeField($index)">移除</button>
               </fieldset>
             }
@@ -197,6 +218,10 @@ export class CategoriesComponent {
   readonly editingId = signal<string | null>(null);
   readonly saving = signal(false);
   readonly removing = signal(false);
+  /** 開啟 dialog 時品類已宣告的鍵。key 是身分（ADR-0012），既有欄位的 key 只能走改名，不能直接編輯。 */
+  readonly originalKeys = signal<ReadonlySet<string>>(new Set());
+  /** 正在改名的欄位索引與輸入中的新鍵；null = 沒有 inline 列展開。 */
+  readonly renaming = signal<{ index: number; newKey: string } | null>(null);
 
   /** 儲存與刪除不該並行，任一進行中就鎖住兩顆。 */
   readonly busy = computed(() => this.saving() || this.removing());
@@ -207,6 +232,8 @@ export class CategoriesComponent {
 
   startNew(): void {
     this.editingId.set(null);
+    this.originalKeys.set(new Set());
+    this.renaming.set(null);
     this.draft.set({ name: '', icon: 'box', kind: 'Physical', defaultDisplayMode: 'List', fields: [] });
     this.openEditor();
   }
@@ -218,6 +245,8 @@ export class CategoriesComponent {
     }
 
     this.editingId.set(category.id);
+    this.originalKeys.set(new Set(category.fields.map((f) => f.key)));
+    this.renaming.set(null);
     this.draft.set({
       name: category.name,
       icon: category.icon,
@@ -261,6 +290,7 @@ export class CategoriesComponent {
    */
   private dismiss(): void {
     this.draft.set(null);
+    this.renaming.set(null);
 
     const dialog = this.editorDialog().nativeElement;
     if (dialog.open) {
@@ -294,6 +324,28 @@ export class CategoriesComponent {
       .map((o) => o.trim())
       .filter((o) => o.length > 0);
   }
+
+  isExistingField(field: CategoryFieldDto): boolean {
+    return this.originalKeys().has(field.key);
+  }
+
+  startRename(index: number): void {
+    if (this.busy()) {
+      return;
+    }
+    this.renaming.set({ index, newKey: '' });
+  }
+
+  cancelRename(): void {
+    this.renaming.set(null);
+  }
+
+  setRenameKey(newKey: string): void {
+    this.renaming.update((r) => (r ? { ...r, newKey } : r));
+  }
+
+  /** 由下一個 Task 接上 API 呼叫。 */
+  confirmRename(): void {}
 
   save(): void {
     const payload = this.draft();

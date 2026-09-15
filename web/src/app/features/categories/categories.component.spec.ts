@@ -5,6 +5,30 @@ import { NotificationService } from '../../core/notification.service';
 import { CategoriesComponent } from './categories.component';
 
 describe('CategoriesComponent', () => {
+  const custom = {
+    id: 'c1', name: '公仔', icon: 'box', kind: 'Physical' as const, isSystem: false,
+    defaultDisplayMode: 'List' as const,
+    fields: [{ key: 'price', label: '價格', type: 'Text' as const, options: null, required: false, searchable: false, showOnCard: false }],
+  };
+
+  async function setup(api: Partial<CategoryService>, notifications: Partial<NotificationService> = {}) {
+    await TestBed.configureTestingModule({
+      imports: [CategoriesComponent],
+      providers: [
+        { provide: CategoryService, useValue: { list: () => of([custom]), ...api } },
+        { provide: NotificationService, useValue: { success: () => undefined, error: () => undefined, ...notifications } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(CategoriesComponent);
+    fixture.detectChanges();
+    fixture.componentInstance.edit(custom);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return fixture;
+  }
+
   it('renders system categories as read-only and custom categories as editable', async () => {
     await TestBed.configureTestingModule({
       imports: [CategoriesComponent],
@@ -116,5 +140,33 @@ describe('CategoriesComponent', () => {
     // （<select> 的 .value 屬性在這個測試環境下對非首個 option 的初始寫回並不可靠，
     // 這是 Angular NgModel + 靜態 <option> 組合已知的既有限制，kind 欄位同樣受影響，非本次新增功能引入）。
     expect(fixture.componentInstance.draft()?.defaultDisplayMode).toBe('Hero');
+  });
+
+  it('locks the key of fields the category already declares but not of fields added in this session', async () => {
+    const fixture = await setup({});
+
+    // 模板的 [name] 綁定被 NgModel 的 name input 接走，不會寫入 DOM 屬性；用 aria-label 定位
+    const existingKey: HTMLInputElement = fixture.nativeElement.querySelector('input[aria-label="欄位 1 key"]');
+    expect(existingKey.readOnly).toBe(true);
+    expect(fixture.nativeElement.querySelector('button[data-rename="0"]')).toBeTruthy();
+
+    fixture.componentInstance.addField();
+    fixture.detectChanges();
+
+    const newKey: HTMLInputElement = fixture.nativeElement.querySelector('input[aria-label="欄位 2 key"]');
+    expect(newKey.readOnly).toBe(false);
+    expect(fixture.nativeElement.querySelector('button[data-rename="1"]')).toBeNull();
+  });
+
+  it('opens an inline rename row for the chosen field', async () => {
+    const fixture = await setup({});
+
+    fixture.nativeElement.querySelector('button[data-rename="0"]').click();
+    fixture.detectChanges();
+
+    const input: HTMLInputElement = fixture.nativeElement.querySelector('input[name="renameKey"]');
+    expect(input).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('button[data-rename-confirm]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('button[data-rename-cancel]')).toBeTruthy();
   });
 });
