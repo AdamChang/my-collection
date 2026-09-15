@@ -35,6 +35,12 @@ export interface CategoryDto {
   fields: CategoryFieldDto[];
 }
 
+/** 改名回應。movedItemCount 是使用者唯一能確認「真的動到資料」的證據（ADR-0012）。 */
+export interface RenameFieldResultDto {
+  category: CategoryDto;
+  movedItemCount: number;
+}
+
 export interface ItemImageDto {
   id: string;
   path: string;

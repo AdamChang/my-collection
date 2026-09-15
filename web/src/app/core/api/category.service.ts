@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { API_BASE } from '../api-base';
-import { CategoryDto, CategoryFieldDto, DisplayMode } from '../models';
+import { CategoryDto, CategoryFieldDto, DisplayMode, RenameFieldResultDto } from '../models';
 
 export interface CategoryWritePayload {
   name: string;
@@ -30,5 +30,12 @@ export class CategoryService {
 
   remove(id: string): Observable<void> {
     return this.http.delete<void>(`${API_BASE}/categories/${id}`);
+  }
+
+  renameField(id: string, key: string, newKey: string): Observable<RenameFieldResultDto> {
+    return this.http.post<RenameFieldResultDto>(
+      `${API_BASE}/categories/${id}/fields/${encodeURIComponent(key)}/rename`,
+      { newKey },
+    );
   }
 }
