@@ -9,6 +9,7 @@ namespace MyCollection.Tests.Fixtures;
 public sealed class MongoFixture : IAsyncLifetime
 {
     private readonly MongoDbContainer _container = new MongoDbBuilder("mongo:8.0")
+        .WithReplicaSet("rs0")
         .Build();
 
     public string ConnectionString => _container.GetConnectionString();
