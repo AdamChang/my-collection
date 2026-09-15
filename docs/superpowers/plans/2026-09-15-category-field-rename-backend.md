@@ -1043,7 +1043,7 @@ public sealed class MongoCategoryFieldRenamer(MongoContext context, IUserContext
 
 ---
 
-## Task 7：端點、DI、端點整合測試
+## Task 7：端點、DI、端點整合測試 ✅ `03471f7`
 
 **Files:** Create: `tests/MyCollection.Tests/Integration/CategoryEndpointsTests.cs`；Modify: `src/MyCollection.Api/Endpoints/CategoryEndpoints.cs`
 
@@ -1187,20 +1187,22 @@ group.MapPost("/{id}/fields/{key}/rename", async (
 ```
 與 `public record RenameFieldRequest(string NewKey);`
 
-- [ ] Step 4：單檔 → `Passed: 5`
-- [ ] Step 5：全部 → 598 + 5 = 603；`dotnet build MyCollection.slnx -warnaserror` 0 warnings
+- [x] Step 4：單檔 → `Passed: 5`
+- [x] Step 5：全部 → 598 + 5 = 603；`dotnet build MyCollection.slnx -warnaserror` 0 warnings（實測 603）
+
+> 實測：計畫測試碼的 `using MyCollection.Application.Items;` 未用到，已刪。`Rename_of_undeclared_key_is_404` 在路由尚不存在時也是綠（巧合綠，404 來自路由而非 handler），實作後仍綠。400 body 含 `NewKey` 是因為 `GlobalExceptionHandler` 把 `PropertyName` 當 `errors` 的 key 且 ProblemDetails 沒套 `DictionaryKeyPolicy`；`steamAppId` 則出現在 `errors["Fields"]` 的訊息文字。
 - [ ] Step 6：Commit `feat(api): POST /categories/{id}/fields/{key}/rename`；`git add src/MyCollection.Api/Endpoints/CategoryEndpoints.cs tests/MyCollection.Tests/Integration/CategoryEndpointsTests.cs`
 
 ---
 
 ## 完成後的驗證
 
-- [ ] `dotnet test` 全綠，總數 = 603（565 基準 + 38）
-- [ ] `dotnet build MyCollection.slnx -warnaserror` 0 warnings
-- [ ] `git status` 乾淨（`web/` 不應有任何變更）
-- [ ] `git log master..HEAD --oneline` 恰好 8 顆 commit（Task 0–7）
-- [ ] `git diff master..HEAD --stat` 不含 `web/`、`*Fields.cs`、`SystemCategoryDefinitions.cs`
-- [ ] Testcontainers 整體執行時間記錄在回寫（replica set 啟動成本）
+- [x] `dotnet test` 全綠，總數 = 603（565 基準 + 38）
+- [x] `dotnet build MyCollection.slnx -warnaserror` 0 warnings
+- [x] `git status` 乾淨
+- [x] `git log master..HEAD --oneline`：前後端共用同一條分支，實際 8 顆後端 + 3 顆前端 + 4 顆 `docs(plans)` 回寫（計畫原先假設後端獨立分支，「恰好 8 顆」與「不含 `web/`」兩條前提不成立，改為：後端 commit 不觸及 `web/`）
+- [x] `git diff master..HEAD --stat` 不含 `*Fields.cs`、`SystemCategoryDefinitions.cs`
+- [x] Testcontainers：全套 603 測試 19–21 s（single-node replica set 啟動未造成可感知差異；Task 1 前 565 測試量級相同）
 
 ## 手動驗證
 
