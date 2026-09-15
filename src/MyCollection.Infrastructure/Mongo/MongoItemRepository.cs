@@ -112,6 +112,11 @@ public sealed class MongoItemRepository(MongoContext context, IUserContext userC
         return (await platforms.ToListAsync(ct)).Order(StringComparer.Ordinal).ToArray();
     }
 
+    public Task<long> CountByCategoryAsync(ObjectId categoryId, CancellationToken ct) =>
+        Items.CountDocumentsAsync(
+            Filter.And(OwnerFilter, Filter.Eq(x => x.CategoryId, categoryId)),
+            cancellationToken: ct);
+
     public Task InsertAsync(Item item, CancellationToken ct)
     {
         item.OwnerId = userContext.UserId;

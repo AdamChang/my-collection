@@ -3,6 +3,7 @@ using Microsoft.Extensions.Time.Testing;
 using MongoDB.Bson;
 using Moq;
 using MyCollection.Application.Categories;
+using MyCollection.Application.Items;
 using MyCollection.Domain.Entities;
 using MyCollection.Domain.Exceptions;
 
@@ -11,6 +12,7 @@ namespace MyCollection.Tests.Unit;
 public class CategoryCommandTests
 {
     private readonly Mock<ICategoryRepository> _repository = new();
+    private readonly Mock<IItemRepository> _items = new();
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 7, 25, 3, 0, 0, TimeSpan.Zero));
 
     private static CategoryFieldDto Field(string key, string type = "Text", string[]? options = null) =>
@@ -183,5 +185,47 @@ public class CategoryCommandTests
             .Handle(command, CancellationToken.None);
 
         dto.Fields.Should().Contain(f => f.Key == "steamAppId" && f.Label == "改過的名稱");
+    }
+
+    [Fact]
+    public async Task Delete_rejects_category_that_still_has_items()
+    {
+        var existing = ExistingCategory("brand");
+        _repository.Setup(r => r.GetAsync(existing.Id, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+        _items.Setup(i => i.CountByCategoryAsync(existing.Id, It.IsAny<CancellationToken>())).ReturnsAsync(3);
+
+        var act = () => new DeleteCategoryCommandHandler(_repository.Object, _items.Object)
+            .Handle(new DeleteCategoryCommand(existing.Id.ToString()), CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ConflictException>();
+        ex.Which.Message.Should().Contain("3");
+        _repository.Verify(r => r.DeleteAsync(It.IsAny<ObjectId>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Delete_removes_category_without_items()
+    {
+        var existing = ExistingCategory("brand");
+        _repository.Setup(r => r.GetAsync(existing.Id, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+        _items.Setup(i => i.CountByCategoryAsync(existing.Id, It.IsAny<CancellationToken>())).ReturnsAsync(0);
+
+        await new DeleteCategoryCommandHandler(_repository.Object, _items.Object)
+            .Handle(new DeleteCategoryCommand(existing.Id.ToString()), CancellationToken.None);
+
+        _repository.Verify(r => r.DeleteAsync(existing.Id, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Delete_forbids_system_category_before_counting()
+    {
+        var system = ExistingCategory("platform");
+        system.OwnerId = null;
+        _repository.Setup(r => r.GetAsync(system.Id, It.IsAny<CancellationToken>())).ReturnsAsync(system);
+
+        var act = () => new DeleteCategoryCommandHandler(_repository.Object, _items.Object)
+            .Handle(new DeleteCategoryCommand(system.Id.ToString()), CancellationToken.None);
+
+        await act.Should().ThrowAsync<ForbiddenException>();
+        _items.Verify(i => i.CountByCategoryAsync(It.IsAny<ObjectId>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }
