@@ -291,7 +291,7 @@ services.AddSingleton<IProtectedFieldKeys, ProviderFieldKeyCatalog>();
 
 ---
 
-## Task 3：`PUT /categories` 拒絕撤回受保護欄位
+## Task 3：`PUT /categories` 拒絕撤回受保護欄位 ✅ `4f1cd42`
 
 **Files:** Modify: `src/MyCollection.Application/Categories/CategoryCommands.cs`、`tests/MyCollection.Tests/Unit/CategoryCommandTests.cs`
 
@@ -364,7 +364,7 @@ public async Task Update_keeps_protected_field_when_it_is_still_declared()
 }
 ```
 
-- [ ] Step 2：跑單檔 → 編譯失敗（建構式參數數量）。修第 119 行為 `new UpdateCategoryCommandHandler(_repository.Object, _time, new StubProtectedKeys())` 後再跑，應是第一個新測試因沒擲例外而紅。
+- [x] Step 2：跑單檔 → 編譯失敗（建構式參數數量）。修第 119 行為 `new UpdateCategoryCommandHandler(_repository.Object, _time, new StubProtectedKeys())` 後再跑。**實測多一個中間狀態**：handler 只加參數不用會被 `TreatWarningsAsErrors` 升成 `CS9113`，所以中間狀態是「加參數 + 差集計算、不擲例外」，這時才看到 `Update_rejects_withdrawing_a_protected_field` 以「沒擲例外」為由變紅。
 - [ ] Step 3：最小實作——`UpdateCategoryCommandHandler`：
 
 ```csharp
@@ -403,12 +403,12 @@ public sealed class UpdateCategoryCommandHandler(
 （`using FluentValidation.Results;` 需補。）
 
 - [ ] Step 4：單檔 → 既有 + 3 全綠
-- [ ] Step 5：全部 → 576 + 3 = 579
+- [x] Step 5：全部 → 576 + 3 = 579（實測）
 - [ ] Step 6：Commit `feat(categories): PUT 不得撤回受保護欄位`；`git add src/MyCollection.Application/Categories/CategoryCommands.cs tests/MyCollection.Tests/Unit/CategoryCommandTests.cs`
 
 ---
 
-## Task 4：有品項的品類不可刪除
+## Task 4：有品項的品類不可刪除 ✅ `b55c6de`
 
 **Files:** Modify: `src/MyCollection.Application/Items/IItemRepository.cs`、`src/MyCollection.Infrastructure/Mongo/MongoItemRepository.cs`、`src/MyCollection.Application/Categories/CategoryCommands.cs`、`tests/MyCollection.Tests/Unit/CategoryCommandTests.cs`、`tests/MyCollection.Tests/Integration/MongoItemRepositoryTests.cs`
 
@@ -538,10 +538,10 @@ public sealed class DeleteCategoryCommandHandler(ICategoryRepository repository,
 ```
 
 - [ ] Step 4：兩個檔各自綠
-- [ ] Step 5：全部 → 579 + 4 = 583
+- [x] Step 5：全部 → 579 + 4 = 583（實測；審查時對「撤回判定」與「檢查順序」各做一次變異，皆被測試抓到）
 - [ ] Step 6：Commit `feat(categories): 仍有品項的品類不可刪除`；`git add` 上列五個路徑。
 
-> **Checkpoint A**：到這裡 repo 可收工。回寫：若 Task 3/4 的例外訊息或方法簽章在 review 中改了，更新 Task 5/7 的 snippet。
+> **Checkpoint A** ✅ 2026-09-16：Task 3/4 的例外訊息與簽章與計畫一致，Task 5/7 的 snippet 不需更新。`CountByCategoryAsync` 實作沿用該檔的 `OwnerFilter` 屬性而非展開的 `Filter.Eq(OwnerId)`，語意相同。
 
 ---
 
