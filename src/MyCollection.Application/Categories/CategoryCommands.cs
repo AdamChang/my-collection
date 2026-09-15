@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using FluentValidation;
+using FluentValidation.Results;
 using MediatR;
 using MongoDB.Bson;
 using MyCollection.Domain.Entities;
@@ -119,7 +120,10 @@ public sealed class CreateCategoryCommandHandler(ICategoryRepository repository,
     }
 }
 
-public sealed class UpdateCategoryCommandHandler(ICategoryRepository repository, TimeProvider timeProvider)
+public sealed class UpdateCategoryCommandHandler(
+    ICategoryRepository repository,
+    TimeProvider timeProvider,
+    IProtectedFieldKeys protectedKeys)
     : IRequestHandler<UpdateCategoryCommand, CategoryDto>
 {
     public async Task<CategoryDto> Handle(UpdateCategoryCommand request, CancellationToken cancellationToken)
@@ -127,6 +131,20 @@ public sealed class UpdateCategoryCommandHandler(ICategoryRepository repository,
         var id = ObjectId.Parse(request.Id);
         var existing = await repository.GetAsync(id, cancellationToken)
                        ?? throw new NotFoundException(nameof(Category), request.Id);
+
+        // PUT 的語意是宣告集合的置換：請求裡沒有的既有鍵就是撤回宣告（ADR-0012 §二）。
+        // 撤回不刪品項上的值，但受保護的鍵連撤回都不行——來源是用它找到欄位的（§四）。
+        var requested = request.Fields.Select(f => f.Key).ToHashSet(StringComparer.Ordinal);
+        var withdrawnProtected = existing.Fields
+            .Select(f => f.Key)
+            .Where(k => !requested.Contains(k) && protectedKeys.IsProtected(k))
+            .ToArray();
+
+        if (withdrawnProtected.Length > 0)
+        {
+            throw new ValidationException(withdrawnProtected.Select(k =>
+                new ValidationFailure("Fields", $"'{k}' is a provider field and cannot be removed.")));
+        }
 
         existing.Name = request.Name.Trim();
         existing.Icon = request.Icon;
