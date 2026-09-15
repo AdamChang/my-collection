@@ -28,7 +28,7 @@
 
 ### 基準線
 
-- 前端最近一次紀錄：`TOTAL: 268 SUCCESS`（2026-09-15，vault 記憶）。**執行者動任何檔案前重跑一次並在此填實際數字：`___`。**
+- 前端：**`TOTAL: 268 SUCCESS`**（2026-09-16 於 `997106c` 實測）；Task 1 後 269、Task 2 後 271（`e849f70`，實測）
 - build：0 warnings
 
 任何時候數字低於基準線就是弄壞了東西。
@@ -76,7 +76,7 @@ Task 3  元件：confirm 呼叫 API、更新 draft、busy 鎖 ← 2
 
 ---
 
-## Task 1：`RenameFieldResultDto` 與 `CategoryService.renameField`
+## Task 1：`RenameFieldResultDto` 與 `CategoryService.renameField` ✅ `95bc690`
 
 **Files:** Modify: `web/src/app/core/models.ts`、`web/src/app/core/api/category.service.ts`；Create: `web/src/app/core/api/category.service.spec.ts`
 
@@ -152,7 +152,7 @@ renameField(id: string, key: string, newKey: string): Observable<RenameFieldResu
 
 ---
 
-## Task 2：既有欄位 key 唯讀 + 「重新命名」入口
+## Task 2：既有欄位 key 唯讀 + 「重新命名」入口 ✅ `e849f70`
 
 **Files:** Modify: `web/src/app/features/categories/categories.component.ts`、`categories.component.spec.ts`
 
@@ -188,14 +188,16 @@ async function setup(api: Partial<CategoryService>, notifications: Partial<Notif
 it('locks the key of fields the category already declares but not of fields added in this session', async () => {
   const fixture = await setup({});
 
-  const existingKey: HTMLInputElement = fixture.nativeElement.querySelector('input[name="key0"]');
+  // 模板的 [name]="'key' + $index" 是 property binding，被 NgModel 接走、不會落到 DOM attribute，
+  // 所以用模板既有的 aria-label 定位（實測偏離：計畫原寫 input[name="key0"] 會查到 null）
+  const existingKey: HTMLInputElement = fixture.nativeElement.querySelector('input[aria-label="欄位 1 key"]');
   expect(existingKey.readOnly).toBe(true);
   expect(fixture.nativeElement.querySelector('button[data-rename="0"]')).toBeTruthy();
 
   fixture.componentInstance.addField();
   fixture.detectChanges();
 
-  const newKey: HTMLInputElement = fixture.nativeElement.querySelector('input[name="key1"]');
+  const newKey: HTMLInputElement = fixture.nativeElement.querySelector('input[aria-label="欄位 2 key"]');
   expect(newKey.readOnly).toBe(false);
   expect(fixture.nativeElement.querySelector('button[data-rename="1"]')).toBeNull();
 });
@@ -409,14 +411,14 @@ confirmRename(): void {
 ```
 
 - [ ] Step 4：單檔 → `TOTAL: 9 SUCCESS`
-- [ ] Step 5：全部 → 基準線 + 6；`npm run build` 0 warnings
+- [ ] Step 5：全部 → 271 + 3 = 274；`npm run build` 0 warnings
 - [ ] Step 6：Commit `feat(web): 欄位改名呼叫 API 並回報搬移數`；`git add` 兩個路徑。
 
 ---
 
 ## 完成後的驗證
 
-- [ ] karma `TOTAL: 基準線 + 6 SUCCESS`（log 最後一行）
+- [ ] karma `TOTAL: 274 SUCCESS`（log 最後一行）
 - [ ] `npm run build` 0 warnings
 - [ ] `git status` 乾淨；`git diff master..HEAD --stat -- web/` 只有本計畫列的 5 個檔案
 - [ ] 3 顆 commit（前端）

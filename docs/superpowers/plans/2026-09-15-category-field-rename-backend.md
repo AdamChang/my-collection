@@ -20,13 +20,13 @@
 - 需要 Docker Desktop 啟動（Testcontainers）。本計畫撰寫時 Docker 未啟動，**基準線由執行者第一步補填**。
 - 全部測試：`dotnet test tests/MyCollection.Tests/MyCollection.Tests.csproj`
 - 單檔（class）：`dotnet test tests/MyCollection.Tests/MyCollection.Tests.csproj --filter "FullyQualifiedName~MyCollection.Tests.Unit.RenameCategoryFieldCommandTests"`
-- Build：`dotnet build MyCollection.sln -warnaserror`（專案已開 `TreatWarningsAsErrors`）
+- Build：`dotnet build MyCollection.slnx -warnaserror`（專案已開 `TreatWarningsAsErrors`；solution 檔是 `.slnx`）
 
 ### 基準線
 
 執行者在動任何檔案前先跑一次全部測試並把數字寫在這裡：
 
-- 後端：`___ passed, 0 failed, ___ skipped`（撰寫時未取得，Docker 未啟動）
+- 後端：**565 passed, 0 failed, 0 skipped**（2026-09-16 於 `997106c` 實測）；Task 1 後 566、Task 2 後 576（`c6f6b69`，實測）
 - build：0 warnings
 
 **任何時候數字低於基準線就是弄壞了東西。** 每個 Task 結束時的期望值是「基準線 + 該 Task 新增的測試數」。
@@ -92,7 +92,7 @@ Task 7  端點 + DI + 端點測試 ←── 5, 6
 
 ---
 
-## Task 0：提交語彙與 ADR
+## Task 0：提交語彙與 ADR ✅ `997106c`
 
 **Files:** Modify: `CONTEXT.md`；Create: `docs/adr/0012-field-key-is-identity-rename-is-explicit.md`
 
@@ -112,11 +112,11 @@ Task 7  端點 + DI + 端點測試 ←── 5, 6
 
 ---
 
-## Task 1：測試 Mongo 改為 single-node replica set
+## Task 1：測試 Mongo 改為 single-node replica set ✅ `eec3942`
 
 **Files:** Create: `tests/MyCollection.Tests/Integration/MongoTransactionSmokeTests.cs`；Modify: `tests/MyCollection.Tests/Fixtures/MongoFixture.cs`
 
-Transaction 在 standalone Mongo 上會直接擲 `MongoCommandException: Transaction numbers are only allowed on a replica set member or mongos`。這個 Task 的價值是讓那個錯誤先在測試裡出現一次，證明 fixture 改動是有效的，而不是改了之後「反正 Task 6 過了」。
+Transaction 在 standalone Mongo 上會直接失敗——**實測（driver 3.11.1）是 client 端先擋下 `NotSupportedException: Standalone servers do not support transactions`**（`CoreSession.EnsureTransactionsAreSupported`），指令根本沒送到 server；舊版 driver 才會看到 server 端的 `Transaction numbers are only allowed on a replica set member or mongos`。這個 Task 的價值是讓那個錯誤先在測試裡出現一次，證明 fixture 改動是有效的，而不是改了之後「反正 Task 6 過了」。
 
 - [ ] Step 1：寫失敗測試
 
@@ -163,7 +163,7 @@ public class MongoTransactionSmokeTests(MongoFixture fixture) : IAsyncLifetime
 }
 ```
 
-- [ ] Step 2：跑 `--filter "FullyQualifiedName~MongoTransactionSmokeTests"`，**確認失敗訊息含 `replica set`**。若失敗原因是別的（連不上 Docker、編譯錯），先修到看到正確的紅。
+- [x] Step 2：跑 `--filter "FullyQualifiedName~MongoTransactionSmokeTests"`，**確認失敗訊息是 `Standalone servers do not support transactions`**。若失敗原因是別的（連不上 Docker、編譯錯），先修到看到正確的紅。
 - [ ] Step 3：最小實作——`MongoFixture.cs`：
   ```csharp
   private readonly MongoDbContainer _container = new MongoDbBuilder("mongo:8.0")
@@ -186,7 +186,7 @@ public class MongoTransactionSmokeTests(MongoFixture fixture) : IAsyncLifetime
 
 ---
 
-## Task 2：`IProtectedFieldKeys` 與靜態目錄
+## Task 2：`IProtectedFieldKeys` 與靜態目錄 ✅ `c6f6b69`
 
 **Files:** Create: `src/MyCollection.Application/Categories/IProtectedFieldKeys.cs`、`src/MyCollection.Infrastructure/Providers/ProviderFieldKeyCatalog.cs`、`tests/MyCollection.Tests/Unit/ProviderFieldKeyCatalogTests.cs`；Modify: `src/MyCollection.Infrastructure/DependencyInjection.cs`
 
@@ -285,8 +285,8 @@ public sealed class ProviderFieldKeyCatalog : IProtectedFieldKeys
 services.AddSingleton<IProtectedFieldKeys, ProviderFieldKeyCatalog>();
 ```
 
-- [ ] Step 4：單檔 → `Passed: 10`
-- [ ] Step 5：全部 → 基準線 + 11
+- [x] Step 4：單檔 → `Passed: 10`
+- [x] Step 5：全部 → 基準線 + 10（原寫 +11 是筆誤：7 + 2 InlineData + 1 Fact = 10）
 - [ ] Step 6：Commit `feat(categories): 受保護欄位鍵的靜態目錄`；`git add` 上列四個路徑。
 
 ---
@@ -403,7 +403,7 @@ public sealed class UpdateCategoryCommandHandler(
 （`using FluentValidation.Results;` 需補。）
 
 - [ ] Step 4：單檔 → 既有 + 3 全綠
-- [ ] Step 5：全部 → 基準線 + 14
+- [ ] Step 5：全部 → 576 + 3 = 579
 - [ ] Step 6：Commit `feat(categories): PUT 不得撤回受保護欄位`；`git add src/MyCollection.Application/Categories/CategoryCommands.cs tests/MyCollection.Tests/Unit/CategoryCommandTests.cs`
 
 ---
@@ -538,7 +538,7 @@ public sealed class DeleteCategoryCommandHandler(ICategoryRepository repository,
 ```
 
 - [ ] Step 4：兩個檔各自綠
-- [ ] Step 5：全部 → 基準線 + 18
+- [ ] Step 5：全部 → 579 + 4 = 583
 - [ ] Step 6：Commit `feat(categories): 仍有品項的品類不可刪除`；`git add` 上列五個路徑。
 
 > **Checkpoint A**：到這裡 repo 可收工。回寫：若 Task 3/4 的例外訊息或方法簽章在 review 中改了，更新 Task 5/7 的 snippet。
@@ -806,7 +806,7 @@ public sealed class RenameCategoryFieldCommandHandler(
 ```
 
 - [ ] Step 4：單檔 → `Passed: 10`
-- [ ] Step 5：全部 → 基準線 + 28
+- [ ] Step 5：全部 → 583 + 10 = 593
 - [ ] Step 6：Commit `feat(categories): 改名命令與 ICategoryFieldRenamer port`；`git add` 三個路徑。
 
 ---
@@ -1034,7 +1034,7 @@ public sealed class MongoCategoryFieldRenamer(MongoContext context, IUserContext
 `DependencyInjection.cs`：`services.AddScoped<ICategoryFieldRenamer, MongoCategoryFieldRenamer>();`
 
 - [ ] Step 4：單檔 → `Passed: 5`
-- [ ] Step 5：全部 → 基準線 + 33
+- [ ] Step 5：全部 → 593 + 5 = 598
 - [ ] Step 6：Commit `feat(categories): MongoCategoryFieldRenamer 在 transaction 內搬移屬性`；`git add` 三個路徑。
 
 > **Checkpoint B**：可收工。回寫：`WithTransactionAsync` 的 callback 內擲例外時 driver 會 abort 並 rethrow——若實測發現被包成 `MongoException`，Task 7 的端點測試會抓到，屆時在此處記錄修法。
@@ -1186,15 +1186,15 @@ group.MapPost("/{id}/fields/{key}/rename", async (
 與 `public record RenameFieldRequest(string NewKey);`
 
 - [ ] Step 4：單檔 → `Passed: 5`
-- [ ] Step 5：全部 → 基準線 + 38；`dotnet build MyCollection.sln -warnaserror` 0 warnings
+- [ ] Step 5：全部 → 598 + 5 = 603；`dotnet build MyCollection.slnx -warnaserror` 0 warnings
 - [ ] Step 6：Commit `feat(api): POST /categories/{id}/fields/{key}/rename`；`git add src/MyCollection.Api/Endpoints/CategoryEndpoints.cs tests/MyCollection.Tests/Integration/CategoryEndpointsTests.cs`
 
 ---
 
 ## 完成後的驗證
 
-- [ ] `dotnet test` 全綠，總數 = 基準線 + 38（若回寫後不同，以回寫為準）
-- [ ] `dotnet build MyCollection.sln -warnaserror` 0 warnings
+- [ ] `dotnet test` 全綠，總數 = 603（565 基準 + 38）
+- [ ] `dotnet build MyCollection.slnx -warnaserror` 0 warnings
 - [ ] `git status` 乾淨（`web/` 不應有任何變更）
 - [ ] `git log master..HEAD --oneline` 恰好 8 顆 commit（Task 0–7）
 - [ ] `git diff master..HEAD --stat` 不含 `web/`、`*Fields.cs`、`SystemCategoryDefinitions.cs`
