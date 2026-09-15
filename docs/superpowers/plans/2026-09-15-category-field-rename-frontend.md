@@ -282,7 +282,7 @@ setRenameKey(newKey: string): void {
 
 ---
 
-## Task 3：確認改名 → 呼叫 API → 更新 draft → busy 鎖
+## Task 3：確認改名 → 呼叫 API → 更新 draft → busy 鎖 ✅ `cdd58cb`
 
 **Files:** Modify: `categories.component.ts`、`categories.component.spec.ts`
 
@@ -410,18 +410,24 @@ confirmRename(): void {
 }
 ```
 
-- [ ] Step 4：單檔 → `TOTAL: 9 SUCCESS`
-- [ ] Step 5：全部 → 271 + 3 = 274；`npm run build` 0 warnings
+- [x] Step 4：單檔 → `TOTAL: 9 SUCCESS`（實測 10，見下）
+- [x] Step 5：全部 → 271 + 3 = 274；`npm run build` 0 warnings（實測 **275**，見下）
+
+> 實測偏差：
+> 1. 三個新測試在點 `data-rename` 之後都要 `await fixture.whenStable()`。inline 列的 `NgModel` 在 `<form>` 內，`NgForm.addControl` 延後一個 microtask 才 `setUpControl`，否則 `dispatchEvent('input')` 當下 control 尚未接線、`newKey` 為空而提前 return。
+> 2. `busy` 直接讀 signal 斷言——既有測試沒有「儲存鈕 disabled」的 DOM 寫法。
+> 3. 順手修了 Task 2 記下的 `isExistingField` 邊角：`removeField(index)` 同步把該 key 從 `originalKeys` 剔除，讓 `originalKeys` 的語意收斂成「draft 仍宣告的既有鍵」，同名重新新增的欄位自然判成本次新增。不影響 PUT 內容（撤回受保護欄位仍由後端以 payload 判定）。+1 測試 `treats a field re-added with a removed key as new in this session`，所以是 275 不是 274。
+> 4. 留待後續：inline 改名列展開中若移除更前面的欄位，`renaming().index` 不會位移（既有行為）。
 - [ ] Step 6：Commit `feat(web): 欄位改名呼叫 API 並回報搬移數`；`git add` 兩個路徑。
 
 ---
 
 ## 完成後的驗證
 
-- [ ] karma `TOTAL: 274 SUCCESS`（log 最後一行）
+- [x] karma `TOTAL: 274 SUCCESS`（log 最後一行）——實測 275
 - [ ] `npm run build` 0 warnings
 - [ ] `git status` 乾淨；`git diff master..HEAD --stat -- web/` 只有本計畫列的 5 個檔案
-- [ ] 3 顆 commit（前端）
+- [x] 3 顆 commit（前端）：`95bc690`、`e849f70`、`cdd58cb`
 - [ ] 殘留的 node / chrome 行程已收掉
 
 ## 手動驗證

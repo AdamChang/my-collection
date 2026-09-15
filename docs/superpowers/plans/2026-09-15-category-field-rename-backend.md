@@ -545,7 +545,7 @@ public sealed class DeleteCategoryCommandHandler(ICategoryRepository repository,
 
 ---
 
-## Task 5：`RenameCategoryFieldCommand`
+## Task 5：`RenameCategoryFieldCommand` ✅ `3eb2068`
 
 **Files:** Create: `src/MyCollection.Application/Categories/ICategoryFieldRenamer.cs`、`src/MyCollection.Application/Categories/RenameCategoryFieldCommand.cs`、`tests/MyCollection.Tests/Unit/RenameCategoryFieldCommandTests.cs`
 
@@ -805,13 +805,13 @@ public sealed class RenameCategoryFieldCommandHandler(
 }
 ```
 
-- [ ] Step 4：單檔 → `Passed: 10`
-- [ ] Step 5：全部 → 583 + 10 = 593
+- [x] Step 4：單檔 → `Passed: 10`
+- [x] Step 5：全部 → 583 + 10 = 593 —— **中間態（實測）**：Task 5 單獨時全套是 526 passed / 67 failed。MediatR assembly scanning 一註冊 handler，API host 的 `ValidateOnBuild` 就要求 `ICategoryFieldRenamer` 有實作，所有走 `WebApplicationFactory` 的整合測試在 host 啟動時炸 `Unable to resolve service for type 'ICategoryFieldRenamer'`。與 Task 5 邏輯無關，Task 6 的 DI 註冊後回綠（同 Task 3 的 CS9113：TDD 的紅燈路徑多一個中間態）。單元測試 10 綠 + build 0 warnings 即可 commit。
 - [ ] Step 6：Commit `feat(categories): 改名命令與 ICategoryFieldRenamer port`；`git add` 三個路徑。
 
 ---
 
-## Task 6：`MongoCategoryFieldRenamer`（transaction）
+## Task 6：`MongoCategoryFieldRenamer`（transaction）✅ `3204ef2`
 
 **Files:** Create: `src/MyCollection.Infrastructure/Mongo/MongoCategoryFieldRenamer.cs`、`tests/MyCollection.Tests/Integration/MongoCategoryFieldRenamerTests.cs`；Modify: `src/MyCollection.Infrastructure/DependencyInjection.cs`
 
@@ -894,10 +894,10 @@ public class MongoCategoryFieldRenamerTests(MongoFixture fixture) : IAsyncLifeti
         var moved = await _sut.RenameAsync(_category.Id, "price", "purchasePrice", Now, CancellationToken.None);
 
         moved.Should().Be(1);
-        (await Load(mine.Id)).Attributes.Should().Be(new BsonDocument { ["brand"] = "GSC", ["purchasePrice"] = 100 });
-        (await Load(mineWithout.Id)).Attributes.Should().Be(new BsonDocument { ["brand"] = "ALTER" });
-        (await Load(otherCategory.Id)).Attributes.Should().Be(new BsonDocument { ["price"] = 5 });
-        (await Load(otherOwner.Id)).Attributes.Should().Be(new BsonDocument { ["price"] = 7 });
+        (await Load(mine.Id)).Attributes.Should().Equal(new BsonDocument { ["brand"] = "GSC", ["purchasePrice"] = 100 });
+        (await Load(mineWithout.Id)).Attributes.Should().Equal(new BsonDocument { ["brand"] = "ALTER" });
+        (await Load(otherCategory.Id)).Attributes.Should().Equal(new BsonDocument { ["price"] = 5 });
+        (await Load(otherOwner.Id)).Attributes.Should().Equal(new BsonDocument { ["price"] = 7 });
     }
 
     [Fact]
@@ -921,7 +921,7 @@ public class MongoCategoryFieldRenamerTests(MongoFixture fixture) : IAsyncLifeti
         var moved = await _sut.RenameAsync(_category.Id, "price", "purchasePrice", Now, CancellationToken.None);
 
         moved.Should().Be(0);
-        (await Load(redeclared.Id)).Attributes.Should().Be(new BsonDocument { ["purchasePrice"] = 42 });
+        (await Load(redeclared.Id)).Attributes.Should().Equal(new BsonDocument { ["purchasePrice"] = 42 });
     }
 
     [Fact]
@@ -939,8 +939,8 @@ public class MongoCategoryFieldRenamerTests(MongoFixture fixture) : IAsyncLifeti
         // 全不做：schema 與所有品項原封不動
         var stored = await fixture.Context.Categories.Find(c => c.Id == _category.Id).SingleAsync();
         stored.Fields.Select(f => f.Key).Should().Equal("price", "brand");
-        (await Load(clean.Id)).Attributes.Should().Be(new BsonDocument { ["price"] = 1 });
-        (await Load(both.Id)).Attributes.Should().Be(new BsonDocument { ["price"] = 2, ["purchasePrice"] = 3 });
+        (await Load(clean.Id)).Attributes.Should().Equal(new BsonDocument { ["price"] = 1 });
+        (await Load(both.Id)).Attributes.Should().Equal(new BsonDocument { ["price"] = 2, ["purchasePrice"] = 3 });
     }
 
     [Fact]
@@ -1033,11 +1033,13 @@ public sealed class MongoCategoryFieldRenamer(MongoContext context, IUserContext
 
 `DependencyInjection.cs`：`services.AddScoped<ICategoryFieldRenamer, MongoCategoryFieldRenamer>();`
 
-- [ ] Step 4：單檔 → `Passed: 5`
-- [ ] Step 5：全部 → 593 + 5 = 598
+- [x] Step 4：單檔 → `Passed: 5`
+- [x] Step 5：全部 → 593 + 5 = 598（實測 598；若 Task 5/6 平行在各自 worktree，Task 6 worktree 單獨是 588）
+
+> 實測偏差：`BsonDocument` 實作 `IEnumerable<BsonElement>`，FluentAssertions 8 解析成集合斷言，沒有 `.Be()`；上面的測試碼已改為 `.Should().Equal(...)`——逐元素且**順序敏感**，刻意不用 `BeEquivalentTo`，才驗得到 `$rename`（= `$unset` + `$set`）會把新鍵排到文件最後。
 - [ ] Step 6：Commit `feat(categories): MongoCategoryFieldRenamer 在 transaction 內搬移屬性`；`git add` 三個路徑。
 
-> **Checkpoint B**：可收工。回寫：`WithTransactionAsync` 的 callback 內擲例外時 driver 會 abort 並 rethrow——若實測發現被包成 `MongoException`，Task 7 的端點測試會抓到，屆時在此處記錄修法。
+> **Checkpoint B** ✅：實測 `WithTransactionAsync` 的 callback 內擲 `ConflictException` / `NotFoundException` 時 driver abort 後**原樣 rethrow**，沒有包成 `MongoException`；conflict 測試同時驗到 abort 後 schema 與品項全數未動。Task 7 不需為此準備修法。`UpdateOptions.ArrayFilters` 的 collection expression 寫法在 driver 3.11.1 直接編譯通過。
 
 ---
 
