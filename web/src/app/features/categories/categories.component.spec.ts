@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { CategoryService } from '../../core/api/category.service';
 import { NotificationService } from '../../core/notification.service';
 import { CategoriesComponent } from './categories.component';
@@ -158,6 +158,20 @@ describe('CategoriesComponent', () => {
     expect(fixture.nativeElement.querySelector('button[data-rename="1"]')).toBeNull();
   });
 
+  it('treats a field re-added with a removed key as new in this session', async () => {
+    const fixture = await setup({});
+
+    fixture.componentInstance.removeField(0);
+    fixture.componentInstance.addField();
+    fixture.componentInstance.draft()!.fields[0].key = 'price';
+    fixture.detectChanges();
+
+    // 移除既有欄位後再新增同名 key：它是本次新增的欄位，key 要可編輯、不該出現改名鈕
+    const key: HTMLInputElement = fixture.nativeElement.querySelector('input[aria-label="欄位 1 key"]');
+    expect(key.readOnly).toBe(false);
+    expect(fixture.nativeElement.querySelector('button[data-rename="0"]')).toBeNull();
+  });
+
   it('opens an inline rename row for the chosen field', async () => {
     const fixture = await setup({});
 
@@ -168,5 +182,76 @@ describe('CategoriesComponent', () => {
     expect(input).toBeTruthy();
     expect(fixture.nativeElement.querySelector('button[data-rename-confirm]')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('button[data-rename-cancel]')).toBeTruthy();
+  });
+
+  it('confirms a rename through the API, updates the draft key and reports the moved count', async () => {
+    const renameField = jasmine.createSpy('renameField').and.returnValue(
+      of({ category: { ...custom, fields: [{ ...custom.fields[0], key: 'purchasePrice' }] }, movedItemCount: 12 }),
+    );
+    const success = jasmine.createSpy('success');
+    const fixture = await setup({ renameField }, { success });
+
+    fixture.nativeElement.querySelector('button[data-rename="0"]').click();
+    fixture.detectChanges();
+    // NgModel 在 <form> 內由 NgForm.addControl 延後一個 microtask 才接線，得等它穩定才能派發 input 事件
+    await fixture.whenStable();
+
+    const input: HTMLInputElement = fixture.nativeElement.querySelector('input[name="renameKey"]');
+    input.value = 'purchasePrice';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    fixture.nativeElement.querySelector('button[data-rename-confirm]').click();
+    fixture.detectChanges();
+
+    expect(renameField).toHaveBeenCalledWith('c1', 'price', 'purchasePrice');
+    expect(fixture.componentInstance.draft()!.fields[0].key).toBe('purchasePrice');
+    // 改名已在後端生效：新鍵要視為既有欄位，key 輸入框維持唯讀
+    expect(fixture.componentInstance.isExistingField(fixture.componentInstance.draft()!.fields[0])).toBe(true);
+    expect(success).toHaveBeenCalledWith(jasmine.stringContaining('12'));
+    expect(fixture.nativeElement.querySelector('input[name="renameKey"]')).toBeNull();
+  });
+
+  it('keeps the draft and the inline row when the rename fails', async () => {
+    const renameField = jasmine.createSpy('renameField').and.returnValue(throwError(() => new Error('409')));
+    const fixture = await setup({ renameField });
+
+    fixture.nativeElement.querySelector('button[data-rename="0"]').click();
+    fixture.detectChanges();
+    // NgModel 在 <form> 內由 NgForm.addControl 延後一個 microtask 才接線，得等它穩定才能派發 input 事件
+    await fixture.whenStable();
+    const input: HTMLInputElement = fixture.nativeElement.querySelector('input[name="renameKey"]');
+    input.value = 'purchasePrice';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    fixture.nativeElement.querySelector('button[data-rename-confirm]').click();
+    fixture.detectChanges();
+
+    // 失敗時 inline 列留著，使用者修正後可直接重送
+    expect(fixture.componentInstance.draft()!.fields[0].key).toBe('price');
+    expect(fixture.nativeElement.querySelector('input[name="renameKey"]')).toBeTruthy();
+  });
+
+  it('locks save and delete while a rename is in flight', async () => {
+    const pending = new Subject<never>();
+    const renameField = jasmine.createSpy('renameField').and.returnValue(pending.asObservable());
+    const fixture = await setup({ renameField });
+
+    fixture.nativeElement.querySelector('button[data-rename="0"]').click();
+    fixture.detectChanges();
+    // NgModel 在 <form> 內由 NgForm.addControl 延後一個 microtask 才接線，得等它穩定才能派發 input 事件
+    await fixture.whenStable();
+    const input: HTMLInputElement = fixture.nativeElement.querySelector('input[name="renameKey"]');
+    input.value = 'purchasePrice';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    fixture.nativeElement.querySelector('button[data-rename-confirm]').click();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.busy()).toBe(true);
+
+    pending.complete();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.busy()).toBe(false);
   });
 });

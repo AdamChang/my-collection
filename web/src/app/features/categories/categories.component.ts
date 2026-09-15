@@ -223,8 +223,11 @@ export class CategoriesComponent {
   /** 正在改名的欄位索引與輸入中的新鍵；null = 沒有 inline 列展開。 */
   readonly renaming = signal<{ index: number; newKey: string } | null>(null);
 
-  /** 儲存與刪除不該並行，任一進行中就鎖住兩顆。 */
-  readonly busy = computed(() => this.saving() || this.removing());
+  /** 改名 API 進行中；與 renaming（inline 列是否展開）分開，失敗時列要留著但鎖要放開。 */
+  readonly renamingInFlight = signal(false);
+
+  /** 儲存、刪除、改名三者不該並行，任一進行中就鎖住全部——改名中若放行儲存，PUT 會帶舊鍵送出被後端當成撤回。 */
+  readonly busy = computed(() => this.saving() || this.removing() || this.renamingInFlight());
 
   constructor() {
     this.reload();
@@ -312,10 +315,19 @@ export class CategoriesComponent {
     );
   }
 
+  /** 既有欄位被移除後就不再是「draft 仍宣告的既有鍵」；之後同名新增的欄位屬於本次新增，key 可編輯。 */
   removeField(index: number): void {
+    const removedKey = this.draft()?.fields[index]?.key;
     this.draft.update((current) =>
       current ? { ...current, fields: current.fields.filter((_, i) => i !== index) } : current,
     );
+    if (removedKey !== undefined) {
+      this.originalKeys.update((keys) => {
+        const next = new Set(keys);
+        next.delete(removedKey);
+        return next;
+      });
+    }
   }
 
   setOptions(field: CategoryFieldDto, raw: string): void {
@@ -344,8 +356,46 @@ export class CategoriesComponent {
     this.renaming.update((r) => (r ? { ...r, newKey } : r));
   }
 
-  /** 由下一個 Task 接上 API 呼叫。 */
-  confirmRename(): void {}
+  confirmRename(): void {
+    const id = this.editingId();
+    const pending = this.renaming();
+    const draft = this.draft();
+    if (!id || !pending || !draft || this.busy()) {
+      return;
+    }
+
+    const oldKey = draft.fields[pending.index].key;
+    const newKey = pending.newKey.trim();
+    if (!newKey) {
+      return;
+    }
+
+    this.renamingInFlight.set(true);
+    this.api
+      .renameField(id, oldKey, newKey)
+      .pipe(finalize(() => this.renamingInFlight.set(false)))
+      .subscribe({
+        next: (result) => {
+          this.notifications.success(`已將「${oldKey}」改名為「${newKey}」，搬移 ${result.movedItemCount} 筆品項的屬性。`);
+          // 改名已在後端生效，不等表單儲存；draft 與 originalKeys 一起更新，否則新鍵會被當成本次新增而解鎖 key 輸入框
+          this.draft.update((current) =>
+            current
+              ? { ...current, fields: current.fields.map((f, i) => (i === pending.index ? { ...f, key: newKey } : f)) }
+              : current,
+          );
+          this.originalKeys.update((keys) => {
+            const next = new Set(keys);
+            next.delete(oldKey);
+            next.add(newKey);
+            return next;
+          });
+          this.renaming.set(null);
+          this.reload();
+        },
+        // 失敗留著 inline 列，讓使用者修正後重送；訊息由 interceptor 顯示
+        error: IGNORE_HANDLED_BY_INTERCEPTOR,
+      });
+  }
 
   save(): void {
     const payload = this.draft();
