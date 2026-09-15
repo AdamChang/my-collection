@@ -35,8 +35,14 @@ public static class CategoryEndpoints
             string id, EnsureFieldsRequest body, ISender sender, CancellationToken ct) =>
             Results.Ok(await sender.Send(new EnsureProviderFieldsCommand(id, body.Provider), ct)));
 
+        group.MapPost("/{id}/fields/{key}/rename", async (
+            string id, string key, RenameFieldRequest body, ISender sender, CancellationToken ct) =>
+            Results.Ok(await sender.Send(new RenameCategoryFieldCommand(id, key, body.NewKey), ct)));
+
         return app;
     }
 
     public record EnsureFieldsRequest(string Provider);
+
+    public record RenameFieldRequest(string NewKey);
 }
