@@ -89,6 +89,7 @@ const FIELD_TYPES: FieldType[] = ['Text', 'Number', 'Date', 'Select', 'Bool', 'U
                 <input
                   [(ngModel)]="field.key"
                   [name]="'key' + $index"
+                  [readonly]="isExistingField(field)"
                   [attr.aria-label]="'欄位 ' + ($index + 1) + ' key'"
                   placeholder="key（camelCase）"
                   required
@@ -125,6 +126,26 @@ const FIELD_TYPES: FieldType[] = ['Text', 'Number', 'Date', 'Select', 'Bool', 'U
                 <label><input type="checkbox" [(ngModel)]="field.searchable" [name]="'searchable' + $index" /> 可搜尋</label>
                 <label><input type="checkbox" [(ngModel)]="field.showOnCard" [name]="'card' + $index" /> 顯示於卡片</label>
 
+                @if (editingId() && isExistingField(field)) {
+                  <button type="button" [attr.data-rename]="$index" [disabled]="busy()" (click)="startRename($index)">
+                    重新命名
+                  </button>
+                }
+                @if (renaming(); as r) {
+                  @if (r.index === $index) {
+                    <div class="editor__rename" role="group" aria-label="重新命名欄位">
+                      <input
+                        [ngModel]="r.newKey"
+                        (ngModelChange)="setRenameKey($event)"
+                        name="renameKey"
+                        aria-label="新的 key"
+                        placeholder="新的 key（camelCase）"
+                      />
+                      <button type="button" data-rename-confirm [disabled]="busy()" (click)="confirmRename()">確認</button>
+                      <button type="button" data-rename-cancel (click)="cancelRename()">取消</button>
+                    </div>
+                  }
+                }
                 <button type="button" (click)="removeField($index)">移除</button>
               </fieldset>
             }
@@ -197,9 +218,16 @@ export class CategoriesComponent {
   readonly editingId = signal<string | null>(null);
   readonly saving = signal(false);
   readonly removing = signal(false);
+  /** 開啟 dialog 時品類已宣告的鍵。key 是身分（ADR-0012），既有欄位的 key 只能走改名，不能直接編輯。 */
+  readonly originalKeys = signal<ReadonlySet<string>>(new Set());
+  /** 正在改名的欄位索引與輸入中的新鍵；null = 沒有 inline 列展開。 */
+  readonly renaming = signal<{ index: number; newKey: string } | null>(null);
 
-  /** 儲存與刪除不該並行，任一進行中就鎖住兩顆。 */
-  readonly busy = computed(() => this.saving() || this.removing());
+  /** 改名 API 進行中；與 renaming（inline 列是否展開）分開，失敗時列要留著但鎖要放開。 */
+  readonly renamingInFlight = signal(false);
+
+  /** 儲存、刪除、改名三者不該並行，任一進行中就鎖住全部——改名中若放行儲存，PUT 會帶舊鍵送出被後端當成撤回。 */
+  readonly busy = computed(() => this.saving() || this.removing() || this.renamingInFlight());
 
   constructor() {
     this.reload();
@@ -207,6 +235,8 @@ export class CategoriesComponent {
 
   startNew(): void {
     this.editingId.set(null);
+    this.originalKeys.set(new Set());
+    this.renaming.set(null);
     this.draft.set({ name: '', icon: 'box', kind: 'Physical', defaultDisplayMode: 'List', fields: [] });
     this.openEditor();
   }
@@ -218,6 +248,8 @@ export class CategoriesComponent {
     }
 
     this.editingId.set(category.id);
+    this.originalKeys.set(new Set(category.fields.map((f) => f.key)));
+    this.renaming.set(null);
     this.draft.set({
       name: category.name,
       icon: category.icon,
@@ -261,6 +293,7 @@ export class CategoriesComponent {
    */
   private dismiss(): void {
     this.draft.set(null);
+    this.renaming.set(null);
 
     const dialog = this.editorDialog().nativeElement;
     if (dialog.open) {
@@ -282,10 +315,19 @@ export class CategoriesComponent {
     );
   }
 
+  /** 既有欄位被移除後就不再是「draft 仍宣告的既有鍵」；之後同名新增的欄位屬於本次新增，key 可編輯。 */
   removeField(index: number): void {
+    const removedKey = this.draft()?.fields[index]?.key;
     this.draft.update((current) =>
       current ? { ...current, fields: current.fields.filter((_, i) => i !== index) } : current,
     );
+    if (removedKey !== undefined) {
+      this.originalKeys.update((keys) => {
+        const next = new Set(keys);
+        next.delete(removedKey);
+        return next;
+      });
+    }
   }
 
   setOptions(field: CategoryFieldDto, raw: string): void {
@@ -293,6 +335,66 @@ export class CategoriesComponent {
       .split(',')
       .map((o) => o.trim())
       .filter((o) => o.length > 0);
+  }
+
+  isExistingField(field: CategoryFieldDto): boolean {
+    return this.originalKeys().has(field.key);
+  }
+
+  startRename(index: number): void {
+    if (this.busy()) {
+      return;
+    }
+    this.renaming.set({ index, newKey: '' });
+  }
+
+  cancelRename(): void {
+    this.renaming.set(null);
+  }
+
+  setRenameKey(newKey: string): void {
+    this.renaming.update((r) => (r ? { ...r, newKey } : r));
+  }
+
+  confirmRename(): void {
+    const id = this.editingId();
+    const pending = this.renaming();
+    const draft = this.draft();
+    if (!id || !pending || !draft || this.busy()) {
+      return;
+    }
+
+    const oldKey = draft.fields[pending.index].key;
+    const newKey = pending.newKey.trim();
+    if (!newKey) {
+      return;
+    }
+
+    this.renamingInFlight.set(true);
+    this.api
+      .renameField(id, oldKey, newKey)
+      .pipe(finalize(() => this.renamingInFlight.set(false)))
+      .subscribe({
+        next: (result) => {
+          this.notifications.success(`已將「${oldKey}」改名為「${newKey}」，搬移 ${result.movedItemCount} 筆品項的屬性。`);
+          // 改名已在後端生效，不等表單儲存；draft 與 originalKeys 一起更新，否則新鍵會被當成本次新增而解鎖 key 輸入框
+          this.draft.update((current) =>
+            current
+              ? { ...current, fields: current.fields.map((f, i) => (i === pending.index ? { ...f, key: newKey } : f)) }
+              : current,
+          );
+          this.originalKeys.update((keys) => {
+            const next = new Set(keys);
+            next.delete(oldKey);
+            next.add(newKey);
+            return next;
+          });
+          this.renaming.set(null);
+          this.reload();
+        },
+        // 失敗留著 inline 列，讓使用者修正後重送；訊息由 interceptor 顯示
+        error: IGNORE_HANDLED_BY_INTERCEPTOR,
+      });
   }
 
   save(): void {

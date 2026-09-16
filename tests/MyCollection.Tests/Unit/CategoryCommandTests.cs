@@ -3,6 +3,7 @@ using Microsoft.Extensions.Time.Testing;
 using MongoDB.Bson;
 using Moq;
 using MyCollection.Application.Categories;
+using MyCollection.Application.Items;
 using MyCollection.Domain.Entities;
 using MyCollection.Domain.Exceptions;
 
@@ -11,6 +12,7 @@ namespace MyCollection.Tests.Unit;
 public class CategoryCommandTests
 {
     private readonly Mock<ICategoryRepository> _repository = new();
+    private readonly Mock<IItemRepository> _items = new();
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 7, 25, 3, 0, 0, TimeSpan.Zero));
 
     private static CategoryFieldDto Field(string key, string type = "Text", string[]? options = null) =>
@@ -18,6 +20,22 @@ public class CategoryCommandTests
 
     private static CreateCategoryCommand ValidCommand(params CategoryFieldDto[] fields) =>
         new("公仔", "figure", "Physical", "List", fields.Length == 0 ? [Field("brand")] : fields);
+
+    private sealed class StubProtectedKeys(params string[] keys) : IProtectedFieldKeys
+    {
+        private readonly HashSet<string> _keys = new(keys, StringComparer.Ordinal);
+        public bool IsProtected(string key) => _keys.Contains(key);
+    }
+
+    private static Category ExistingCategory(params string[] keys) => new()
+    {
+        Id = ObjectId.GenerateNewId(),
+        OwnerId = ObjectId.GenerateNewId(),
+        Name = "自訂",
+        Fields = keys.Select(k => new CategoryField { Key = k, Label = k, Type = FieldType.Text }).ToList(),
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow
+    };
 
     [Fact]
     public void Validator_accepts_valid_command()
@@ -116,9 +134,98 @@ public class CategoryCommandTests
         var command = new UpdateCategoryCommand(
             ObjectId.GenerateNewId().ToString(), "公仔", "figure", "Physical", "List", [Field("brand")]);
 
-        var act = () => new UpdateCategoryCommandHandler(_repository.Object, _time)
+        var act = () => new UpdateCategoryCommandHandler(_repository.Object, _time, new StubProtectedKeys())
             .Handle(command, CancellationToken.None);
 
         await act.Should().ThrowAsync<NotFoundException>();
+    }
+
+    [Fact]
+    public async Task Update_rejects_withdrawing_a_protected_field()
+    {
+        var existing = ExistingCategory("steamAppId", "brand");
+        _repository.Setup(r => r.GetAsync(existing.Id, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+
+        var command = new UpdateCategoryCommand(existing.Id.ToString(), "自訂", "box", "Physical", "List", [Field("brand")]);
+
+        var act = () => new UpdateCategoryCommandHandler(_repository.Object, _time, new StubProtectedKeys("steamAppId"))
+            .Handle(command, CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<FluentValidation.ValidationException>();
+        ex.Which.Errors.Should().ContainSingle(e => e.PropertyName == "Fields" && e.ErrorMessage.Contains("steamAppId"));
+        _repository.Verify(r => r.UpdateAsync(It.IsAny<Category>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Update_allows_withdrawing_an_unprotected_field()
+    {
+        var existing = ExistingCategory("steamAppId", "brand");
+        _repository.Setup(r => r.GetAsync(existing.Id, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+
+        var command = new UpdateCategoryCommand(existing.Id.ToString(), "自訂", "box", "Physical", "List", [Field("steamAppId")]);
+
+        var dto = await new UpdateCategoryCommandHandler(_repository.Object, _time, new StubProtectedKeys("steamAppId"))
+            .Handle(command, CancellationToken.None);
+
+        dto.Fields.Select(f => f.Key).Should().Equal("steamAppId");
+        _repository.Verify(r => r.UpdateAsync(It.IsAny<Category>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Update_keeps_protected_field_when_it_is_still_declared()
+    {
+        // 改 Label、改順序都不算撤回
+        var existing = ExistingCategory("steamAppId", "brand");
+        _repository.Setup(r => r.GetAsync(existing.Id, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+
+        var command = new UpdateCategoryCommand(existing.Id.ToString(), "自訂", "box", "Physical", "List",
+            [Field("brand"), new CategoryFieldDto("steamAppId", "改過的名稱", "Number", null, false, false, true)]);
+
+        var dto = await new UpdateCategoryCommandHandler(_repository.Object, _time, new StubProtectedKeys("steamAppId"))
+            .Handle(command, CancellationToken.None);
+
+        dto.Fields.Should().Contain(f => f.Key == "steamAppId" && f.Label == "改過的名稱");
+    }
+
+    [Fact]
+    public async Task Delete_rejects_category_that_still_has_items()
+    {
+        var existing = ExistingCategory("brand");
+        _repository.Setup(r => r.GetAsync(existing.Id, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+        _items.Setup(i => i.CountByCategoryAsync(existing.Id, It.IsAny<CancellationToken>())).ReturnsAsync(3);
+
+        var act = () => new DeleteCategoryCommandHandler(_repository.Object, _items.Object)
+            .Handle(new DeleteCategoryCommand(existing.Id.ToString()), CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ConflictException>();
+        ex.Which.Message.Should().Contain("3");
+        _repository.Verify(r => r.DeleteAsync(It.IsAny<ObjectId>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Delete_removes_category_without_items()
+    {
+        var existing = ExistingCategory("brand");
+        _repository.Setup(r => r.GetAsync(existing.Id, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+        _items.Setup(i => i.CountByCategoryAsync(existing.Id, It.IsAny<CancellationToken>())).ReturnsAsync(0);
+
+        await new DeleteCategoryCommandHandler(_repository.Object, _items.Object)
+            .Handle(new DeleteCategoryCommand(existing.Id.ToString()), CancellationToken.None);
+
+        _repository.Verify(r => r.DeleteAsync(existing.Id, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Delete_forbids_system_category_before_counting()
+    {
+        var system = ExistingCategory("platform");
+        system.OwnerId = null;
+        _repository.Setup(r => r.GetAsync(system.Id, It.IsAny<CancellationToken>())).ReturnsAsync(system);
+
+        var act = () => new DeleteCategoryCommandHandler(_repository.Object, _items.Object)
+            .Handle(new DeleteCategoryCommand(system.Id.ToString()), CancellationToken.None);
+
+        await act.Should().ThrowAsync<ForbiddenException>();
+        _items.Verify(i => i.CountByCategoryAsync(It.IsAny<ObjectId>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

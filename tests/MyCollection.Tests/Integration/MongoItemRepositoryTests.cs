@@ -331,4 +331,22 @@ public class MongoItemRepositoryTests(MongoFixture fixture) : IAsyncLifetime
 
         result.Total.Should().Be(0, "空清單代表「沒有品類宣告該欄位」，不是「不限縮」");
     }
+
+    [Fact]
+    public async Task CountByCategoryAsync_counts_only_own_items_in_that_category()
+    {
+        var category = ObjectId.GenerateNewId();
+        var otherCategory = ObjectId.GenerateNewId();
+        await fixture.Context.Items.InsertManyAsync(
+        [
+            NewItem(Owner, "a", category),
+            NewItem(Owner, "b", category),
+            NewItem(Owner, "c", otherCategory),
+            NewItem(OtherOwner, "d", category)
+        ]);
+
+        var count = await _sut.CountByCategoryAsync(category, CancellationToken.None);
+
+        count.Should().Be(2);
+    }
 }

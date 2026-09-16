@@ -1,7 +1,9 @@
 using System.Text.RegularExpressions;
 using FluentValidation;
+using FluentValidation.Results;
 using MediatR;
 using MongoDB.Bson;
+using MyCollection.Application.Items;
 using MyCollection.Domain.Entities;
 using MyCollection.Domain.Exceptions;
 
@@ -119,7 +121,10 @@ public sealed class CreateCategoryCommandHandler(ICategoryRepository repository,
     }
 }
 
-public sealed class UpdateCategoryCommandHandler(ICategoryRepository repository, TimeProvider timeProvider)
+public sealed class UpdateCategoryCommandHandler(
+    ICategoryRepository repository,
+    TimeProvider timeProvider,
+    IProtectedFieldKeys protectedKeys)
     : IRequestHandler<UpdateCategoryCommand, CategoryDto>
 {
     public async Task<CategoryDto> Handle(UpdateCategoryCommand request, CancellationToken cancellationToken)
@@ -127,6 +132,20 @@ public sealed class UpdateCategoryCommandHandler(ICategoryRepository repository,
         var id = ObjectId.Parse(request.Id);
         var existing = await repository.GetAsync(id, cancellationToken)
                        ?? throw new NotFoundException(nameof(Category), request.Id);
+
+        // PUT 的語意是宣告集合的置換：請求裡沒有的既有鍵就是撤回宣告（ADR-0012 §二）。
+        // 撤回不刪品項上的值，但受保護的鍵連撤回都不行——來源是用它找到欄位的（§四）。
+        var requested = request.Fields.Select(f => f.Key).ToHashSet(StringComparer.Ordinal);
+        var withdrawnProtected = existing.Fields
+            .Select(f => f.Key)
+            .Where(k => !requested.Contains(k) && protectedKeys.IsProtected(k))
+            .ToArray();
+
+        if (withdrawnProtected.Length > 0)
+        {
+            throw new ValidationException(withdrawnProtected.Select(k =>
+                new ValidationFailure("Fields", $"'{k}' is a provider field and cannot be removed.")));
+        }
 
         existing.Name = request.Name.Trim();
         existing.Icon = request.Icon;
@@ -141,16 +160,33 @@ public sealed class UpdateCategoryCommandHandler(ICategoryRepository repository,
     }
 }
 
-public sealed class DeleteCategoryCommandHandler(ICategoryRepository repository)
+public sealed class DeleteCategoryCommandHandler(ICategoryRepository repository, IItemRepository items)
     : IRequestHandler<DeleteCategoryCommand>
 {
-    public Task Handle(DeleteCategoryCommand request, CancellationToken cancellationToken)
+    public async Task Handle(DeleteCategoryCommand request, CancellationToken cancellationToken)
     {
         if (!ObjectId.TryParse(request.Id, out var id))
         {
             throw new NotFoundException(nameof(Category), request.Id);
         }
 
-        return repository.DeleteAsync(id, cancellationToken);
+        // 順序：先確認存在與擁有權，再計數，最後刪。先計數的話，使用者在系統品類下
+        // 有品項時會拿到 409 而不是 403。
+        var existing = await repository.GetAsync(id, cancellationToken)
+                       ?? throw new NotFoundException(nameof(Category), request.Id);
+
+        if (existing.OwnerId is null)
+        {
+            throw new ForbiddenException("System categories cannot be deleted.");
+        }
+
+        // 品項不會失去品類、也不會被連帶刪掉（ADR-0012 §五）
+        var count = await items.CountByCategoryAsync(id, cancellationToken);
+        if (count > 0)
+        {
+            throw new ConflictException($"Category still has {count} item(s); move or delete them first.");
+        }
+
+        await repository.DeleteAsync(id, cancellationToken);
     }
 }

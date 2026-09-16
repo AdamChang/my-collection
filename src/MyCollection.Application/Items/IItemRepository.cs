@@ -51,6 +51,9 @@ public interface IItemRepository
     /// <summary>依 id 批次載入自己的品項。不存在或不屬於自己的 id 直接不出現在結果中。</summary>
     Task<IReadOnlyList<Item>> ListByIdsAsync(IReadOnlyList<ObjectId> ids, CancellationToken ct);
 
+    /// <summary>自己在該品類下的品項數。刪除品類前的守門。</summary>
+    Task<long> CountByCategoryAsync(ObjectId categoryId, CancellationToken ct);
+
     Task InsertAsync(Item item, CancellationToken ct);
 
     /// <summary>找不到（含不屬於自己）擲 NotFoundException。</summary>
