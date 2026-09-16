@@ -1,8 +1,8 @@
-import { Component, computed, inject, input, output, signal } from '@angular/core';
-import { finalize } from 'rxjs';
+import { Component, DestroyRef, computed, inject, input, output, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { finalize, switchMap } from 'rxjs';
 import { IngestionService } from '../../core/api/ingestion.service';
 import { ProviderService } from '../../core/api/provider.service';
-import { IGNORE_HANDLED_BY_INTERCEPTOR } from '../../core/error.interceptor';
 import { NotificationService } from '../../core/notification.service';
 
 /**
@@ -47,6 +47,7 @@ export class ProviderEnrichComponent {
   private readonly ingestion = inject(IngestionService);
   private readonly providers = inject(ProviderService);
   private readonly notifications = inject(NotificationService);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly provider = input.required<string>();
   readonly heading = input.required<string>();
@@ -55,6 +56,7 @@ export class ProviderEnrichComponent {
   /**
    * 成功與失敗都要發：失敗若發生在 job 建立之後，後端同樣會留下一筆紀錄。
    * 更早的失敗（provider 未註冊、驗證 400、401、連線失敗）沒有 job 可看，重載無害。
+   * 元件銷毀不算——那時設定頁也沒了，沒有表可以重載。
    */
   readonly completed = output<void>();
 
@@ -71,21 +73,26 @@ export class ProviderEnrichComponent {
     this.ingestion
       .enrich(this.provider())
       .pipe(
-        finalize(() => {
-          this.running.set(false);
-          this.completed.emit();
-        }),
+        // 雲端部署時 enrich 是背景作業，回應的 job 還是 Running、統計全是 0；
+        // 直接報數字會說「更新 0」，使用者會以為沒東西可補。等作業結束再看。
+        switchMap((job) => this.ingestion.awaitJob(job)),
+        // 最多 50 次反查加上輪詢，是全站最長的操作；Steam 面板還明說「可以離開此頁」。
+        // 放在 finalize 之前：銷毀時 finalize 仍會跑（解鎖按鈕無害），但不會走到 next 去 emit。
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.running.set(false)),
       )
       .subscribe({
-        next: (job) =>
+        next: (job) => {
+          // 輪詢逾時：作業仍會在背景完成，不是失敗，但也不能報數字。
           this.notifications.success(
-            // 背景執行的 provider 回應時工作還沒開始，統計數字全是 0，
-            // 報「完成：更新 0」會誤導使用者以為沒東西可補。
             job.status === 'Running'
-              ? '補完已排入背景作業，進度請看下方作業紀錄。'
+              ? '補完仍在背景作業中，稍後重新整理即可在作業紀錄看到結果。'
               : `補完完成：更新 ${job.updated}、略過 ${job.skipped}、失敗 ${job.failed}`,
-          ),
-        error: IGNORE_HANDLED_BY_INTERCEPTOR,
+          );
+          this.completed.emit();
+        },
+        // 錯誤訊息由 interceptor 顯示（原本是 IGNORE_HANDLED_BY_INTERCEPTOR），這裡只負責重載。
+        error: () => this.completed.emit(),
       });
   }
 }
