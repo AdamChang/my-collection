@@ -1,6 +1,6 @@
 # mongodump/mongorestore 的官方 tarball 只提供動態連結的 glibc 建置，
 # 因此 builder 與 runtime 都固定在同一個 debian 版本，避免 glibc 版本漂移。
-ARG DEBIAN_TAG=12.11-slim
+ARG DEBIAN_TAG=12.15-slim
 
 FROM debian:${DEBIAN_TAG} AS mongo-tools
 
