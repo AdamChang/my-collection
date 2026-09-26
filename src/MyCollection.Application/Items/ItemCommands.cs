@@ -204,6 +204,9 @@ public sealed class UpdateItemCommandHandler(
 
         var becameShowcased = !existing.IsShowcased && request.IsShowcased;
 
+        // 逐鍵合併而非整份覆寫：品項上的未宣告屬性（含換品類後舊品類的鍵）必須留著（ADR-0012 §三）
+        var attributeChanges = AttributeChanges.ForDeclaredFields(category, attributes);
+
         // Source / ExternalRef / Images / CreatedAt 不接受使用者輸入，由同步與 Media 模組管理
         existing.CategoryId = category.Id;
         existing.Name = request.Name.Trim();
@@ -212,13 +215,13 @@ public sealed class UpdateItemCommandHandler(
         existing.IsShowcased = request.IsShowcased;
         existing.Acquisition = ItemWriteHelper.ToAcquisition(request.Acquisition);
         existing.LocationId = ItemWriteHelper.ToLocationId(category, request.LocationId);
-        existing.Attributes = attributes;
+        existing.Attributes = attributeChanges.ApplyTo(existing.Attributes);
         existing.DisplayMode = ItemWriteHelper.ToDisplayMode(request.DisplayMode);
         existing.Rating = request.Rating;
         existing.StorageLocation = request.StorageLocation;
         existing.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
 
-        await items.UpdateAsync(existing, cancellationToken);
+        await items.UpdateAsync(existing, attributeChanges, cancellationToken);
 
         // 只有第一次被設為精選、且尚無本地圖片時才觸發下載
         if (becameShowcased && existing.Images.Count == 0)

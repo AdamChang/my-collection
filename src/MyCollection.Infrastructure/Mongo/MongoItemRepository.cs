@@ -130,12 +130,47 @@ public sealed class MongoItemRepository(MongoContext context, IUserContext userC
     /// 的必要條件，但代價是反序列化會丟掉實體沒宣告的欄位。若用 ReplaceOne 把實體整個寫回去，
     /// 任何一次「欄位改名 → 舊欄位變成 extra element → 使用者編輯該筆」就會永久刪掉舊資料。
     /// $set 只碰列舉出來的欄位，文件裡的其他東西原封不動。
+    ///
+    /// attributes 不在列舉之內，理由同上但更細一層：整份 $set attributes 會刪掉品項上的
+    /// 未宣告屬性（ADR-0012 §三，tech debt C1），而且讀後寫回的呼叫端（圖片 handler）
+    /// 會把期間別人寫入的屬性還原成舊值。要改屬性一律走帶 <see cref="AttributeChanges"/> 的多載。
     /// </summary>
-    public async Task UpdateAsync(Item item, CancellationToken ct)
+    public Task UpdateAsync(Item item, CancellationToken ct) => UpdateCoreAsync(item, null, ct);
+
+    public Task UpdateAsync(Item item, AttributeChanges attributeChanges, CancellationToken ct) =>
+        UpdateCoreAsync(item, attributeChanges, ct);
+
+    private async Task UpdateCoreAsync(Item item, AttributeChanges? attributeChanges, CancellationToken ct)
     {
         item.OwnerId = userContext.UserId;
 
-        var update = Builders<Item>.Update
+        var updates = new List<UpdateDefinition<Item>> { ItemFieldsUpdate(item) };
+
+        if (attributeChanges is not null)
+        {
+            // 以 dotted path 逐鍵寫入。key 已由品類 schema 的 FieldKeyPattern 限定為 camelCase 英數字，
+            // 不會含有「.」或「$」而改變路徑語意。
+            updates.AddRange(attributeChanges.Set.Select(e =>
+                Builders<Item>.Update.Set($"attributes.{e.Name}", e.Value)));
+            updates.AddRange(attributeChanges.Unset.Select(key =>
+                Builders<Item>.Update.Unset($"attributes.{key}")));
+        }
+
+        // OwnerId / Source / ExternalRef / CreatedAt 不在此列：
+        // 它們由同步流程與建立流程擁有，使用者更新不得改寫。
+        var result = await Items.UpdateOneAsync(
+            Filter.And(OwnerFilter, Filter.Eq(x => x.Id, item.Id)),
+            Builders<Item>.Update.Combine(updates),
+            cancellationToken: ct);
+
+        if (result.MatchedCount == 0)
+        {
+            throw new NotFoundException(nameof(Item), item.Id);
+        }
+    }
+
+    private static UpdateDefinition<Item> ItemFieldsUpdate(Item item) =>
+        Builders<Item>.Update
             .Set(x => x.CategoryId, item.CategoryId)
             .Set(x => x.Name, item.Name)
             .Set(x => x.Description, item.Description)
@@ -144,24 +179,10 @@ public sealed class MongoItemRepository(MongoContext context, IUserContext userC
             .Set(x => x.IsShowcased, item.IsShowcased)
             .Set(x => x.Acquisition, item.Acquisition)
             .Set(x => x.LocationId, item.LocationId)
-            .Set(x => x.Attributes, item.Attributes)
             .Set(x => x.DisplayMode, item.DisplayMode)
             .Set(x => x.Rating, item.Rating)
             .Set(x => x.StorageLocation, item.StorageLocation)
             .Set(x => x.UpdatedAt, item.UpdatedAt);
-
-        // OwnerId / Source / ExternalRef / CreatedAt 不在此列：
-        // 它們由同步流程與建立流程擁有，使用者更新不得改寫。
-        var result = await Items.UpdateOneAsync(
-            Filter.And(OwnerFilter, Filter.Eq(x => x.Id, item.Id)),
-            update,
-            cancellationToken: ct);
-
-        if (result.MatchedCount == 0)
-        {
-            throw new NotFoundException(nameof(Item), item.Id);
-        }
-    }
 
     public async Task DeleteAsync(ObjectId id, CancellationToken ct)
     {

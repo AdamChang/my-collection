@@ -56,8 +56,15 @@ public interface IItemRepository
 
     Task InsertAsync(Item item, CancellationToken ct);
 
-    /// <summary>找不到（含不屬於自己）擲 NotFoundException。</summary>
+    /// <summary>
+    /// 更新品項本身的欄位，不碰 attributes。找不到（含不屬於自己）擲 NotFoundException。
+    /// </summary>
     Task UpdateAsync(Item item, CancellationToken ct);
+
+    /// <summary>
+    /// 同上，並在同一次寫入中逐鍵套用 attributes 變更；未列在變更中的鍵（含未宣告屬性）原樣保留。
+    /// </summary>
+    Task UpdateAsync(Item item, AttributeChanges attributeChanges, CancellationToken ct);
 
     Task DeleteAsync(ObjectId id, CancellationToken ct);
 }

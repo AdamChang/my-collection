@@ -132,8 +132,8 @@ public class ItemCommandTests
         _items.Setup(r => r.GetAsync(existing.Id, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
 
         Item? saved = null;
-        _items.Setup(r => r.UpdateAsync(It.IsAny<Item>(), It.IsAny<CancellationToken>()))
-            .Callback<Item, CancellationToken>((i, _) => saved = i)
+        _items.Setup(r => r.UpdateAsync(It.IsAny<Item>(), It.IsAny<AttributeChanges>(), It.IsAny<CancellationToken>()))
+            .Callback<Item, AttributeChanges, CancellationToken>((i, _, _) => saved = i)
             .Returns(Task.CompletedTask);
 
         var command = new UpdateItemCommand(
@@ -150,6 +150,35 @@ public class ItemCommandTests
         saved.Images.Should().ContainSingle("圖片由 Media 模組管理，不透過品項更新");
         saved.CreatedAt.Should().Be(new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
         saved.UpdatedAt.Should().Be(new DateTime(2026, 7, 25, 3, 0, 0, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public async Task Update_still_rejects_undeclared_keys_in_the_request()
+    {
+        // 儲存層保留未宣告屬性，不代表寫入面放寬：打錯的鍵名要 400，而不是看似成功卻沒寫入。
+        var existing = new Item
+        {
+            Id = ObjectId.GenerateNewId(),
+            CategoryId = CategoryId,
+            Name = "初音ミク 1/8",
+            Attributes = new BsonDocument("brand", "GSC"),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        _items.Setup(r => r.GetAsync(existing.Id, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+
+        var command = new UpdateItemCommand(
+            existing.Id.ToString(), CategoryId.ToString(), existing.Name, null, [], false,
+            Json("""{ "brand": "GSC", "brnad": "typo" }"""), null);
+
+        var act = () => new UpdateItemCommandHandler(
+                _items.Object, _categories.Object, new AttributeValidator(), _time, _showcaseQueue.Object)
+            .Handle(command, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ValidationException>();
+        _items.Verify(
+            r => r.UpdateAsync(It.IsAny<Item>(), It.IsAny<AttributeChanges>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
