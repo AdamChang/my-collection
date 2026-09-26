@@ -36,7 +36,7 @@
 
 這裡只排順序與理由，實作細節留給各項目。
 
-1. **先止血（資料遺失與隱私）**：C1、M1（主題 A），M2（先依 Q21 實測），S2。這四項都會在日常使用中默默損壞或外洩資料，而且發現時已無法回復。
+1. **先止血（資料遺失與隱私）**：~~C1~~（已解決）、M1（主題 A），M2（先依 Q21 實測），S2。這四項都會在日常使用中默默損壞或外洩資料，而且發現時已無法回復。
 2. **縮小攻擊面**：I2（改為邀請制）→ I1（速率限制）→ R4（限制 SSRF 目標）→ M5 與 M4（依 Q22 移除匯出與匯入）。I2 一關，R4、M3、S4 的曝險都會跟著下降。
 3. **公開路徑的效能**：S1。這條是匿名路徑，與使用者規模無關。
 4. **看得見失敗**：P2（先依 Q23 驗證）→ R3 → P13 統計。沒有這一步，其他問題的修正效果也無法觀察。
@@ -48,7 +48,7 @@
 
 | ID | 項目 | 證據位置 | 影響 | 建議方向 |
 |---|---|---|---|---|
-| C1 | 編輯品項會靜默刪除未宣告的屬性，違反 ADR-0012 §三 | `features/item-detail/item-detail.component.ts` → `toPayload`、`declaredOnly`；`Infrastructure/Mongo/MongoItemRepository.cs` → `UpdateAsync`；`AttributeValidator.Validate` | 撤回某個欄位宣告後，只要編輯過該品項，舊值就永久消失，重新宣告也救不回來；過程沒有任何提示 | 依 Q18：後端只 `$set`／`$unset` 請求中出現的已宣告鍵，未宣告鍵原樣保留；前端不再需要 `declaredOnly` 過濾 |
+| C1 | 【已解決 2026-09-27，`0ec17ed`】編輯品項會靜默刪除未宣告的屬性，違反 ADR-0012 §三 | `features/item-detail/item-detail.component.ts` → `toPayload`、`declaredOnly`；`Infrastructure/Mongo/MongoItemRepository.cs` → `UpdateAsync`；`AttributeValidator.Validate` | 撤回某個欄位宣告後，只要編輯過該品項，舊值就永久消失，重新宣告也救不回來；過程沒有任何提示 | 已實作：`AttributeChanges.ForDeclaredFields` 以已宣告鍵為範圍（有值 `$set`，null 或缺席 `$unset`），未宣告鍵原樣保留；`UpdateAsync(Item)` 不再寫 attributes。`AttributeValidator` 仍拒收未宣告鍵，前端 `declaredOnly` 保留 |
 | M1 | 多選上傳會遺失圖片，並留下孤兒檔 | `Application/Media/ImageCommands.cs` → `UploadItemImageCommandHandler`；`item-detail.component.ts` → `uploadImages`（並行發送）；`MongoItemRepository.UpdateAsync`（`$set images`） | 日常操作（上傳元件預設允許多選）只會留下其中一張，其他檔案佔用 GCS，沒有錯誤訊息 | 併入主題 A：上傳用 `$push`、刪除用 `$pull`、設主圖用條件更新；前端改成依序上傳作為過渡；以 `DeleteDirectoryAsync`（M7）清理既有的孤兒檔 |
 | M2 | 【推論，待 Q21 實測】輸出的 WebP 可能保留 EXIF／GPS，而原尺寸圖可匿名讀取 | `Infrastructure/Imaging/ImageSharpProcessor.cs` → `ProcessAsync`、`ResizeAsync`；`Application/Media/MediaQueries.cs` → `ContainsPath`（S8） | 照片本身洩漏拍攝地點，繞過 ADR-0008「存放位置永不公開」的設計意圖 | 先實測；若屬實，處理時清除 EXIF、XMP、IPTC，並對既有圖片做一次性重處理；同時決定 S8（公開路徑是否開放原尺寸圖） |
 | S2 | 公開頁回傳整份 attributes | `Infrastructure/Mongo/MongoPublicCatalogReader.cs` → `BaseProjection`；`Application/Sharing/*` → `GetPublicShareQueryHandler` | 自訂欄位（序號、備註、購買管道）與 provider 欄位全部匿名可讀，與 ADR-0008「新欄位不會自動外流」的精神不一致 | 依 Q15：在品類欄位定義上加入「公開」旗標（預設不公開），公開投影只輸出有這個旗標的鍵；補一份 ADR |

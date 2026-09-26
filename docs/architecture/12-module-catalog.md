@@ -116,7 +116,7 @@ sequenceDiagram
 
 | # | 項目 | 嚴重度 | 證據 | 說明 |
 |---|---|---|---|---|
-| C1 | **編輯任何品項都會靜默刪除它的未宣告屬性，違反 ADR-0012 §三** | 高 | ADR-0012 §三（「撤回宣告，品項上的值原封不動留著；重新宣告同一個鍵，值就回來」）；`AttributeValidator.Validate`（未宣告鍵 → 400）；`item-detail.component.ts` → `toPayload`（`attributes: this.declaredOnly(...)`）；`MongoItemRepository.UpdateAsync`（整份 `Set(x => x.Attributes, ...)`） | ADR 只保證**撤回的那一刻**不刪值，但沒有任何路徑能在**之後的編輯**中保留這些值：後端拒收未宣告鍵，前端只好濾掉，然後整份覆寫。實際情境：撤回欄位 X → 之後隨手改了某筆品項的標籤 → 那筆品項的 X 永久消失 → 重新宣告 X 時，只有「沒被編輯過」的品項回得來。使用者不會收到任何提示。建議方向：寫入時改為逐鍵合併（只 `$set`／`$unset` 表單管轄的已宣告鍵），或讓 PUT 保留請求中沒提到的未宣告鍵 |
+| C1 | 【已解決 2026-09-27，`0ec17ed`】**編輯任何品項都會靜默刪除它的未宣告屬性，違反 ADR-0012 §三** | 高 | ADR-0012 §三（「撤回宣告，品項上的值原封不動留著；重新宣告同一個鍵，值就回來」）；`AttributeValidator.Validate`（未宣告鍵 → 400）；`item-detail.component.ts` → `toPayload`（`attributes: this.declaredOnly(...)`）；`MongoItemRepository.UpdateAsync`（整份 `Set(x => x.Attributes, ...)`） | ADR 只保證**撤回的那一刻**不刪值，但沒有任何路徑能在**之後的編輯**中保留這些值：後端拒收未宣告鍵，前端只好濾掉，然後整份覆寫。實際情境：撤回欄位 X → 之後隨手改了某筆品項的標籤 → 那筆品項的 X 永久消失 → 重新宣告 X 時，只有「沒被編輯過」的品項回得來。使用者不會收到任何提示。建議方向：寫入時改為逐鍵合併（只 `$set`／`$unset` 表單管轄的已宣告鍵），或讓 PUT 保留請求中沒提到的未宣告鍵 |
 | C2 | **表單儲存會覆寫背景寫入的結果（lost update）** | 中 | `UpdateItemCommandHandler`（沒有版本或 `updatedAt` 比對）；`MongoItemRepository.UpdateAsync`（`name`、`description`、`attributes`、`images` 整份覆寫）；`item-detail.component.ts` → `refetchFromSteam`（提示使用者「完成後重新整理」，但沒有阻擋儲存） | 使用者觸發 Steam 補完（背景執行數十秒到數分鐘）後繼續留在頁面上，若在重新整理前按下儲存，表單裡的舊名稱與舊 attributes 會蓋掉補完結果。同步（`MongoItemSyncWriter`）更新遊玩時數時也一樣。`images` 若在「讀取品項 → 寫回」之間被上傳 API 或 `ShowcaseImageDownloader` 改動，也會被覆寫，而檔案變成孤兒 |
 | C3 | Date 屬性在一次編輯後會變型別並失去時間 | 中 | `PsnProvider.ToExternalItem`（`lastUpdated.UtcDateTime`）、`SteamStoreMapper.ToExternalItem`（`[StoreUpdatedAtKey] = fetchedAt`）→ 以 BSON DateTime 寫入；`dynamic-form.component.ts` → `toControlValue`（`initial.slice(0, 10)`）、`coerce`（改成 `T00:00:00Z` 的 ISO 字串）；`BsonJson.ToBsonValue`（字串 → `BsonString`） | 同一個欄位在不同品項間，有的是 BSON DateTime、有的是字串（`AttributeValidator.IsDate` 兩種都接受，所以不會報錯）。只要編輯過一次，時間部分就歸零（例如「最後遊玩時間」只剩日期）。若日後需要依日期排序或做範圍查詢，型別混雜會讓結果不正確 |
 | C4 | 全文搜尋對中文名稱幾乎無效【推論】 | 中 | `MongoIndexInitializer`（`tx_items_text` 沒有指定 `default_language`，預設 english）；`MongoItemRepository.SearchAsync`（`Filter.Text`）；品名多為繁體中文（Steam 補完寫入 tchinese，見 `SteamOptions.StoreLanguage`） | MongoDB 的 text index 只按空白與標點斷詞，沒有 CJK 斷詞。連續的中文字會變成一整個 token，所以搜尋「薩爾達」找不到「薩爾達傳說曠野之息」。這需要實測確認。替代方向：regex（前綴或包含）搭配資料量上限，或改用 Atlas Search（Free 方案有數量限制） |
@@ -139,6 +139,6 @@ sequenceDiagram
 
 ## 待確認問題
 （已同步到 `99-open-questions.md` 的 Q18–Q20）
-- C1：【已回覆 2026-09-26】採用後端逐欄位合併寫入。建議同時補一份 ADR 或在 ADR-0012 §三 補充寫入面的規則。
+- C1：【已回覆 2026-09-26】採用後端逐欄位合併寫入。【已解決 2026-09-27，`0ec17ed`】建議同時補一份 ADR 或在 ADR-0012 §三 補充寫入面的規則。
 - C4：中文搜尋是否實際遇過搜不到的情況？可以先用一筆資料實測確認。
 - C5：刪除品項時是否應該同時刪除圖片檔？還是刻意保留，作為誤刪時的復原手段？

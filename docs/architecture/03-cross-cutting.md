@@ -120,7 +120,7 @@
 - **其餘都是單文件寫入，而且沒有任何樂觀並發控制**：沒有 version 欄位，也不比對 `updatedAt`。
 - **原子操作只出現在少數刻意設計的地方**：job claim、精選圖片的條件式 `$push`、sync upsert。
 - 相關風險：
-  - C1、C2、M1、R11：整份覆寫。Q18 已決定改為逐欄位合併寫入。
+  - C1（已解決）、C2、M1、R11：整份覆寫。Q18 已決定改為逐欄位合併寫入。
   - C10：刪除品類與改名的競態。
   - I5：換發競態。
   - W1：多分頁競態。
@@ -142,7 +142,7 @@
 - MongoDB 沒有 migration 機制。每次啟動時會建立索引（冪等），並以 `$set` 覆寫 6 個系統品類的定義。這兩個動作發生在 canary 之前，而且不會隨回滾復原（P3）。
 - **全域序列化慣例**：camelCase、`IgnoreExtraElements`、enum 存字串、`Decimal128`。`UtcOnlyDateTimeSerializer` 在寫入時拒絕非 UTC 的時間。
   證據：`Infrastructure/Mongo/MongoConventions.cs`
-- 品類 schema 的演進規則見 ADR-0012：key 是身分，改名必須明確，撤回宣告時不刪值。然而目前的實作在後續編輯時會刪值（C1）。
+- 品類 schema 的演進規則見 ADR-0012：key 是身分，改名必須明確，撤回宣告時不刪值。後續編輯時會刪值的問題（C1）已於 2026-09-27 修正：attributes 以已宣告鍵為範圍逐鍵合併。
 - 相關風險：C3（Date 欄位型別漂移）、C6（改型別時不遷移既有值）、C4（text index 沒有指定語言）。
 
 ## 10. 安全邊界總覽
