@@ -46,7 +46,7 @@ sequenceDiagram
   API-->>W: ItemDto（含未宣告的 attributes）
   U->>W: 修改並儲存
   W->>API: PUT（只帶已宣告的鍵）
-  API->>M: $set attributes/images/tags 整份 ⚠C1 C2
+  API->>M: $set images/tags 整份、attributes 逐鍵 ⚠C2
   U->>W: 一次選 3 張圖
   par 3 個並行請求
     W->>API: POST /items/{id}/images
@@ -56,7 +56,7 @@ sequenceDiagram
   W->>API: GET /items/{id}（每張各重載一次）
 ```
 
-- **C1**：未宣告屬性在第一次儲存時被刪除，違反 ADR-0012 §三。
+- **C1**：【已解決 2026-09-27】未宣告屬性曾在第一次儲存時被刪除；現在 attributes 改為逐鍵 `$set`／`$unset`。
 - **C2**：若在背景 enrich 或 sync 寫入之後，用舊表單儲存，會覆寫那些結果。
 - **M1**：並行上傳時，最後寫入的會蓋掉其他人，最後只剩一張，其餘檔案成為孤兒。
 - 三者同源：都是「讀取 → 修改 → 整份 `$set`」，沒有版本控制。Q18 已決定改為逐欄位合併寫入，陣列改用 `$push`／`$pull`。
@@ -162,7 +162,7 @@ MongoDB 是唯一的資料庫。SQL Server、PostgreSQL、Redis 在本 repo 中*
 |---|---|---|---|---|---|
 | `users` | Mongo | Register、Login、Refresh handler | JWT 流程、公開頁（顯示名稱） | 單文件；refresh 以 `_id` 無條件覆寫（I5） | `11` 資料存取 |
 | `categories` | Mongo | 品類 CRUD、欄位改名、`SystemCategorySeeder`（每次啟動） | 品項驗證、sync／enrich、公開頁 | 改名是**全案唯一的多文件 transaction**；其餘單文件，沒有並發控制 | `12` 資料存取、`17` P3 |
-| `items` | Mongo | 品項 CRUD、上傳與刪除圖片、sync（BulkWrite upsert）、enrich（BulkWrite `$set`）、精選圖片下載（條件式 `$push`） | 庫存、精選、公開頁、匯出 | 單文件，但 attributes 與 images 是整份覆寫（C1、C2、M1）；sync 與 enrich 靠欄位擁有權區隔 | `12`、`13`、`14`、`15` 資料存取 |
+| `items` | Mongo | 品項 CRUD、上傳與刪除圖片、sync（BulkWrite upsert）、enrich（BulkWrite `$set`）、精選圖片下載（條件式 `$push`） | 庫存、精選、公開頁、匯出 | 單文件，但 images 是整份覆寫（C2、M1）；attributes 已改為逐鍵合併（C1 已解決）；sync 與 enrich 靠欄位擁有權區隔 | `12`、`13`、`14`、`15` 資料存取 |
 | `shareLinks` | Mongo | 建立與刪除分享 | 公開頁（不套 owner filter） | 單文件，slug 唯一索引 | `14` 資料存取 |
 | `externalAccounts` | Mongo | 綁定與解除綁定（憑證以 AES-GCM 加密） | sync | `(ownerId, provider)` 唯一，upsert | `15` 資料存取、`11` I10 |
 | `syncJobs` | Mongo | API（建立）、executor（claim、完成、重試） | 設定頁、前端輪詢 | `ClaimAsync` 原子；`UpdateAsync` 用 ReplaceOne（R11） | `15` 資料存取 |
