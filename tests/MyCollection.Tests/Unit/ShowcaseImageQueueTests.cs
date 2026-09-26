@@ -35,7 +35,8 @@ public class ShowcaseImageQueueTests
                 Fields = [new CategoryField { Key = "headerUrl", Label = "封面圖", Type = FieldType.Url }]
             });
 
-        _items.Setup(r => r.UpdateAsync(It.IsAny<Item>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _items.Setup(r => r.UpdateAsync(It.IsAny<Item>(), It.IsAny<AttributeChanges>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
     }
 
     private void SeedItem(bool isShowcased, bool hasImages = false)
