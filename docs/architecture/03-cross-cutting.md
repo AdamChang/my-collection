@@ -30,7 +30,7 @@
 - **匿名公開路徑**：不注入 `IUserContext`，改用 `IPublicCatalogReader` 並明確傳入 owner；回應使用白名單 DTO `PublicItemDto`；媒體路徑必須屬於分享範圍，副檔名也必須是 `.webp`。
   證據：`14-module-showcase-sharing.md`「授權邊界」
 - **沒有角色或權限模型**：只分「已登入的擁有者」與「匿名」兩種身分。系統品類由 `OwnerId = null` 表示，並拒絕修改。
-- 相關風險：S2（attributes 全部公開）、S8（公開可讀原尺寸圖）、M2（EXIF，推論）、S9（Category 範圍不檢查品類歸屬）。
+- 相關風險：S2（attributes 全部公開）、~~S8~~、~~M2~~（已解決）、S9（Category 範圍不檢查品類歸屬）。
 
 ## 2. 錯誤處理
 
@@ -155,7 +155,7 @@ flowchart LR
   user --> fetch["/ingest/fetch（SSRF）"]
   user --> upload["/items/*/images（沒有像素上限）"]
   user --> imp["/images/import（沒有 body 上限）"]
-  pub --> data[(attributes 全部公開<br/>原尺寸圖、可能含 EXIF)]
+  pub --> data[(attributes 全部公開)]
   tasks[Cloud Tasks OIDC] --> internal["/internal/tasks/ingestion"]
 ```
 

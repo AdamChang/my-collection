@@ -36,7 +36,7 @@
 
 這裡只排順序與理由，實作細節留給各項目。
 
-1. **先止血（資料遺失與隱私）**：~~C1~~、~~M1~~（已解決），M2（先依 Q21 實測），S2。這四項都會在日常使用中默默損壞或外洩資料，而且發現時已無法回復。
+1. **先止血（資料遺失與隱私）**：~~C1~~、~~M1~~、~~M2~~（已解決），S2。這四項都會在日常使用中默默損壞或外洩資料，而且發現時已無法回復。
 2. **縮小攻擊面**：I2（改為邀請制）→ I1（速率限制）→ R4（限制 SSRF 目標）→ M5 與 M4（依 Q22 移除匯出與匯入）。I2 一關，R4、M3、S4 的曝險都會跟著下降。
 3. **公開路徑的效能**：S1。這條是匿名路徑，與使用者規模無關。
 4. **看得見失敗**：P2（先依 Q23 驗證）→ R3 → P13 統計。沒有這一步，其他問題的修正效果也無法觀察。
@@ -50,7 +50,7 @@
 |---|---|---|---|---|
 | C1 | 【已解決 2026-09-27，`b76f25b`】編輯品項會靜默刪除未宣告的屬性，違反 ADR-0012 §三 | `features/item-detail/item-detail.component.ts` → `toPayload`、`declaredOnly`；`Infrastructure/Mongo/MongoItemRepository.cs` → `UpdateAsync`；`AttributeValidator.Validate` | 撤回某個欄位宣告後，只要編輯過該品項，舊值就永久消失，重新宣告也救不回來；過程沒有任何提示 | 已實作：`AttributeChanges.ForDeclaredFields` 以已宣告鍵為範圍（有值 `$set`，null 或缺席 `$unset`），未宣告鍵原樣保留；`UpdateAsync(Item)` 不再寫 attributes。`AttributeValidator` 仍拒收未宣告鍵，前端 `declaredOnly` 保留 |
 | M1 | 【已解決 2026-09-27】多選上傳會遺失圖片，並留下孤兒檔 | `Application/Media/ImageCommands.cs` → `UploadItemImageCommandHandler`；`item-detail.component.ts` → `uploadImages`（並行發送）；`MongoItemRepository.UpdateAsync`（`$set images`） | 日常操作（上傳元件預設允許多選）只會留下其中一張，其他檔案佔用 GCS，沒有錯誤訊息 | 已實作：`IItemRepository` 的 `AddImageAsync`／`RemoveImageAsync`／`SetPrimaryImageAsync` 各是一次 aggregation pipeline update，主圖與 order 由資料庫依寫入當下的陣列決定（單純的 `$push`／`$pull` 算不出這兩個值）；`UpdateAsync(Item)` 不再寫 images，表單儲存不會蓋掉期間上傳的圖。前端改為依序上傳，理由是 M3 的記憶體峰值，不是正確性。**未處理**：修正前已產生的孤兒檔。`DeleteDirectoryAsync`（M7）會刪掉整個品項目錄，無法只清孤兒，需要先為 `IFileStorage` 加上列舉能力 |
-| M2 | 【推論，待 Q21 實測】輸出的 WebP 可能保留 EXIF／GPS，而原尺寸圖可匿名讀取 | `Infrastructure/Imaging/ImageSharpProcessor.cs` → `ProcessAsync`、`ResizeAsync`；`Application/Media/MediaQueries.cs` → `ContainsPath`（S8） | 照片本身洩漏拍攝地點，繞過 ADR-0008「存放位置永不公開」的設計意圖 | 先實測；若屬實，處理時清除 EXIF、XMP、IPTC，並對既有圖片做一次性重處理；同時決定 S8（公開路徑是否開放原尺寸圖） |
+| M2 | 【已解決 2026-09-27，`35434b1`、`6afd6de`；正式環境待部署並執行遷移】輸出的 WebP 保留 EXIF／GPS（Q21 已實測證實），而原尺寸圖可匿名讀取 | `Infrastructure/Imaging/ImageSharpProcessor.cs` → `ProcessAsync`、`ResizeAsync`；`Application/Media/MediaQueries.cs` → `ContainsPath`（S8） | 照片本身洩漏拍攝地點，繞過 ADR-0008「存放位置永不公開」的設計意圖 | 已實作：`ImageSharpProcessor` 先 `AutoOrient` 再清除 EXIF、XMP、IPTC，保留 ICC（只描述色彩空間，清掉會讓廣色域照片色偏）；既有圖片以 `maintenance strip-image-metadata` 一次性重處理（驗收後移除）；S8 一併關閉 |
 | S2 | 公開頁回傳整份 attributes | `Infrastructure/Mongo/MongoPublicCatalogReader.cs` → `BaseProjection`；`Application/Sharing/*` → `GetPublicShareQueryHandler` | 自訂欄位（序號、備註、購買管道）與 provider 欄位全部匿名可讀，與 ADR-0008「新欄位不會自動外流」的精神不一致 | 依 Q15：在品類欄位定義上加入「公開」旗標（預設不公開），公開投影只輸出有這個旗標的鍵；補一份 ADR |
 | S1 | 每個公開圖片請求都重撈整個分享範圍，而且 `no-store` | `Application/Media/MediaQueries.cs` → `OpenPublicMediaQueryHandler.Handle`；`MongoPublicCatalogReader.ListItemsAsync`；`Api/Endpoints/MediaEndpoints.cs` | 一次頁面載入等於 1+N 次全量查詢；匿名訪客可以消耗 Atlas Free 配額，並塞滿唯一的實例 | 以「slug → owner + scope + 圖片路徑」做單筆存在查詢；允許短時間的 public cache；搭配 I1 的速率限制 |
 | I2 | 開放註冊，註冊後即可使用所有功能 | `Application/Auth/RegisterCommand.cs`；`features/auth/login.component.ts` | 任何人都能取得帳號，進而使用 SSRF（R4）、上傳（M3）、佔用儲存空間；與 Q12 的邀請制方向不符 | 關閉公開註冊，改為邀請碼或白名單 email；前端移除註冊模式 |
@@ -107,7 +107,7 @@
 | S5 | 可以建立已過期的分享；過期資料不清理 | `CreateShareLinkCommandValidator` | 資料殘留 | 驗證 `ExpiresAt > now`；加上 TTL index |
 | S6 | 公開圖片路徑暴露 ownerId | 圖片路徑格式 `{ownerId}/{itemId}/...` | 洩漏內部 id 與帳號建立時間 | 公開路徑改用不透明的代號，或由 slug 對應 |
 | S7 | 公開頁直接載入第三方圖片 | `shared/showcase-sections/showcase-display-item.ts` → `coverImageUrl` | 訪客的 IP 與 Referer 外流 | 公開頁只使用本機圖片；與 S3 一起處理 |
-| S8 | 公開路徑可讀原尺寸圖 | `MediaQueries.cs` → `ContainsPath` | 超出 DTO 設計的公開範圍；放大 M2 | 決定是否只允許 card 與 thumb（Q16） |
+| S8 | 【已解決 2026-09-27，`35434b1`】公開路徑可讀原尺寸圖 | `MediaQueries.cs` → `ContainsPath` | 超出 DTO 設計的公開範圍；放大 M2 | 已實作：公開媒體只接受 card 與 thumb，與 `PublicImageDto` 一致；要求原尺寸回 404（Q16） |
 | S9 | Category 範圍的分享不檢查品類 | `CreateShareLinkCommandValidator` | 可能建出空連結 | 建立時檢查品類存在，且屬於自己或系統品類 |
 | S10 | 精選牆一次抓完全部精選品項 | `features/showcase/showcase.component.ts` → `fetchPage` | 品項多時首次載入變慢 | 刻意設計（ADR-0009）；數量成長後改由後端回傳各頁籤的計數 |
 | R5 | 例外原文寫入 `syncJobs.error` 與 502 detail | `SyncJobRunner`、`EnrichJobRunner`；`Api/GlobalExceptionHandler.cs` | 內部細節暴露到 UI | 只對已知的 provider 錯誤回傳訊息，其餘改為一般訊息加上 log |

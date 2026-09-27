@@ -99,7 +99,7 @@ flowchart LR
 |---|---|---|---|
 | 1 Identity & Security | [11-module-identity.md](11-module-identity.md) | JWT + refresh rotation、PBKDF2、AES-GCM、`ScopedUserContext` | I1、I2 |
 | 2 Catalog | [12-module-catalog.md](12-module-catalog.md) | 品類 schema、品項 CRUD、欄位改名 transaction | C1 |
-| 3 Media & Transfer | [13-module-media-transfer.md](13-module-media-transfer.md) | 上傳、三種尺寸 WebP、私有串流、匯出與匯入 | M2（推論） |
+| 3 Media & Transfer | [13-module-media-transfer.md](13-module-media-transfer.md) | 上傳、三種尺寸 WebP、私有串流、匯出與匯入 | M2（已解決） |
 | 4 Showcase & Sharing | [14-module-showcase-sharing.md](14-module-showcase-sharing.md) | 精選牆、匿名分享、精選圖片背景下載 | S1、S2 |
 | 5 Ingestion | [15-module-ingestion.md](15-module-ingestion.md) | 外部 provider、sync 與 enrich、Cloud Tasks 冪等與重試 | R1 |
 | 6 Web | [16-module-web.md](16-module-web.md) | Angular SPA、攔截器鏈、URL 驅動狀態 | W1 |
@@ -136,6 +136,6 @@ flowchart LR
 
 **系統性弱點**（詳見 `90-tech-debt.md`）
 1. **整份覆寫、沒有並發控制**：C1、M1（已解決）、C2、R11。Q18 已決定改為逐欄位合併寫入。
-2. **匿名與開放的入口**：沒有速率限制（I1）、開放註冊（I2）、SSRF（R4）、公開頁全量查詢（S1）、attributes 全部公開（S2），可能還有 EXIF 外洩（M2）。
+2. **匿名與開放的入口**：沒有速率限制（I1）、開放註冊（I2）、SSRF（R4）、公開頁全量查詢（S1）、attributes 全部公開（S2）；EXIF 外洩（M2）已解決。
 3. **單一實例承載所有工作**：`max 1` 加上 300 秒逾時，長請求、大記憶體工作與冷啟動都會直接變成對外失敗（P13、R2、M3、M4、S3）。
 4. **可觀測性不足**：app log 可能沒有 severity（P2）、作業可能永遠停在 `Running`（R3），背景失敗大多無聲。

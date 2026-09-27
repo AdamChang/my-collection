@@ -9,11 +9,11 @@
 
 | # | 為什麼優先 |
 |---|---|
-| Q21 | 若 EXIF／GPS 確實被保留，M2 就是已證實的隱私外洩，應列為第一優先 |
+| ~~Q21~~ | 已回覆：EXIF／GPS 確實被保留，M2 已修正 |
 | Q23 | 決定 P2 是否成立；P2 成立與否，決定背景失敗能不能被看見 |
 | Q7 | 決定 R1（批次補完卡住）是否已經在正式環境發生 |
 | Q8 | 決定 R3 是否需要立即做一次人工清理 |
-| Q16 | 決定 S8 的修正方向，也影響 M2 的影響範圍 |
+| ~~Q16~~ | 已回覆：公開路徑不開放原尺寸圖，S8 已修正 |
 | Q20 | 決定 C5 的方向是「刪除時清檔」還是「刻意保留」 |
 | Q3 | 確認開發用金鑰與正式環境不同，排除機密風險 |
 | Q19 | 決定 C4 是否需要調整搜尋實作 |
@@ -37,12 +37,12 @@
 | Q13 | 部分回覆（見 Q26） | 同一帳號只保存一組 refresh token，多裝置會互相登出。這是刻意的設計嗎？　【階段 3 補註：Q26 回覆「很少多裝置同時登入」，I11 維持低；多分頁問題另列 W1（高）】 | `Domain/Entities/User.cs` | 2 |
 | Q14 | 未解決 | 前端 token 存在 `localStorage`，而且 nginx 沒有設定 CSP。是否考慮改用 HttpOnly cookie，或至少補上 CSP？ | `web/src/app/core/auth.service.ts`、`web/nginx.conf` | 2 |
 | Q15 | 已回覆 | 【已回覆 2026-09-26：不符合預期，欄位是否公開應由使用者決定；S2 升為高，列入技術債】公開分享頁會回傳整份 attributes（使用者自訂欄位與 provider 欄位全部公開）。是否需要欄位層級的公開控制？ | `Infrastructure/Mongo/MongoPublicCatalogReader.cs` → `BaseProjection` | 2 |
-| Q16 | 未解決 | 公開媒體端點允許讀取原尺寸圖（`-full.webp`），但公開 DTO 只提供 card 與 thumb。這是刻意設計嗎？ | `Application/Media/MediaQueries.cs` → `ContainsPath` | 2 |
+| Q16 | 已回覆 | 【已回覆 2026-09-27：不是刻意設計；公開路徑只開放 card 與 thumb，S8 已修正】公開媒體端點允許讀取原尺寸圖（`-full.webp`），但公開 DTO 只提供 card 與 thumb。這是刻意設計嗎？ | `Application/Media/MediaQueries.cs` → `ContainsPath` | 2 |
 | Q17 | 未解決 | 精選圖片下載失敗後沒有重試，也沒有手動重新產生的入口。ADR-0011 說「允許重新產生」，實際預期怎麼觸發？ | `Infrastructure/Imaging/ShowcaseImageDownloader.cs`、`Application/Items/ItemCommands.cs` | 2 |
 | Q18 | 已回覆 | 【已回覆 2026-09-26：後端改為逐欄位合併寫入】編輯品項會刪除它的未宣告屬性，與 ADR-0012 §三「撤回宣告不刪值」衝突（`12-module-catalog.md` C1）。修正方向偏好後端逐鍵合併，還是讓 PUT 保留請求中未提及的未宣告鍵？ | `web/src/app/features/item-detail/item-detail.component.ts` → `toPayload`；`Infrastructure/Mongo/MongoItemRepository.cs` → `UpdateAsync` | 2 |
 | Q19 | 未解決 | 全文搜尋使用預設語言的 text index，中文名稱可能搜不到部分字串（C4）。實際使用時遇過嗎？ | `Infrastructure/Mongo/MongoIndexInitializer.cs`（`tx_items_text`） | 2 |
 | Q20 | 未解決 | 刪除品項時不會刪除圖片檔（C5）。這是刻意保留，還是遺漏？ | `Application/Items/ItemCommands.cs` → `DeleteItemCommandHandler` | 2 |
-| Q21 | 未解決（優先） | 上傳圖片後，輸出的 WebP 可能保留原始 EXIF（包括 GPS），而 full 尺寸圖可以透過公開分享匿名取得（`13-module-media-transfer.md` M2）。是否可以用一張帶 GPS 的手機照片實測？ | `Infrastructure/Imaging/ImageSharpProcessor.cs` | 2 |
+| Q21 | 已回覆 | 【已回覆 2026-09-27：使用者實測證實公開的 WebP 保留 GPS；M2 已修正】上傳圖片後，輸出的 WebP 可能保留原始 EXIF（包括 GPS），而 full 尺寸圖可以透過公開分享匿名取得（`13-module-media-transfer.md` M2）。是否可以用一張帶 GPS 的手機照片實測？ | `Infrastructure/Imaging/ImageSharpProcessor.cs` | 2 |
 | Q22 | 已回覆 | 【已回覆 2026-09-26：不需要；M5 列入技術債，建議正式環境停用或移除匯出／匯入端點】正式環境改用 GCS 之後，還需要圖片匯出／匯入嗎？匯入端點目前沒有 body 大小上限，也不檢查 entry 數量（M5）。 | `Api/Endpoints/ImageTransferEndpoints.cs` | 2 |
 | Q23 | 部分回覆（優先） | 【部分回覆 2026-09-26：使用者提供的 ERROR 紀錄 logName 為 `run.googleapis.com/requests`，是 Cloud Run 平台產生的 request log（OPTIONS 預檢回 500：「no available instance」），不是應用程式 stdout，所以 P2 仍未驗證；待查 `logName` 為 `…/run.googleapis.com%2Fstdout` 且 `severity>=ERROR` 的紀錄。該紀錄另成觀察 P13】API 的應用程式 log 使用預設 console formatter 寫到 stdout，Cloud Logging 可能沒有 severity，因此 canary 的 `severity>=ERROR` 與告警都看不到 `LogError`（`17-module-platform-infra.md` P2）。在 Logs Explorer 查 `mycollection-api` 的 `severity>=ERROR`，能否看到應用程式自己記錄的例外？ | `Api/Program.cs`（沒有 `AddJsonConsole`）、`.github/scripts/rollout-cloud-run.sh` | 2 |
 | Q24 | 已回覆 | 【已回覆 2026-09-26：計畫把圖片備份到 Google Drive；P1 維持列入技術債，直到備份上線】media bucket 沒有版本控管，Terraform 也沒有宣告 soft delete，備份 Job 只 dump Mongo（P1）。實際的 soft delete 設定是什麼？圖片需要備份嗎？ | `infra/terraform/runtime/storage.tf`、`docs/deployment/production-operations.md` | 2 |

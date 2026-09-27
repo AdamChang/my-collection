@@ -134,7 +134,7 @@ sequenceDiagram
 | S5 | 可以建立已經過期的分享連結；過期連結不會被清理 | 低 | `CreateShareLinkCommandValidator`（沒有驗證 `ExpiresAt > now`）；沒有 TTL index 或清理作業 | 功能上不會出錯（查詢時就判定過期），只是資料會殘留 |
 | S6 | 公開圖片路徑暴露內部 id | 低 | `ShowcaseImageDownloader`（路徑格式 `{ownerId}/{itemId}/{imageId}-*.webp`）；`PublicImageDto` 回傳 `CardPath`／`ThumbPath` | ownerId 是 ObjectId，內含建立時間。匿名訪客可以得知擁有者的內部 id 與帳號建立時間 |
 | S7 | 公開頁的訪客瀏覽器會直接載入第三方圖片 URL | 低 | `showcase-display-item.ts` → `coverImageUrl`（沒有本地圖片時改用 attributes 的 `headerUrl`／`coverUrl`／`iconUrl`，只檢查 `startsWith('http')`） | 訪客的 IP 與 Referer 會送到 Steam、IGDB、PSN 的 CDN，或使用者自填的任意網域；這也是 S3 的連帶效應 |
-| S8 | 公開媒體允許讀取原尺寸圖（`Path`），但 DTO 只提供 card 與 thumb | 低 | `OpenOwnedMediaQueryHandler.ContainsPath`（三種路徑都接受）；`PublicImageDto`（沒有 `Path`） | 猜得到檔名規則（`-full.webp`）就能取得原圖；ADR-0011 允許範圍內圖片匿名讀取，所以這是刻意設計還是疏漏，需要確認 |
+| S8 | 【已解決 2026-09-27：公開媒體只接受 card 與 thumb】公開媒體允許讀取原尺寸圖（`Path`），但 DTO 只提供 card 與 thumb | 低 | `OpenOwnedMediaQueryHandler.ContainsPath`（三種路徑都接受）；`PublicImageDto`（沒有 `Path`） | 猜得到檔名規則（`-full.webp`）就能取得原圖；ADR-0011 允許範圍內圖片匿名讀取，所以這是刻意設計還是疏漏，需要確認 |
 | S9 | 建立 Category 範圍的連結時，不檢查分類是否存在或屬於自己 | 低 | `CreateShareLinkCommandValidator`（只檢查 ObjectId 格式）；`MongoPublicCatalogReader.ListItemsAsync`（有 owner filter） | 不會外洩資料（查詢有 owner filter），但可能建出內容永遠是空的連結 |
 | S10 | 精選牆前端會一次抓完全部精選品項 | 低 | `showcase.component.ts` → `fetchPage`（每頁 200 筆，遞迴抓到 `MAX_SHOWCASE_ITEMS`） | 刻意設計（註解引用 ADR-0009，讓頁籤計數保持穩定）；品項變多時第一次載入的時間會線性增加 |
 
@@ -149,5 +149,5 @@ sequenceDiagram
 ## 待確認問題
 （已同步到 `99-open-questions.md` 的 Q15–Q17）
 - attributes 全部公開是否符合預期？是否需要在分類欄位上加 `IsPublic`，或改成只公開 `ShowOnCard` 的欄位（S2）？
-- 公開媒體可讀原尺寸圖（S8）是刻意設計嗎？
+- ~~公開媒體可讀原尺寸圖（S8）是刻意設計嗎？~~ 不是，已關閉（2026-09-27）。
 - 精選圖片下載失敗後，是否需要重試或手動重新產生的入口（S3）？

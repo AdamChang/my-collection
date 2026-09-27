@@ -89,7 +89,6 @@ docker compose up --build                          # 需要 .env（見 .env.exam
 修改以下區域前，請先讀 `docs/architecture/90-tech-debt.md` 的對應項目：
 
 - **C2**：品項更新沒有版本比對（`MongoItemRepository.UpdateAsync`、`item-detail.component.ts`），背景寫入的欄位會被舊表單蓋掉。`UpdateAsync(Item)` 刻意不寫 attributes 與 images：attributes 必須經由 `AttributeChanges` 逐鍵寫入（C1 已解決），images 只能經由 `AddImageAsync`／`RemoveImageAsync`／`SetPrimaryImageAsync` 原子寫入（M1 已解決），兩者都不可再整份 `$set`。
-- **M2**（推論，待實測）：`ImageSharpProcessor` 沒有清除 EXIF／GPS，而原尺寸圖可經由公開分享匿名讀取。
 - **S1／S2**：公開媒體每個請求都重撈整個分享範圍；公開頁會回傳整份 attributes。
 - **I1／I2／R4**：認證端點沒有速率限制、註冊開放、`/ingest/fetch` 是 SSRF 入口。
 - **R1**：批次補完的候選清單沒有依 provider 過濾，可能永遠卡在同一批。

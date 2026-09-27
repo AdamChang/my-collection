@@ -120,7 +120,7 @@ sequenceDiagram
 | # | 項目 | 嚴重度 | 證據 | 說明 |
 |---|---|---|---|---|
 | M1 | 【已解決 2026-09-27】**多選上傳會遺失圖片，留下孤兒檔** | 高 | 見上方「一次選多張圖上傳」的證據 | 這是日常操作路徑（上傳元件預設就允許多選）。每張圖的請求都讀取同一份舊的 `images` 陣列，再整份覆寫，最後只保留一張，其餘圖檔的檔案留在 GCS 上沒有任何引用。沒有錯誤訊息；每個請求都回 201，前端各自 `reloadItem`，最後畫面上只看得到部分圖片。與 `12-module-catalog.md` C2 同源（`images` 整份覆寫，沒有並發控制）；Q18 決定的「逐欄位合併寫入」應一併涵蓋 `images`：上傳改用 `$push`，刪除改用 `$pull`。**實作**：改用 aggregation pipeline update，因為上傳要知道「附加前是否為空」才能決定主圖，刪除要知道「刪完還有沒有主圖」，單純的 `$push`／`$pull` 算不出來；表單更新也不再寫 images。修正前已產生的孤兒檔沒有清理（見 M7） |
-| M2 | **上傳的原始 metadata（EXIF，含 GPS）可能原樣保留在輸出的 WebP 中**【推論】 | 高（若屬實） | `ImageSharpProcessor.ProcessAsync`、`ResizeAsync`（`source.Clone(...)` 後直接 `SaveAsync`，沒有清除 `Metadata.ExifProfile`／`XmpProfile`）；全 repo 搜尋 `ExifProfile`／`Metadata` 沒有結果 | ImageSharp 的 clone 會帶著 metadata，WebP encoder 會寫出 EXIF／XMP chunk【推論】。用手機拍攝的收藏品照片通常帶有 GPS 座標；full 尺寸圖可以經由公開分享路徑匿名讀取（`14-module-showcase-sharing.md` S8）。這會直接繞過 ADR-0008「存放位置永不公開」的設計意圖：照片本身就洩漏了地點。需要實測：上傳一張帶 GPS 的 JPG，再用 exiftool 檢查輸出的 `-full.webp` |
+| M2 | 【已解決 2026-09-27】**上傳的原始 metadata（EXIF，含 GPS）原樣保留在輸出的 WebP 中**（Q21 實測證實） | 高 | `ImageSharpProcessor.ProcessAsync`、`ResizeAsync`（`source.Clone(...)` 後直接 `SaveAsync`，沒有清除 `Metadata.ExifProfile`／`XmpProfile`）；全 repo 搜尋 `ExifProfile`／`Metadata` 沒有結果 | ImageSharp 的 clone 會帶著 metadata，WebP encoder 會寫出 EXIF／XMP chunk【推論】。用手機拍攝的收藏品照片通常帶有 GPS 座標；full 尺寸圖可以經由公開分享路徑匿名讀取（`14-module-showcase-sharing.md` S8）。這會直接繞過 ADR-0008「存放位置永不公開」的設計意圖：照片本身就洩漏了地點。需要實測：上傳一張帶 GPS 的 JPG，再用 exiftool 檢查輸出的 `-full.webp`。修正：處理時先 `AutoOrient` 再清除 EXIF／XMP／IPTC（保留 ICC），既有圖片以一次性維運指令重處理；公開路徑不再開放原尺寸圖（S8） |
 | M3 | 圖片解碼沒有像素上限，可能造成解壓縮炸彈 OOM | 中 | `ImageSharpProcessor.ProcessAsync`（`Image.LoadAsync(source, ct)` 沒有傳入 `DecoderOptions`，也沒有設定 `MemoryAllocator` 上限）；`infra/terraform/runtime/services.tf`（API 記憶體 `512Mi`，`max_instance_count = 1`） | 一張 10 MB 以內的 PNG 可以宣告極大的寬高，解碼後需要的記憶體遠超過 512 MiB。ImageSharp 3.x 的預設配置上限高於此值【推論】，因此可能讓唯一的 API 實例被 OOM 砍掉。`ShowcaseImageDownloader` 也使用同一個 processor（`14-module-showcase-sharing.md` S4）。目前只有你自己使用，所以是中；改為邀請制後需要優先處理 |
 | M4 | 匯出受限於 Cloud Run 請求逾時，失敗時產生看起來正常的殘缺 zip | 中 | `ImageTransferEndpoints`（註解：「串流開始後就無法再改 status code，中途失敗只能斷線」）；`services.tf`（`timeout = "300s"`）；`GcsFileStorage.OpenReadAsync`（逐檔完整下載） | 圖片數量大時，300 秒內送不完就會被砍斷。前端以 blob 接收，瀏覽器可能拿到被截斷的檔案（沒有中央目錄，無法解開）。manifest 寫在最後，所以殘缺檔案連 manifest 都沒有 |
 | M5 | 匯入端點在正式環境幾乎不可用，而且沒有防護 | 中 | `ImageTransferEndpoints`（`UnlimitedRequestBody`、`Path.GetTempFileName()`）；Cloud Run 對 HTTP/1 請求有 32 MiB 上限【推論，依 Cloud Run 公開限制】，而且 `/tmp` 是記憶體檔案系統，會吃掉容器的 512 MiB；`ImportImageArchiveCommandHandler`（沒有檢查 entry 數量或解壓後大小，也沒有驗證內容是否為圖片） | (a) 這個功能的前提是「各機器使用本機儲存」，正式環境改用 GCS 後，實際需求已經不存在（ADR-0011 §三）。(b) 端點仍然對外開放：放寬上限的 body 會先寫進記憶體型的 `/tmp`；zip bomb 可以在自己的前綴下寫入任意大小、任意內容的 `.webp` 檔（DB 沒有引用，所以無法被讀取，但會佔用儲存空間）。建議方向：正式環境停用此端點，或限制大小與 entry 數量 |
@@ -139,6 +139,6 @@ sequenceDiagram
 
 ## 待確認問題
 （已同步到 `99-open-questions.md` 的 Q21–Q22）
-- M2：是否可以實測一張帶 GPS 的手機照片？若屬實，建議列為最優先修正項目。
+- ~~M2：是否可以實測一張帶 GPS 的手機照片？~~ 已實測證實並修正（2026-09-27）。
 - M5：正式環境還需要圖片匯出／匯入嗎？若不需要，是否直接在正式環境停用這兩個端點？
   - 【已回覆 2026-09-26（Q22）】不需要。M4／M5 的建議方向改為「正式環境停用或移除匯出／匯入端點」，列入技術債。
