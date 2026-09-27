@@ -65,7 +65,7 @@ docker compose up --build                          # 需要 .env（見 .env.exam
 - `MongoConventions.Register()` 必須早於任何序列化。欄位名稱是 camelCase，enum 存字串。
 - 寫入 `DateTime` 前必須是 `Kind=Utc`，否則 `UtcOnlyDateTimeSerializer` 會拋例外。
 - 更新用 `$set`／`UpdateOne`，不要用 `ReplaceOne`，因為 `IgnoreExtraElements` 會讓未映射的欄位遺失。
-- **新寫入邏輯要逐欄位合併**：陣列用 `$push`／`$pull`，不要「讀取 → 修改 → 整份 `$set`」（Q18 決議，見 tech debt C1、M1）。
+- **新寫入邏輯要逐欄位合併**：陣列用 `$push`／`$pull`，不要「讀取 → 修改 → 整份 `$set`」（Q18 決議，見 tech debt C1、M1）。新值依賴陣列現況時（例如「第一張就是主圖」），用 aggregation pipeline update 在資料庫端計算，參考 `MongoItemRepository.AddImageAsync`。
 - 新索引加在 `MongoIndexInitializer`，必須冪等；啟動時的變更不會隨 canary 回滾復原。
 
 **品類 schema 與 ingestion**
@@ -88,7 +88,7 @@ docker compose up --build                          # 需要 .env（見 .env.exam
 
 修改以下區域前，請先讀 `docs/architecture/90-tech-debt.md` 的對應項目：
 
-- **M1／C2**：圖片上傳與品項更新會整份覆寫 `images`，也沒有版本比對（`MongoItemRepository.UpdateAsync`、`item-detail.component.ts`）。並行上傳的圖片會遺失，背景寫入的欄位會被舊表單蓋掉。attributes 必須經由 `AttributeChanges` 逐鍵寫入，不可再整份 `$set`（C1 已解決）。
+- **C2**：品項更新沒有版本比對（`MongoItemRepository.UpdateAsync`、`item-detail.component.ts`），背景寫入的欄位會被舊表單蓋掉。`UpdateAsync(Item)` 刻意不寫 attributes 與 images：attributes 必須經由 `AttributeChanges` 逐鍵寫入（C1 已解決），images 只能經由 `AddImageAsync`／`RemoveImageAsync`／`SetPrimaryImageAsync` 原子寫入（M1 已解決），兩者都不可再整份 `$set`。
 - **M2**（推論，待實測）：`ImageSharpProcessor` 沒有清除 EXIF／GPS，而原尺寸圖可經由公開分享匿名讀取。
 - **S1／S2**：公開媒體每個請求都重撈整個分享範圍；公開頁會回傳整份 attributes。
 - **I1／I2／R4**：認證端點沒有速率限制、註冊開放、`/ingest/fetch` 是 SSRF 入口。

@@ -2,7 +2,7 @@
 
 - 狀態：已接受
 - 日期：2026-09-15
-- 修訂：2026-09-27 補上 §三 的寫入面規則（tech debt C1，`0ec17ed`）
+- 修訂：2026-09-27 補上 §三 的寫入面規則（tech debt C1，`b76f25b`）
 - 相關：[ADR-0006](0006-platform-filter-in-all-view-is-a-hardcoded-whitelist.md)（`platform` 是跨品類的字面白名單）、[ADR-0010](0010-catalog-url-is-truth-return-point-is-memory.md)（`attr.<key>` 進網址）
 
 ## 背景

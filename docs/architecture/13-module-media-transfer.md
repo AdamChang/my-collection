@@ -78,6 +78,8 @@ flowchart LR
 
 ### 一次選多張圖上傳
 
+> 【已解決 2026-09-27】以下是 M1 修正前的流程，保留作為缺陷的紀錄。現在三張圖依序上傳，每張各是一次原子的 pipeline update（`MongoItemRepository.AddImageAsync`），主圖與 order 由資料庫決定。
+
 ```mermaid
 sequenceDiagram
     participant U as image-uploader
@@ -117,15 +119,15 @@ sequenceDiagram
 
 | # | 項目 | 嚴重度 | 證據 | 說明 |
 |---|---|---|---|---|
-| M1 | **多選上傳會遺失圖片，留下孤兒檔** | 高 | 見上方「一次選多張圖上傳」的證據 | 這是日常操作路徑（上傳元件預設就允許多選）。每張圖的請求都讀取同一份舊的 `images` 陣列，再整份覆寫，最後只保留一張，其餘圖檔的檔案留在 GCS 上沒有任何引用。沒有錯誤訊息；每個請求都回 201，前端各自 `reloadItem`，最後畫面上只看得到部分圖片。與 `12-module-catalog.md` C2 同源（`images` 整份覆寫，沒有並發控制）；Q18 決定的「逐欄位合併寫入」應一併涵蓋 `images`：上傳改用 `$push`，刪除改用 `$pull` |
+| M1 | 【已解決 2026-09-27】**多選上傳會遺失圖片，留下孤兒檔** | 高 | 見上方「一次選多張圖上傳」的證據 | 這是日常操作路徑（上傳元件預設就允許多選）。每張圖的請求都讀取同一份舊的 `images` 陣列，再整份覆寫，最後只保留一張，其餘圖檔的檔案留在 GCS 上沒有任何引用。沒有錯誤訊息；每個請求都回 201，前端各自 `reloadItem`，最後畫面上只看得到部分圖片。與 `12-module-catalog.md` C2 同源（`images` 整份覆寫，沒有並發控制）；Q18 決定的「逐欄位合併寫入」應一併涵蓋 `images`：上傳改用 `$push`，刪除改用 `$pull`。**實作**：改用 aggregation pipeline update，因為上傳要知道「附加前是否為空」才能決定主圖，刪除要知道「刪完還有沒有主圖」，單純的 `$push`／`$pull` 算不出來；表單更新也不再寫 images。修正前已產生的孤兒檔沒有清理（見 M7） |
 | M2 | **上傳的原始 metadata（EXIF，含 GPS）可能原樣保留在輸出的 WebP 中**【推論】 | 高（若屬實） | `ImageSharpProcessor.ProcessAsync`、`ResizeAsync`（`source.Clone(...)` 後直接 `SaveAsync`，沒有清除 `Metadata.ExifProfile`／`XmpProfile`）；全 repo 搜尋 `ExifProfile`／`Metadata` 沒有結果 | ImageSharp 的 clone 會帶著 metadata，WebP encoder 會寫出 EXIF／XMP chunk【推論】。用手機拍攝的收藏品照片通常帶有 GPS 座標；full 尺寸圖可以經由公開分享路徑匿名讀取（`14-module-showcase-sharing.md` S8）。這會直接繞過 ADR-0008「存放位置永不公開」的設計意圖：照片本身就洩漏了地點。需要實測：上傳一張帶 GPS 的 JPG，再用 exiftool 檢查輸出的 `-full.webp` |
 | M3 | 圖片解碼沒有像素上限，可能造成解壓縮炸彈 OOM | 中 | `ImageSharpProcessor.ProcessAsync`（`Image.LoadAsync(source, ct)` 沒有傳入 `DecoderOptions`，也沒有設定 `MemoryAllocator` 上限）；`infra/terraform/runtime/services.tf`（API 記憶體 `512Mi`，`max_instance_count = 1`） | 一張 10 MB 以內的 PNG 可以宣告極大的寬高，解碼後需要的記憶體遠超過 512 MiB。ImageSharp 3.x 的預設配置上限高於此值【推論】，因此可能讓唯一的 API 實例被 OOM 砍掉。`ShowcaseImageDownloader` 也使用同一個 processor（`14-module-showcase-sharing.md` S4）。目前只有你自己使用，所以是中；改為邀請制後需要優先處理 |
 | M4 | 匯出受限於 Cloud Run 請求逾時，失敗時產生看起來正常的殘缺 zip | 中 | `ImageTransferEndpoints`（註解：「串流開始後就無法再改 status code，中途失敗只能斷線」）；`services.tf`（`timeout = "300s"`）；`GcsFileStorage.OpenReadAsync`（逐檔完整下載） | 圖片數量大時，300 秒內送不完就會被砍斷。前端以 blob 接收，瀏覽器可能拿到被截斷的檔案（沒有中央目錄，無法解開）。manifest 寫在最後，所以殘缺檔案連 manifest 都沒有 |
 | M5 | 匯入端點在正式環境幾乎不可用，而且沒有防護 | 中 | `ImageTransferEndpoints`（`UnlimitedRequestBody`、`Path.GetTempFileName()`）；Cloud Run 對 HTTP/1 請求有 32 MiB 上限【推論，依 Cloud Run 公開限制】，而且 `/tmp` 是記憶體檔案系統，會吃掉容器的 512 MiB；`ImportImageArchiveCommandHandler`（沒有檢查 entry 數量或解壓後大小，也沒有驗證內容是否為圖片） | (a) 這個功能的前提是「各機器使用本機儲存」，正式環境改用 GCS 後，實際需求已經不存在（ADR-0011 §三）。(b) 端點仍然對外開放：放寬上限的 body 會先寫進記憶體型的 `/tmp`；zip bomb 可以在自己的前綴下寫入任意大小、任意內容的 `.webp` 檔（DB 沒有引用，所以無法被讀取，但會佔用儲存空間）。建議方向：正式環境停用此端點，或限制大小與 entry 數量 |
-| M6 | 上傳與刪除的「檔案 ↔ DB」順序會在失敗時留下不一致 | 低 | `UploadItemImageCommandHandler`（先寫三個檔，再 `UpdateAsync`；更新失敗或品項已被刪除時，檔案成為孤兒）；`DeleteItemImageCommandHandler`（先刪檔，再 `UpdateAsync`；更新失敗時，DB 仍指向已不存在的檔案，顯示為破圖） | 單一使用者、低頻操作，影響有限。刪除的順序可以反過來（先更新 DB，再盡力刪檔），這樣失敗時只會留下孤兒檔，不會出現破圖 |
-| M7 | `IFileStorage.DeleteDirectoryAsync` 已經實作，但沒有任何呼叫端 | 低 | `IFileStorage.cs`（註解說明它是為了清除孤兒檔而設計）；全 repo 搜尋只找到介面與兩個實作 | 這正好是 `12-module-catalog.md` C5（刪除品項不刪圖檔）與 M1 孤兒檔的解法，但還沒接上 |
+| M6 | 【已解決 2026-09-27】上傳與刪除的「檔案 ↔ DB」順序會在失敗時留下不一致 | 低 | `UploadItemImageCommandHandler`（先寫三個檔，再 `UpdateAsync`；更新失敗或品項已被刪除時，檔案成為孤兒）；`DeleteItemImageCommandHandler`（先刪檔，再 `UpdateAsync`；更新失敗時，DB 仍指向已不存在的檔案，顯示為破圖） | 單一使用者、低頻操作，影響有限。刪除的順序可以反過來（先更新 DB，再盡力刪檔），這樣失敗時只會留下孤兒檔，不會出現破圖。**已實作**：刪除先改 DB 再盡力刪檔，上傳在 DB 寫入失敗時補償刪檔 |
+| M7 | `IFileStorage.DeleteDirectoryAsync` 已經實作，但沒有任何呼叫端 | 低 | `IFileStorage.cs`（註解說明它是為了清除孤兒檔而設計）；全 repo 搜尋只找到介面與兩個實作 | 這正好是 `12-module-catalog.md` C5（刪除品項不刪圖檔）的解法，但還沒接上。它**不能**用來清 M1 留下的孤兒檔：孤兒與仍在使用的圖在同一個目錄，要先列舉再與 DB 比對，而 `IFileStorage` 沒有列舉能力 |
 | M8 | 前端把整份匯出檔收進記憶體 | 低 | `transfer.service.ts`（`responseType: 'blob'`） | 收藏量大時，瀏覽器分頁會佔用與 zip 同等大小的記憶體；改用瀏覽器原生下載（`<a href>` 加上帶 token 的一次性 URL）才能真正串流，但這需要另外設計授權方式 |
-| M9 | 上傳元件的 `busy` 狀態從未被設為 true | 低 | `image-uploader.component.ts`（`busy = signal(false)`，沒有任何地方呼叫 `set(true)`） | 上傳中的文字永遠不會顯示；使用者可能在上傳完成前重複操作，加劇 M1 |
+| M9 | 【已解決 2026-09-27】上傳元件的 `busy` 狀態從未被設為 true | 低 | `image-uploader.component.ts`（`busy = signal(false)`，沒有任何地方呼叫 `set(true)`） | 上傳中的文字永遠不會顯示；使用者可能在上傳完成前重複操作，加劇 M1。**已實作**：`busy` 改為 input，由 item-detail 傳入 |
 
 ### 做得好的地方
 - 匯入採用「整包驗證後才寫入」，並檢查 owner 前綴，註解明確說明為什麼 `IFileStorage` 的根目錄檢查還不夠：`CollectImageEntries`

@@ -118,9 +118,9 @@
 
 - **唯一的多文件交易**：欄位改名（`MongoCategoryFieldRenamer`，需要 replica set）。
 - **其餘都是單文件寫入，而且沒有任何樂觀並發控制**：沒有 version 欄位，也不比對 `updatedAt`。
-- **原子操作只出現在少數刻意設計的地方**：job claim、精選圖片的條件式 `$push`、sync upsert。
+- **原子操作只出現在少數刻意設計的地方**：job claim、精選圖片的條件式 `$push`、sync upsert、圖片新增／刪除／設主圖的 pipeline update（M1）。
 - 相關風險：
-  - C1（已解決）、C2、M1、R11：整份覆寫。Q18 已決定改為逐欄位合併寫入。
+  - C1、M1（已解決）、C2、R11：整份覆寫。Q18 已決定改為逐欄位合併寫入。
   - C10：刪除品類與改名的競態。
   - I5：換發競態。
   - W1：多分頁競態。

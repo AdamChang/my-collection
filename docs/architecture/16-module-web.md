@@ -121,7 +121,7 @@ sequenceDiagram
 | W9 | `DynamicFormComponent` 每次重建表單都新增一個 `valueChanges` 訂閱，而且不取消舊的 | 低 | `shared/dynamic-form/dynamic-form.component.ts` 建構子內的 `effect` | 舊的 `FormGroup` 已不再被使用，所以實際上不會多發事件，只是少量記憶體無法回收。另外，表單重建本身不會觸發 `valueChanges`，這導致呼叫端必須自己再過濾一次（`item-detail.component.ts` → `declaredOnly` 的註解），也是 C1 的成因之一 |
 | W10 | 沒有 CSP，token 放在 localStorage | 低（本模組） | `index.html` 沒有 meta CSP；`web/nginx.conf` 沒有 header | 已記錄為 `11-module-identity.md` I3 與 `17-module-platform-infra.md` P9。模板中沒有任何 `innerHTML` 或 `bypassSecurityTrust*`，XSS 面相對小 |
 
-> 已在其他模組記錄、這裡不重複的前端問題：C1（`declaredOnly` 會刪除未宣告的屬性）、C3（Date `slice(0,10)`）、C9（`source` 缺 `Psn`）、C11（搜尋沒有 debounce，`catalog.component.ts` → `applySearch` 每次按鍵都導航並查詢）、M1（`uploadImages` 並行上傳）、M8（匯出整包 blob 放在記憶體）、M9（uploader 的 `busy` 從未設定）、S7（外部 CDN 圖片）。
+> 已在其他模組記錄、這裡不重複的前端問題：C1（`declaredOnly` 會刪除未宣告的屬性）、C3（Date `slice(0,10)`）、C9（`source` 缺 `Psn`）、C11（搜尋沒有 debounce，`catalog.component.ts` → `applySearch` 每次按鍵都導航並查詢）、M1（已解決：`uploadImages` 改為依序上傳）、M8（匯出整包 blob 放在記憶體）、M9（已解決：`busy` 改由父元件傳入）、S7（外部 CDN 圖片）。
 
 ### 做得好的地方
 

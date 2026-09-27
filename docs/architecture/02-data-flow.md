@@ -46,20 +46,20 @@ sequenceDiagram
   API-->>W: ItemDto（含未宣告的 attributes）
   U->>W: 修改並儲存
   W->>API: PUT（只帶已宣告的鍵）
-  API->>M: $set images/tags 整份、attributes 逐鍵 ⚠C2
+  API->>M: $set tags 等欄位整份、attributes 逐鍵，不碰 images ⚠C2
   U->>W: 一次選 3 張圖
-  par 3 個並行請求
+  loop 依序，每張一個請求
     W->>API: POST /items/{id}/images
     API->>G: 寫 full/card/thumb
-    API->>M: 讀 images → 加一張 → $set 整份 ⚠M1
+    API->>M: pipeline update 原子附加（主圖與 order 由 DB 決定）
   end
-  W->>API: GET /items/{id}（每張各重載一次）
+  W->>API: GET /items/{id}（全部結束後重載一次）
 ```
 
 - **C1**：【已解決 2026-09-27】未宣告屬性曾在第一次儲存時被刪除；現在 attributes 改為逐鍵 `$set`／`$unset`。
 - **C2**：若在背景 enrich 或 sync 寫入之後，用舊表單儲存，會覆寫那些結果。
-- **M1**：並行上傳時，最後寫入的會蓋掉其他人，最後只剩一張，其餘檔案成為孤兒。
-- 三者同源：都是「讀取 → 修改 → 整份 `$set`」，沒有版本控制。Q18 已決定改為逐欄位合併寫入，陣列改用 `$push`／`$pull`。
+- **M1**：【已解決 2026-09-27】並行上傳時，最後寫入的曾會蓋掉其他人，最後只剩一張，其餘檔案成為孤兒；現在圖片的新增、刪除、設主圖各是一次原子寫入，表單儲存也不再碰 images。修正前留下的孤兒檔未清理。
+- 三者同源：都是「讀取 → 修改 → 整份 `$set`」，沒有版本控制。Q18 已決定改為逐欄位合併寫入；C1 與 M1 已完成，剩下 C2 需要版本比對。
 - Date 欄位在這條路徑上會從 BSON DateTime 變成字串並失去時間（C3）。
 - 上傳的 EXIF 可能原樣保留（M2，推論）。
 - 證據：`12-module-catalog.md`「編輯品項並儲存」；`13-module-media-transfer.md`「一次選多張圖上傳」
@@ -162,7 +162,7 @@ MongoDB 是唯一的資料庫。SQL Server、PostgreSQL、Redis 在本 repo 中*
 |---|---|---|---|---|---|
 | `users` | Mongo | Register、Login、Refresh handler | JWT 流程、公開頁（顯示名稱） | 單文件；refresh 以 `_id` 無條件覆寫（I5） | `11` 資料存取 |
 | `categories` | Mongo | 品類 CRUD、欄位改名、`SystemCategorySeeder`（每次啟動） | 品項驗證、sync／enrich、公開頁 | 改名是**全案唯一的多文件 transaction**；其餘單文件，沒有並發控制 | `12` 資料存取、`17` P3 |
-| `items` | Mongo | 品項 CRUD、上傳與刪除圖片、sync（BulkWrite upsert）、enrich（BulkWrite `$set`）、精選圖片下載（條件式 `$push`） | 庫存、精選、公開頁、匯出 | 單文件，但 images 是整份覆寫（C2、M1）；attributes 已改為逐鍵合併（C1 已解決）；sync 與 enrich 靠欄位擁有權區隔 | `12`、`13`、`14`、`15` 資料存取 |
+| `items` | Mongo | 品項 CRUD、上傳與刪除圖片、sync（BulkWrite upsert）、enrich（BulkWrite `$set`）、精選圖片下載（條件式 `$push`） | 庫存、精選、公開頁、匯出 | 單文件；images 只由圖片的原子寫入與精選下載的條件式 `$push` 寫入（M1 已解決），attributes 逐鍵合併（C1 已解決），其餘欄位仍整份覆寫（C2）；sync 與 enrich 靠欄位擁有權區隔 | `12`、`13`、`14`、`15` 資料存取 |
 | `shareLinks` | Mongo | 建立與刪除分享 | 公開頁（不套 owner filter） | 單文件，slug 唯一索引 | `14` 資料存取 |
 | `externalAccounts` | Mongo | 綁定與解除綁定（憑證以 AES-GCM 加密） | sync | `(ownerId, provider)` 唯一，upsert | `15` 資料存取、`11` I10 |
 | `syncJobs` | Mongo | API（建立）、executor（claim、完成、重試） | 設定頁、前端輪詢 | `ClaimAsync` 原子；`UpdateAsync` 用 ReplaceOne（R11） | `15` 資料存取 |

@@ -26,7 +26,7 @@
 
 | 主題 | 涵蓋項目 | 說明 |
 |---|---|---|
-| A. 讀取 → 修改 → 整份覆寫，沒有並發控制 | C1、C2、M1、R11、C10、W9 | Q18 已決定方向：改為逐欄位合併寫入，陣列用 `$push`／`$pull`，必要時加入版本比對 |
+| A. 讀取 → 修改 → 整份覆寫，沒有並發控制 | C1、C2、M1、R11、C10、W9 | Q18 已決定方向：改為逐欄位合併寫入，陣列用 `$push`／`$pull`，必要時加入版本比對。C1（attributes）與 M1（images）已完成，`UpdateAsync(Item)` 不再寫這兩個欄位 |
 | B. 匿名與開放的入口 | I1、I2、R4、S1、S2、S8、M2、M3、S4、M5 | 開放註冊讓「匿名」與「已登入」幾乎等價；公開路徑沒有速率限制或快取，資料的公開範圍也超出設計 |
 | C. 單一實例承載所有工作 | P13、R2、M3、M4、S3、P6 | `max 1` 加上 300 秒逾時與 CPU 節流，長請求、大記憶體工作、回應後的背景工作與冷啟動，都會直接變成使用者看得到的失敗 |
 | D. 失敗無聲 | P2、R3、S3、W3、W4、W8 | 背景錯誤沒有 severity、沒有告警，前端又把錯誤顯示成「沒有資料」 |
@@ -36,7 +36,7 @@
 
 這裡只排順序與理由，實作細節留給各項目。
 
-1. **先止血（資料遺失與隱私）**：~~C1~~（已解決）、M1（主題 A），M2（先依 Q21 實測），S2。這四項都會在日常使用中默默損壞或外洩資料，而且發現時已無法回復。
+1. **先止血（資料遺失與隱私）**：~~C1~~、~~M1~~（已解決），M2（先依 Q21 實測），S2。這四項都會在日常使用中默默損壞或外洩資料，而且發現時已無法回復。
 2. **縮小攻擊面**：I2（改為邀請制）→ I1（速率限制）→ R4（限制 SSRF 目標）→ M5 與 M4（依 Q22 移除匯出與匯入）。I2 一關，R4、M3、S4 的曝險都會跟著下降。
 3. **公開路徑的效能**：S1。這條是匿名路徑，與使用者規模無關。
 4. **看得見失敗**：P2（先依 Q23 驗證）→ R3 → P13 統計。沒有這一步，其他問題的修正效果也無法觀察。
@@ -48,8 +48,8 @@
 
 | ID | 項目 | 證據位置 | 影響 | 建議方向 |
 |---|---|---|---|---|
-| C1 | 【已解決 2026-09-27，`0ec17ed`】編輯品項會靜默刪除未宣告的屬性，違反 ADR-0012 §三 | `features/item-detail/item-detail.component.ts` → `toPayload`、`declaredOnly`；`Infrastructure/Mongo/MongoItemRepository.cs` → `UpdateAsync`；`AttributeValidator.Validate` | 撤回某個欄位宣告後，只要編輯過該品項，舊值就永久消失，重新宣告也救不回來；過程沒有任何提示 | 已實作：`AttributeChanges.ForDeclaredFields` 以已宣告鍵為範圍（有值 `$set`，null 或缺席 `$unset`），未宣告鍵原樣保留；`UpdateAsync(Item)` 不再寫 attributes。`AttributeValidator` 仍拒收未宣告鍵，前端 `declaredOnly` 保留 |
-| M1 | 多選上傳會遺失圖片，並留下孤兒檔 | `Application/Media/ImageCommands.cs` → `UploadItemImageCommandHandler`；`item-detail.component.ts` → `uploadImages`（並行發送）；`MongoItemRepository.UpdateAsync`（`$set images`） | 日常操作（上傳元件預設允許多選）只會留下其中一張，其他檔案佔用 GCS，沒有錯誤訊息 | 併入主題 A：上傳用 `$push`、刪除用 `$pull`、設主圖用條件更新；前端改成依序上傳作為過渡；以 `DeleteDirectoryAsync`（M7）清理既有的孤兒檔 |
+| C1 | 【已解決 2026-09-27，`b76f25b`】編輯品項會靜默刪除未宣告的屬性，違反 ADR-0012 §三 | `features/item-detail/item-detail.component.ts` → `toPayload`、`declaredOnly`；`Infrastructure/Mongo/MongoItemRepository.cs` → `UpdateAsync`；`AttributeValidator.Validate` | 撤回某個欄位宣告後，只要編輯過該品項，舊值就永久消失，重新宣告也救不回來；過程沒有任何提示 | 已實作：`AttributeChanges.ForDeclaredFields` 以已宣告鍵為範圍（有值 `$set`，null 或缺席 `$unset`），未宣告鍵原樣保留；`UpdateAsync(Item)` 不再寫 attributes。`AttributeValidator` 仍拒收未宣告鍵，前端 `declaredOnly` 保留 |
+| M1 | 【已解決 2026-09-27】多選上傳會遺失圖片，並留下孤兒檔 | `Application/Media/ImageCommands.cs` → `UploadItemImageCommandHandler`；`item-detail.component.ts` → `uploadImages`（並行發送）；`MongoItemRepository.UpdateAsync`（`$set images`） | 日常操作（上傳元件預設允許多選）只會留下其中一張，其他檔案佔用 GCS，沒有錯誤訊息 | 已實作：`IItemRepository` 的 `AddImageAsync`／`RemoveImageAsync`／`SetPrimaryImageAsync` 各是一次 aggregation pipeline update，主圖與 order 由資料庫依寫入當下的陣列決定（單純的 `$push`／`$pull` 算不出這兩個值）；`UpdateAsync(Item)` 不再寫 images，表單儲存不會蓋掉期間上傳的圖。前端改為依序上傳，理由是 M3 的記憶體峰值，不是正確性。**未處理**：修正前已產生的孤兒檔。`DeleteDirectoryAsync`（M7）會刪掉整個品項目錄，無法只清孤兒，需要先為 `IFileStorage` 加上列舉能力 |
 | M2 | 【推論，待 Q21 實測】輸出的 WebP 可能保留 EXIF／GPS，而原尺寸圖可匿名讀取 | `Infrastructure/Imaging/ImageSharpProcessor.cs` → `ProcessAsync`、`ResizeAsync`；`Application/Media/MediaQueries.cs` → `ContainsPath`（S8） | 照片本身洩漏拍攝地點，繞過 ADR-0008「存放位置永不公開」的設計意圖 | 先實測；若屬實，處理時清除 EXIF、XMP、IPTC，並對既有圖片做一次性重處理；同時決定 S8（公開路徑是否開放原尺寸圖） |
 | S2 | 公開頁回傳整份 attributes | `Infrastructure/Mongo/MongoPublicCatalogReader.cs` → `BaseProjection`；`Application/Sharing/*` → `GetPublicShareQueryHandler` | 自訂欄位（序號、備註、購買管道）與 provider 欄位全部匿名可讀，與 ADR-0008「新欄位不會自動外流」的精神不一致 | 依 Q15：在品類欄位定義上加入「公開」旗標（預設不公開），公開投影只輸出有這個旗標的鍵；補一份 ADR |
 | S1 | 每個公開圖片請求都重撈整個分享範圍，而且 `no-store` | `Application/Media/MediaQueries.cs` → `OpenPublicMediaQueryHandler.Handle`；`MongoPublicCatalogReader.ListItemsAsync`；`Api/Endpoints/MediaEndpoints.cs` | 一次頁面載入等於 1+N 次全量查詢；匿名訪客可以消耗 Atlas Free 配額，並塞滿唯一的實例 | 以「slug → owner + scope + 圖片路徑」做單筆存在查詢；允許短時間的 public cache；搭配 I1 的速率限制 |
@@ -99,10 +99,10 @@
 | C9 | 前端 `ItemDto.source` 少了 `Psn` | `core/models.ts`；`Domain/Entities/Item.cs` | 型別低報 | 補上；中期考慮由 OpenAPI 產生型別（`16` DTO 對照） |
 | C10 | 刪除品類與改名沒有並發保護 | `DeleteCategoryCommandHandler`；`MongoCategoryRepository.UpdateAsync` | 多分頁操作時可能產生孤兒品項或 schema 回退 | 併入主題 A 的版本比對 |
 | C11 | 搜尋沒有 debounce | `features/catalog/catalog.component.ts` → `applySearch` | 每個字元都查詢，消耗 Atlas 配額 | 以 debounce 後再導航 |
-| M6 | 檔案與 DB 的操作順序在失敗時留下不一致 | `UploadItemImageCommandHandler`、`DeleteItemImageCommandHandler` | 孤兒檔或破圖 | 刪除時先更新 DB 再盡力刪檔 |
-| M7 | `DeleteDirectoryAsync` 沒有呼叫端 | `Application/Common/IFileStorage.cs` | 已有的清理能力沒有接上 | 接到 C5 與孤兒清理流程 |
+| M6 | 【已解決 2026-09-27】檔案與 DB 的操作順序在失敗時留下不一致 | `UploadItemImageCommandHandler`、`DeleteItemImageCommandHandler` | 孤兒檔或破圖 | 已實作（隨 M1）：刪除先改 DB 再盡力刪檔；上傳在 DB 寫入失敗時補償刪檔。刪檔失敗只記 log，不蓋掉原本的結果 |
+| M7 | `DeleteDirectoryAsync` 沒有呼叫端 | `Application/Common/IFileStorage.cs` | 已有的清理能力沒有接上 | 接到 C5（刪除品項時整個目錄可以一起刪）。清理既有孤兒檔不能用它：孤兒與仍在使用的圖放在同一個目錄，需要列舉後與 DB 比對 |
 | M8 | 前端把整份匯出檔收進記憶體 | `core/api/transfer.service.ts` | 大量收藏時佔用記憶體 | 依 Q22 隨匯出功能一起移除 |
-| M9 | 上傳元件的 `busy` 從未被設定 | `shared/image-uploader/image-uploader.component.ts` | 沒有上傳中的提示，加劇 M1 | 由父元件傳入上傳狀態 |
+| M9 | 【已解決 2026-09-27】上傳元件的 `busy` 從未被設定 | `shared/image-uploader/image-uploader.component.ts` | 沒有上傳中的提示，加劇 M1 | 已實作（隨 M1）：`busy` 改為 input，由 item-detail 的 `busy` 傳入；圖片寫入進行中鎖住整頁 |
 | S4 | 背景下載沒有大小上限，URL 來自可編輯的 attributes | `ShowcaseImageDownloader.DownloadAsync` | 記憶體耗用、blind SSRF | 限制下載大小與 content-type；套用 R4 的目標過濾 |
 | S5 | 可以建立已過期的分享；過期資料不清理 | `CreateShareLinkCommandValidator` | 資料殘留 | 驗證 `ExpiresAt > now`；加上 TTL index |
 | S6 | 公開圖片路徑暴露 ownerId | 圖片路徑格式 `{ownerId}/{itemId}/...` | 洩漏內部 id 與帳號建立時間 | 公開路徑改用不透明的代號，或由 slug 對應 |
