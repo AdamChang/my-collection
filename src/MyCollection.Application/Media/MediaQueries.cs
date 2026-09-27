@@ -90,11 +90,20 @@ public sealed class OpenPublicMediaQueryHandler(
             includeRating: false,
             cancellationToken);
 
-        if (!sharedItems.Any(item => OpenOwnedMediaQueryHandler.ContainsPath(item.Images, request.Path)))
+        if (!sharedItems.Any(item => ContainsPublicPath(item.Images, request.Path)))
         {
             throw new NotFoundException(nameof(ItemImage), request.Path);
         }
 
         return await OpenOwnedMediaQueryHandler.OpenAsync(storage, request.Path, cancellationToken);
     }
+
+    /// <summary>
+    /// 公開範圍與 <see cref="PublicImageDto"/> 一致，只有 card 與 thumb（S8）。
+    /// 原尺寸不公開，即使日後又漏出 metadata，匿名可取得的也只有縮圖。
+    /// </summary>
+    private static bool ContainsPublicPath(IEnumerable<ItemImage> images, string path) =>
+        images.Any(image =>
+            string.Equals(image.CardPath, path, StringComparison.Ordinal) ||
+            string.Equals(image.ThumbPath, path, StringComparison.Ordinal));
 }

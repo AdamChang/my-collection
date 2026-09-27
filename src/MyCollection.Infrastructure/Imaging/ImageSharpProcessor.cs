@@ -27,11 +27,27 @@ public sealed class ImageSharpProcessor : IImageProcessor
 
         using (image)
         {
+            StripIdentifyingMetadata(image);
+
             return new ProcessedImage(
                 await ResizeAsync(image, FullMaxEdge, ct),
                 await ResizeAsync(image, CardMaxEdge, ct),
                 await ResizeAsync(image, ThumbMaxEdge, ct));
         }
+    }
+
+    /// <summary>
+    /// 清除 EXIF／XMP／IPTC（含 GPS、拍攝時間、機身序號），避免經公開分享外洩（M2）。
+    /// 必須先 AutoOrient：像素原本靠 EXIF Orientation 轉正，直接清掉標籤直拍照會躺平。
+    /// ICC 刻意保留：只描述色彩空間、不含個資，清掉會讓 Display P3 照片變淡。
+    /// </summary>
+    private static void StripIdentifyingMetadata(Image image)
+    {
+        image.Mutate(context => context.AutoOrient());
+
+        image.Metadata.ExifProfile = null;
+        image.Metadata.XmpProfile = null;
+        image.Metadata.IptcProfile = null;
     }
 
     private static async Task<byte[]> ResizeAsync(Image source, int maxEdge, CancellationToken ct)
