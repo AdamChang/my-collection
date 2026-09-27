@@ -70,6 +70,7 @@ public static class DependencyInjection
                 throw new InvalidOperationException($"Unsupported storage provider '{storage.Provider}'.");
         }
         services.AddSingleton<IImageProcessor, ImageSharpProcessor>();
+        services.AddTransient<ImageMetadataMigration>();
 
         services.AddSingleton<ISecretProtector, AesGcmSecretProtector>();
         services.AddSingleton<IShowcaseImageQueue, ShowcaseImageQueue>();

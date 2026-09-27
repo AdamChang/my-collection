@@ -12,6 +12,9 @@ public interface IUserRepository
 
     Task<User?> GetByRefreshTokenHashAsync(string refreshTokenHash, CancellationToken ct);
 
+    /// <summary>所有使用者的 id，供維運作業逐一以該身分存取資料。</summary>
+    Task<IReadOnlyList<ObjectId>> ListIdsAsync(CancellationToken ct);
+
     /// <summary>email 重複時擲出 <see cref="Domain.Exceptions.ConflictException"/>。</summary>
     Task InsertAsync(User user, CancellationToken ct);
 

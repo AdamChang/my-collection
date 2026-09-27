@@ -13,6 +13,9 @@ public sealed class MongoUserRepository(MongoContext context) : IUserRepository
     public Task<User?> GetByIdAsync(ObjectId id, CancellationToken ct) =>
         Users.Find(Builders<User>.Filter.Eq(x => x.Id, id)).FirstOrDefaultAsync(ct)!;
 
+    public async Task<IReadOnlyList<ObjectId>> ListIdsAsync(CancellationToken ct) =>
+        await Users.Find(Builders<User>.Filter.Empty).Project(x => x.Id).ToListAsync(ct);
+
     public Task<User?> GetByEmailAsync(string email, CancellationToken ct) =>
         Users.Find(Builders<User>.Filter.Eq(x => x.Email, Normalise(email))).FirstOrDefaultAsync(ct)!;
 
