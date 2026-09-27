@@ -57,7 +57,7 @@ public interface IItemRepository
     Task InsertAsync(Item item, CancellationToken ct);
 
     /// <summary>
-    /// 更新品項本身的欄位，不碰 attributes。找不到（含不屬於自己）擲 NotFoundException。
+    /// 更新品項本身的欄位，不碰 attributes 與 images。找不到（含不屬於自己）擲 NotFoundException。
     /// </summary>
     Task UpdateAsync(Item item, CancellationToken ct);
 
@@ -65,6 +65,21 @@ public interface IItemRepository
     /// 同上，並在同一次寫入中逐鍵套用 attributes 變更；未列在變更中的鍵（含未宣告屬性）原樣保留。
     /// </summary>
     Task UpdateAsync(Item item, AttributeChanges attributeChanges, CancellationToken ct);
+
+    // 以下三個圖片寫入各自是單一原子操作（tech debt M1）：主圖與順序由資料庫依寫入當下的陣列決定，
+    // 不採信呼叫端讀到的舊狀態。品項不存在擲 NotFoundException(Item)，圖片不存在擲 NotFoundException(ItemImage)。
+
+    /// <summary>
+    /// 附加一張圖。傳入的 IsPrimary／Order 會被忽略：陣列為空時成為主圖，order 為附加前的張數。
+    /// </summary>
+    /// <returns>寫入後的這張圖。</returns>
+    Task<ItemImage> AddImageAsync(ObjectId itemId, ItemImage image, DateTime updatedAt, CancellationToken ct);
+
+    /// <summary>移除一張圖；剩下的圖若沒有主圖，第一張晉升為主圖，order 依陣列位置重排。</summary>
+    /// <returns>被移除的圖，供呼叫端刪檔。</returns>
+    Task<ItemImage> RemoveImageAsync(ObjectId itemId, string imageId, DateTime updatedAt, CancellationToken ct);
+
+    Task SetPrimaryImageAsync(ObjectId itemId, string imageId, DateTime updatedAt, CancellationToken ct);
 
     Task DeleteAsync(ObjectId id, CancellationToken ct);
 }

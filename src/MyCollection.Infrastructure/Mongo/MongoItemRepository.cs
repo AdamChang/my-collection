@@ -1,4 +1,5 @@
 using MongoDB.Bson;
+using MongoDB.Bson.Serialization;
 using MongoDB.Driver;
 using MyCollection.Application.Common;
 using MyCollection.Application.Items;
@@ -134,6 +135,10 @@ public sealed class MongoItemRepository(MongoContext context, IUserContext userC
     /// attributes 不在列舉之內，理由同上但更細一層：整份 $set attributes 會刪掉品項上的
     /// 未宣告屬性（ADR-0012 §三，tech debt C1），而且讀後寫回的呼叫端（圖片 handler）
     /// 會把期間別人寫入的屬性還原成舊值。要改屬性一律走帶 <see cref="AttributeChanges"/> 的多載。
+    ///
+    /// images 也不在列舉之內（tech debt M1）：表單手上的 images 是讀取當下的舊陣列，
+    /// 整份 $set 會把期間上傳的圖蓋掉。圖片只由 AddImageAsync／RemoveImageAsync／SetPrimaryImageAsync
+    /// 與精選圖片下載的條件式 $push 寫入。
     /// </summary>
     public Task UpdateAsync(Item item, CancellationToken ct) => UpdateCoreAsync(item, null, ct);
 
@@ -174,7 +179,6 @@ public sealed class MongoItemRepository(MongoContext context, IUserContext userC
             .Set(x => x.CategoryId, item.CategoryId)
             .Set(x => x.Name, item.Name)
             .Set(x => x.Description, item.Description)
-            .Set(x => x.Images, item.Images)
             .Set(x => x.Tags, item.Tags)
             .Set(x => x.IsShowcased, item.IsShowcased)
             .Set(x => x.Acquisition, item.Acquisition)
@@ -183,6 +187,190 @@ public sealed class MongoItemRepository(MongoContext context, IUserContext userC
             .Set(x => x.Rating, item.Rating)
             .Set(x => x.StorageLocation, item.StorageLocation)
             .Set(x => x.UpdatedAt, item.UpdatedAt);
+
+    // ── 圖片的原子寫入（tech debt M1） ─────────────────────────────────────────────
+    //
+    // 三者都用 aggregation pipeline update，讓「主圖是誰、順序是多少」由伺服器依寫入當下的陣列計算。
+    // 單純的 $push／$pull 做不到：上傳要知道「附加前是不是空陣列」，刪除要知道「刪完還有沒有主圖」，
+    // 在應用端先讀再算，並行時就會算出兩張主圖或重複的 order。設主圖也不能用 arrayFilters——
+    // 同一個 update 對 images.$[] 與 images.$[t] 各自 $set isPrimary 會被 MongoDB 判為路徑衝突。
+
+    public async Task<ItemImage> AddImageAsync(ObjectId itemId, ItemImage image, DateTime updatedAt, CancellationToken ct)
+    {
+        var current = CurrentImages();
+
+        // 呼叫端的值一律包 $literal：pipeline 裡以「$」開頭的字串會被當成欄位路徑。
+        var appended = new BsonDocument();
+        foreach (var element in image.ToBsonDocument())
+        {
+            appended[element.Name] = new BsonDocument("$literal", element.Value);
+        }
+
+        appended[ImageElements.IsPrimary] = new BsonDocument("$eq", new BsonArray { new BsonDocument("$size", current), 0 });
+        appended[ImageElements.Order] = new BsonDocument("$size", current);
+
+        var updated = await Items.FindOneAndUpdateAsync(
+            Filter.And(OwnerFilter, Filter.Eq(x => x.Id, itemId)),
+            ImagesPipeline(
+                updatedAt,
+                new BsonDocument("$concatArrays", new BsonArray { current, new BsonArray { appended } })),
+            new FindOneAndUpdateOptions<Item> { ReturnDocument = ReturnDocument.After },
+            ct) ?? throw new NotFoundException(nameof(Item), itemId);
+
+        return updated.Images.Single(i => i.Id == image.Id);
+    }
+
+    public async Task<ItemImage> RemoveImageAsync(ObjectId itemId, string imageId, DateTime updatedAt, CancellationToken ct)
+    {
+        var remaining = new BsonDocument("$filter", new BsonDocument
+        {
+            { "input", CurrentImages() },
+            { "cond", new BsonDocument("$ne", new BsonArray { $"$$this.{ImageElements.Id}", imageId }) }
+        });
+
+        // 在同一個 pipeline 裡先過濾、再依剩下的陣列補主圖與重排：
+        // 剩下的圖若沒有任何主圖，第一張晉升；order 一律等於陣列位置。
+        var normalised = new BsonDocument("$let", new BsonDocument
+        {
+            { "vars", new BsonDocument("rest", remaining) },
+            {
+                "in", new BsonDocument("$let", new BsonDocument
+                {
+                    {
+                        "vars", new BsonDocument("hasPrimary", new BsonDocument("$anyElementTrue", new BsonArray
+                        {
+                            new BsonDocument("$map", new BsonDocument
+                            {
+                                { "input", "$$rest" },
+                                { "in", new BsonDocument("$eq", new BsonArray { $"$$this.{ImageElements.IsPrimary}", true }) }
+                            })
+                        }))
+                    },
+                    {
+                        "in", new BsonDocument("$map", new BsonDocument
+                        {
+                            { "input", new BsonDocument("$range", new BsonArray { 0, new BsonDocument("$size", "$$rest") }) },
+                            { "as", "i" },
+                            {
+                                "in", new BsonDocument("$mergeObjects", new BsonArray
+                                {
+                                    new BsonDocument("$arrayElemAt", new BsonArray { "$$rest", "$$i" }),
+                                    new BsonDocument
+                                    {
+                                        { ImageElements.Order, "$$i" },
+                                        {
+                                            ImageElements.IsPrimary, new BsonDocument("$or", new BsonArray
+                                            {
+                                                new BsonDocument("$eq", new BsonArray
+                                                {
+                                                    new BsonDocument("$getField", new BsonDocument
+                                                    {
+                                                        { "field", ImageElements.IsPrimary },
+                                                        { "input", new BsonDocument("$arrayElemAt", new BsonArray { "$$rest", "$$i" }) }
+                                                    }),
+                                                    true
+                                                }),
+                                                new BsonDocument("$and", new BsonArray
+                                                {
+                                                    new BsonDocument("$not", new BsonArray { "$$hasPrimary" }),
+                                                    new BsonDocument("$eq", new BsonArray { "$$i", 0 })
+                                                })
+                                            })
+                                        }
+                                    }
+                                })
+                            }
+                        })
+                    }
+                })
+            }
+        });
+
+        var before = await Items.FindOneAndUpdateAsync(
+            ImageFilter(itemId, imageId),
+            ImagesPipeline(updatedAt, normalised),
+            new FindOneAndUpdateOptions<Item> { ReturnDocument = ReturnDocument.Before },
+            ct) ?? throw await ImageNotFoundAsync(itemId, imageId, ct);
+
+        return before.Images.Single(i => i.Id == imageId);
+    }
+
+    public async Task SetPrimaryImageAsync(ObjectId itemId, string imageId, DateTime updatedAt, CancellationToken ct)
+    {
+        var flagged = new BsonDocument("$map", new BsonDocument
+        {
+            { "input", CurrentImages() },
+            {
+                "in", new BsonDocument("$mergeObjects", new BsonArray
+                {
+                    "$$this",
+                    new BsonDocument(
+                        ImageElements.IsPrimary,
+                        new BsonDocument("$eq", new BsonArray { $"$$this.{ImageElements.Id}", imageId }))
+                })
+            }
+        });
+
+        var result = await Items.UpdateOneAsync(
+            ImageFilter(itemId, imageId),
+            ImagesPipeline(updatedAt, flagged),
+            cancellationToken: ct);
+
+        if (result.MatchedCount == 0)
+        {
+            throw await ImageNotFoundAsync(itemId, imageId, ct);
+        }
+    }
+
+    /// <summary>images 缺欄位或為 null 的舊文件視同空陣列，否則 $size／$concatArrays 會失敗或得到 null。</summary>
+    private static BsonDocument CurrentImages() =>
+        new("$ifNull", new BsonArray { $"${ImageElements.Images}", new BsonArray() });
+
+    private static UpdateDefinition<Item> ImagesPipeline(DateTime updatedAt, BsonValue images) =>
+        Builders<Item>.Update.Pipeline(new EmptyPipelineDefinition<Item>().AppendStage<Item, Item, Item>(
+            new BsonDocument("$set", new BsonDocument
+            {
+                { ImageElements.Images, images },
+                { ImageElements.UpdatedAt, new BsonDocument("$literal", new BsonDateTime(updatedAt)) }
+            })));
+
+    private FilterDefinition<Item> ImageFilter(ObjectId itemId, string imageId) =>
+        Filter.And(
+            OwnerFilter,
+            Filter.Eq(x => x.Id, itemId),
+            Filter.ElemMatch(x => x.Images, i => i.Id == imageId));
+
+    /// <summary>
+    /// 條件式寫入沒命中時，只有多查一次才能分辨是品項不存在還是圖片不存在。
+    /// 只發生在失敗路徑；兩者對前端與 log 的判讀方向不同，值得這一次查詢。
+    /// </summary>
+    private async Task<NotFoundException> ImageNotFoundAsync(ObjectId itemId, string imageId, CancellationToken ct)
+    {
+        var itemExists = await Items.CountDocumentsAsync(
+            Filter.And(OwnerFilter, Filter.Eq(x => x.Id, itemId)),
+            new CountOptions { Limit = 1 },
+            ct) > 0;
+
+        return itemExists
+            ? new NotFoundException(nameof(ItemImage), imageId)
+            : new NotFoundException(nameof(Item), itemId);
+    }
+
+    /// <summary>
+    /// pipeline 以字串定址，element 名稱從 class map 取，不手寫：
+    /// ItemImage.Id 受 driver 的 id 慣例影響，實際存成什麼不能靠猜。
+    /// </summary>
+    private static class ImageElements
+    {
+        public static readonly string Images = ElementName<Item>(nameof(Item.Images));
+        public static readonly string UpdatedAt = ElementName<Item>(nameof(Item.UpdatedAt));
+        public static readonly string Id = ElementName<ItemImage>(nameof(ItemImage.Id));
+        public static readonly string IsPrimary = ElementName<ItemImage>(nameof(ItemImage.IsPrimary));
+        public static readonly string Order = ElementName<ItemImage>(nameof(ItemImage.Order));
+
+        private static string ElementName<T>(string member) =>
+            BsonClassMap.LookupClassMap(typeof(T)).GetMemberMap(member).ElementName;
+    }
 
     public async Task DeleteAsync(ObjectId id, CancellationToken ct)
     {
