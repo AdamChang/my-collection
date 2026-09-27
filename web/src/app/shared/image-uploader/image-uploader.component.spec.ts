@@ -56,4 +56,17 @@ describe('ImageUploaderComponent', () => {
     expect(setPrimary).toHaveBeenCalledOnceWith('secondary');
     expect(remove).toHaveBeenCalledOnceWith('secondary');
   });
+
+  it('locks the file input and image actions while busy', () => {
+    fixture.componentRef.setInput('busy', true);
+    fixture.detectChanges();
+
+    const input: HTMLInputElement = fixture.nativeElement.querySelector('input[type=file]');
+    const buttons: HTMLButtonElement[] = Array.from(fixture.nativeElement.querySelectorAll('.uploader__item button'));
+
+    expect(input.disabled).toBeTrue();
+    expect(buttons.length).toBeGreaterThan(0);
+    expect(buttons.every((button) => button.disabled)).toBeTrue();
+    expect(fixture.nativeElement.textContent).toContain('上傳中…');
+  });
 });

@@ -1088,4 +1088,93 @@ describe('ItemDetailComponent', () => {
 
     expect(captured.rating).toBe(8);
   });
+
+  /** 圖片上傳（M1、M9）：依序送出、全部結束才重載一次，期間整頁鎖住。 */
+  async function createUploadable() {
+    const uploads: { file: File; response: Subject<unknown> }[] = [];
+    const gets = { count: 0 };
+
+    await TestBed.configureTestingModule({
+      imports: [ItemDetailComponent],
+      providers: [
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => steamItem.id } } } },
+        { provide: CategoryService, useValue: { list: () => of([igdbCategory]) } },
+        {
+          provide: CatalogService,
+          useValue: {
+            get: () => {
+              gets.count++;
+              return of(steamItem);
+            },
+            uploadImage: (_: string, file: File) => {
+              const response = new Subject<unknown>();
+              uploads.push({ file, response });
+              return response;
+            },
+          },
+        },
+        { provide: IngestionService, useValue: { search: () => of([]) } },
+        { provide: NotificationService, useValue: { success: () => undefined, error: () => undefined } },
+        { provide: ProviderService, useValue: { supports: () => false } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(ItemDetailComponent);
+    fixture.detectChanges();
+
+    const files = ['a.jpg', 'b.jpg', 'c.jpg'].map((name) => new File([''], name));
+    const finish = (index: number) => {
+      uploads[index].response.next({});
+      uploads[index].response.complete();
+    };
+
+    return { fixture, uploads, gets, files, finish };
+  }
+
+  it('uploads selected images one at a time and reloads once at the end', async () => {
+    const h = await createUploadable();
+
+    h.fixture.componentInstance.uploadImages(steamItem.id, h.files);
+
+    // 並行送出會讓唯一的 API 實例同時解碼多張圖（M3），所以一次只能有一個請求在路上。
+    expect(h.uploads.map((u) => u.file.name)).toEqual(['a.jpg']);
+
+    h.finish(0);
+    h.finish(1);
+    expect(h.uploads.map((u) => u.file.name)).toEqual(['a.jpg', 'b.jpg', 'c.jpg']);
+    expect(h.gets.count).toBe(1);
+
+    h.finish(2);
+    expect(h.gets.count).toBe(2);
+    expect(h.fixture.componentInstance.busy()).toBeFalse();
+  });
+
+  it('locks the page and the uploader while images are uploading', async () => {
+    const h = await createUploadable();
+
+    h.fixture.componentInstance.uploadImages(steamItem.id, h.files);
+    h.fixture.detectChanges();
+
+    expect(h.fixture.componentInstance.busy()).toBeTrue();
+    const input: HTMLInputElement = h.fixture.nativeElement.querySelector('app-image-uploader input[type=file]');
+    expect(input.disabled).toBeTrue();
+
+    // 上傳中再選一批不會插隊送出。
+    h.fixture.componentInstance.uploadImages(steamItem.id, [new File([''], 'late.jpg')]);
+    expect(h.uploads.map((u) => u.file.name)).toEqual(['a.jpg']);
+  });
+
+  it('stops at a failed upload but still reloads and unlocks', async () => {
+    const h = await createUploadable();
+
+    h.fixture.componentInstance.uploadImages(steamItem.id, h.files);
+    h.finish(0);
+    h.uploads[1].response.error(new Error('413'));
+
+    expect(h.uploads.map((u) => u.file.name)).toEqual(['a.jpg', 'b.jpg']);
+    // 重載才看得到已經成功的那一張。
+    expect(h.gets.count).toBe(2);
+    expect(h.fixture.componentInstance.busy()).toBeFalse();
+  });
 });

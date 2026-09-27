@@ -1,7 +1,7 @@
 import { Component, computed, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { finalize, switchMap } from 'rxjs';
+import { concatMap, finalize, from, switchMap } from 'rxjs';
 import { CatalogService, ItemWritePayload } from '../../core/api/catalog.service';
 import { CategoryService } from '../../core/api/category.service';
 import { IngestionService } from '../../core/api/ingestion.service';
@@ -171,6 +171,7 @@ import { TagInputComponent } from '../../shared/tag-input/tag-input.component';
           <h2>圖片</h2>
           <app-image-uploader
             [images]="item()?.images ?? []"
+            [busy]="busy()"
             (upload)="uploadImages(id, $event)"
             (remove)="removeImage(id, $event)"
             (setPrimary)="setPrimaryImage(id, $event)"
@@ -233,6 +234,7 @@ export class ItemDetailComponent {
   readonly removing = signal(false);
   readonly fetching = signal(false);
   readonly enriching = signal(false);
+  readonly writingImages = signal(false);
 
   /** 對話框在模板根、不在任何 `@if` 內，必定存在。required 讓「有人把它搬進 @if」直接爆而不是靜默沒反應。 */
   private readonly searchDialog = viewChild.required(IgdbSearchDialogComponent);
@@ -271,7 +273,12 @@ export class ItemDetailComponent {
 
   /** 任一改寫動作進行中就鎖住全部按鈕：同一筆品項不該有並行的改寫。 */
   readonly busy = computed(
-    () => this.saving() || this.removing() || this.fetching() || this.enriching(),
+    () =>
+      this.saving() ||
+      this.removing() ||
+      this.fetching() ||
+      this.enriching() ||
+      this.writingImages(),
   );
 
   readonly defaultDisplayModeHint = computed(() => {
@@ -497,18 +504,53 @@ export class ItemDetailComponent {
       });
   }
 
+  /**
+   * 依序上傳，全部結束後只重載一次。後端的圖片寫入已經是原子的（M1），依序不是為了正確性：
+   * API 只有一個 512Mi 的實例，多張同時解碼會疊加記憶體峰值（M3）。
+   * 中途失敗就停在那張，重載後畫面呈現實際已上傳的圖。
+   */
   uploadImages(itemId: string, files: File[]): void {
-    for (const file of files) {
-      this.catalog.uploadImage(itemId, file).subscribe(() => this.reloadItem(itemId));
+    if (this.busy()) {
+      return;
     }
+
+    this.writingImages.set(true);
+    from(files)
+      .pipe(
+        concatMap((file) => this.catalog.uploadImage(itemId, file)),
+        finalize(() => this.finishImageWrite(itemId)),
+      )
+      .subscribe({ error: IGNORE_HANDLED_BY_INTERCEPTOR });
   }
 
   removeImage(itemId: string, imageId: string): void {
-    this.catalog.deleteImage(itemId, imageId).subscribe(() => this.reloadItem(itemId));
+    if (this.busy()) {
+      return;
+    }
+
+    this.writingImages.set(true);
+    this.catalog
+      .deleteImage(itemId, imageId)
+      .pipe(finalize(() => this.finishImageWrite(itemId)))
+      .subscribe({ error: IGNORE_HANDLED_BY_INTERCEPTOR });
   }
 
   setPrimaryImage(itemId: string, imageId: string): void {
-    this.catalog.setPrimaryImage(itemId, imageId).subscribe(() => this.reloadItem(itemId));
+    if (this.busy()) {
+      return;
+    }
+
+    this.writingImages.set(true);
+    this.catalog
+      .setPrimaryImage(itemId, imageId)
+      .pipe(finalize(() => this.finishImageWrite(itemId)))
+      .subscribe({ error: IGNORE_HANDLED_BY_INTERCEPTOR });
+  }
+
+  /** 成功或失敗都重載：失敗時伺服器端可能已經部分生效（例如多張中的前幾張）。 */
+  private finishImageWrite(itemId: string): void {
+    this.writingImages.set(false);
+    this.reloadItem(itemId);
   }
 
   private reloadItem(itemId: string): void {
