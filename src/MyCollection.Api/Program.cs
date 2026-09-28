@@ -5,13 +5,17 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
 using MyCollection.Api;
 using MyCollection.Api.Endpoints;
+using MyCollection.Api.Maintenance;
 using MyCollection.Application;
 using MyCollection.Application.Common;
 using MyCollection.Infrastructure;
 using MyCollection.Infrastructure.Mongo;
 using MyCollection.Infrastructure.Security;
 
-var builder = WebApplication.CreateBuilder(args);
+// 維運指令（ADR-0013：邀請只能由這裡發出）。
+// 維運參數不交給設定系統，避免 "--email" 被當成設定鍵。
+var isMaintenance = args is ["maintenance", ..];
+var builder = WebApplication.CreateBuilder(isMaintenance ? [] : args);
 
 // 必須早於任何 BSON 序列化：BsonClassMap 一旦建立就永久快取，
 // 若在慣例註冊前先序列化過，整個行程都會固定用 PascalCase 欄位名，
@@ -96,6 +100,24 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(optio
 });
 
 var app = builder.Build();
+
+if (isMaintenance)
+{
+    await using var maintenanceScope = app.Services.CreateAsyncScope();
+    var services = maintenanceScope.ServiceProvider;
+
+    // 全新的資料庫也要先有 ux_invitations_email_pending，才能保證同一 email 只有一份有效邀請
+    await MongoIndexInitializer.EnsureIndexesAsync(services.GetRequiredService<MongoContext>(), CancellationToken.None);
+
+    Environment.ExitCode = await InviteMaintenance.RunAsync(
+        args[1..],
+        services.GetRequiredService<MediatR.ISender>(),
+        app.Configuration["Cors:AllowedOrigins:0"],
+        Console.Out,
+        Console.Error,
+        CancellationToken.None);
+    return;
+}
 
 app.UseForwardedHeaders();
 app.UseExceptionHandler();
