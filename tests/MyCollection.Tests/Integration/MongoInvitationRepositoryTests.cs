@@ -2,6 +2,8 @@ using FluentAssertions;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using MyCollection.Domain.Entities;
+using MyCollection.Domain.Exceptions;
+using MyCollection.Infrastructure.Mongo;
 using MyCollection.Tests.Fixtures;
 
 namespace MyCollection.Tests.Integration;
@@ -72,5 +74,47 @@ public class MongoInvitationRepositoryTests(MongoFixture fixture) : IAsyncLifeti
             .Find(new BsonDocument("_id", invitation.Id)).SingleAsync();
 
         raw["status"].Should().Be(new BsonString("Pending"));
+    }
+
+    private MongoInvitationRepository CreateSut() => new(fixture.Context);
+
+    [Fact]
+    public async Task Insert_second_pending_for_same_email_throws_conflict()
+    {
+        await CreateSut().InsertAsync(NewInvitation(), CancellationToken.None);
+
+        var act = () => CreateSut().InsertAsync(NewInvitation(), CancellationToken.None);
+
+        await act.Should().ThrowAsync<ConflictException>();
+    }
+
+    [Fact]
+    public async Task RevokePending_revokes_only_pending_invitations_of_that_email()
+    {
+        var used = NewInvitation(status: InvitationStatus.Used);
+        var pending = NewInvitation();
+        var other = NewInvitation(email: "other@example.com");
+        await fixture.Context.Invitations.InsertManyAsync([used, pending, other]);
+
+        var revoked = await CreateSut().RevokePendingAsync("friend@example.com", Now, CancellationToken.None);
+
+        revoked.Should().Be(1);
+        var all = await CreateSut().ListAsync(CancellationToken.None);
+        all.Single(x => x.Id == pending.Id).Status.Should().Be(InvitationStatus.Revoked);
+        all.Single(x => x.Id == pending.Id).RevokedAt.Should().Be(Now);
+        all.Single(x => x.Id == used.Id).Status.Should().Be(InvitationStatus.Used);
+        all.Single(x => x.Id == other.Id).Status.Should().Be(InvitationStatus.Pending);
+    }
+
+    [Fact]
+    public async Task List_returns_newest_first()
+    {
+        var older = NewInvitation(email: "a@example.com", createdAt: Now.AddDays(-1));
+        var newer = NewInvitation(email: "b@example.com", createdAt: Now);
+        await fixture.Context.Invitations.InsertManyAsync([older, newer]);
+
+        var list = await CreateSut().ListAsync(CancellationToken.None);
+
+        list.Select(x => x.Id).Should().Equal(newer.Id, older.Id);
     }
 }

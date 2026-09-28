@@ -40,6 +40,7 @@ public static class DependencyInjection
         services.AddSingleton<MongoContext>();
 
         services.AddScoped<IUserRepository, MongoUserRepository>();
+        services.AddScoped<IInvitationRepository, MongoInvitationRepository>();
         services.AddScoped<ICategoryRepository, MongoCategoryRepository>();
         services.AddScoped<IItemRepository, MongoItemRepository>();
         services.AddScoped<IShareLinkRepository, MongoShareLinkRepository>();
