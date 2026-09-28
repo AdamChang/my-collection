@@ -1,11 +1,11 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth.service';
 
 @Component({
   selector: 'app-login',
-  imports: [FormsModule],
+  imports: [FormsModule, RouterLink],
   template: `
     <main class="login">
       <section class="login__terminal mc-panel">
@@ -13,20 +13,16 @@ import { AuthService } from '../../core/auth.service';
         <h1>MY//COLLECTION</h1>
         <p class="mc-muted">跨越實體與數位世界，建立你的私人收藏座標。</p>
         <form (ngSubmit)="submit()">
-          @if (mode() === 'register') {
-            <label>顯示名稱<input name="displayName" [(ngModel)]="displayName" required /></label>
-          }
           <label>Email<input name="email" type="email" [(ngModel)]="email" required /></label>
           <label>密碼<input name="password" type="password" [(ngModel)]="password" required minlength="8" /></label>
 
           <button type="submit" [disabled]="busy()">
-            {{ busy() ? '連線中…' : mode() === 'login' ? '登入系統' : '建立帳號' }}
+            {{ busy() ? '連線中…' : '登入系統' }}
           </button>
         </form>
 
-        <button type="button" class="login__toggle" (click)="toggle()">
-          {{ mode() === 'login' ? '還沒有帳號？註冊' : '已經有帳號？登入' }}
-        </button>
+        <!-- 註冊採邀請制（ADR-0013），被邀請者可能只拿到碼、沒拿到連結，所以保留入口 -->
+        <a class="login__link" routerLink="/register">有邀請碼？前往註冊</a>
       </section>
     </main>
   `,
@@ -37,8 +33,8 @@ import { AuthService } from '../../core/auth.service';
     .login p { margin: 0; }
     .login form { display: grid; gap: 0.75rem; }
     .login label { display: grid; gap: 0.35rem; color: var(--mc-text-muted); }
-    .login__toggle { display: inline-flex; align-items: center; justify-self: start;
-      min-block-size: 44px; border: 0; padding: 0; background: none; color: var(--mc-cyan); }
+    .login__link { display: inline-flex; align-items: center; justify-self: start;
+      min-block-size: 44px; color: var(--mc-cyan); }
   `,
 })
 export class LoginComponent {
@@ -46,26 +42,16 @@ export class LoginComponent {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
 
-  readonly mode = signal<'login' | 'register'>('login');
   readonly busy = signal(false);
 
   email = '';
   password = '';
-  displayName = '';
-
-  toggle(): void {
-    this.mode.update((m) => (m === 'login' ? 'register' : 'login'));
-  }
 
   async submit(): Promise<void> {
     this.busy.set(true);
 
     try {
-      if (this.mode() === 'login') {
-        await this.auth.login(this.email, this.password);
-      } else {
-        await this.auth.register(this.email, this.password, this.displayName);
-      }
+      await this.auth.login(this.email, this.password);
 
       const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl') ?? '/';
       await this.router.navigateByUrl(returnUrl);
