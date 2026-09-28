@@ -18,7 +18,7 @@ Single-context — `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agen
 
 > 由 `docs/architecture/`（2026-09-26，commit `61b1f5d`）萃取。有疑問時以該目錄和程式碼為準。
 
-個人收藏管理系統：以品類定義動態欄位、同步 Steam／PSN 並以 IGDB／Steam 商店補完 metadata、組成精選牆，並用匿名連結分享。目前只有擁有者一人使用，未來改為邀請制。
+個人收藏管理系統：以品類定義動態欄位、同步 Steam／PSN 並以 IGDB／Steam 商店補完 metadata、組成精選牆，並用匿名連結分享。採邀請制（ADR-0013），邀請只能由 `maintenance invite` 維運指令發出。
 
 ### 專案結構
 
@@ -90,7 +90,7 @@ docker compose up --build                          # 需要 .env（見 .env.exam
 
 - **C2**：品項更新沒有版本比對（`MongoItemRepository.UpdateAsync`、`item-detail.component.ts`），背景寫入的欄位會被舊表單蓋掉。`UpdateAsync(Item)` 刻意不寫 attributes 與 images：attributes 必須經由 `AttributeChanges` 逐鍵寫入（C1 已解決），images 只能經由 `AddImageAsync`／`RemoveImageAsync`／`SetPrimaryImageAsync` 原子寫入（M1 已解決），兩者都不可再整份 `$set`。
 - **S1／S2**：公開媒體每個請求都重撈整個分享範圍；公開頁會回傳整份 attributes。
-- **I1／I2／R4**：認證端點沒有速率限制、註冊開放、`/ingest/fetch` 是 SSRF 入口。
+- **I1／R4**：認證端點沒有速率限制、`/ingest/fetch` 是 SSRF 入口。註冊已改為邀請制（ADR-0013）：邀請碼的強度是 I1 解決前唯一的防暴力猜測防線，不可縮短；兌換邀請與建立帳號必須留在同一個 transaction（`MongoInvitationRedeemer`）。
 - **R1**：批次補完的候選清單沒有依 provider 過濾，可能永遠卡在同一批。
 - **W1**：session 沒有跨分頁同步，加上後端只有一組 refresh token，多分頁時會互相登出。
 - **Cloud Run 限制**：API 最多 1 個實例、請求逾時 300 秒、回應後 CPU 會被節流。不要把長時間工作或「回應之後的行程內背景工作」放進請求路徑（R2、S3、P13）。

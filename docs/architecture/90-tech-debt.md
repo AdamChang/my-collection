@@ -37,7 +37,7 @@
 這裡只排順序與理由，實作細節留給各項目。
 
 1. **先止血（資料遺失與隱私）**：~~C1~~、~~M1~~、~~M2~~（已解決），S2。這四項都會在日常使用中默默損壞或外洩資料，而且發現時已無法回復。
-2. **縮小攻擊面**：I2（改為邀請制）→ I1（速率限制）→ R4（限制 SSRF 目標）→ M5 與 M4（依 Q22 移除匯出與匯入）。I2 一關，R4、M3、S4 的曝險都會跟著下降。
+2. **縮小攻擊面**：~~I2（改為邀請制）~~（後端已解決）→ I1（速率限制）→ R4（限制 SSRF 目標）→ M5 與 M4（依 Q22 移除匯出與匯入）。I2 一關，R4、M3、S4 的曝險都會跟著下降。
 3. **公開路徑的效能**：S1。這條是匿名路徑，與使用者規模無關。
 4. **看得見失敗**：P2（先依 Q23 驗證）→ R3 → P13 統計。沒有這一步，其他問題的修正效果也無法觀察。
 5. **Session**：W1 → I5 → I4。W1 在多分頁使用下每天都會發生。
@@ -53,7 +53,7 @@
 | M2 | 【已解決 2026-09-27，`35434b1`、`6afd6de`；正式環境已部署並完成遷移，2026-09-28 驗收】輸出的 WebP 保留 EXIF／GPS（Q21 已實測證實），而原尺寸圖可匿名讀取 | `Infrastructure/Imaging/ImageSharpProcessor.cs` → `ProcessAsync`、`ResizeAsync`；`Application/Media/MediaQueries.cs` → `ContainsPath`（S8） | 照片本身洩漏拍攝地點，繞過 ADR-0008「存放位置永不公開」的設計意圖 | 已實作：`ImageSharpProcessor` 先 `AutoOrient` 再清除 EXIF、XMP、IPTC，保留 ICC（只描述色彩空間，清掉會讓廣色域照片色偏）；既有圖片以一次性維運指令 `maintenance strip-image-metadata` 重處理，驗收後已移除（需要時可從 `6afd6de` 取回）；S8 一併關閉 |
 | S2 | 公開頁回傳整份 attributes | `Infrastructure/Mongo/MongoPublicCatalogReader.cs` → `BaseProjection`；`Application/Sharing/*` → `GetPublicShareQueryHandler` | 自訂欄位（序號、備註、購買管道）與 provider 欄位全部匿名可讀，與 ADR-0008「新欄位不會自動外流」的精神不一致 | 依 Q15：在品類欄位定義上加入「公開」旗標（預設不公開），公開投影只輸出有這個旗標的鍵；補一份 ADR |
 | S1 | 每個公開圖片請求都重撈整個分享範圍，而且 `no-store` | `Application/Media/MediaQueries.cs` → `OpenPublicMediaQueryHandler.Handle`；`MongoPublicCatalogReader.ListItemsAsync`；`Api/Endpoints/MediaEndpoints.cs` | 一次頁面載入等於 1+N 次全量查詢；匿名訪客可以消耗 Atlas Free 配額，並塞滿唯一的實例 | 以「slug → owner + scope + 圖片路徑」做單筆存在查詢；允許短時間的 public cache；搭配 I1 的速率限制 |
-| I2 | 開放註冊，註冊後即可使用所有功能 | `Application/Auth/RegisterCommand.cs`；`features/auth/login.component.ts` | 任何人都能取得帳號，進而使用 SSRF（R4）、上傳（M3）、佔用儲存空間；與 Q12 的邀請制方向不符 | 關閉公開註冊，改為邀請碼或白名單 email；前端移除註冊模式 |
+| I2 | 【已解決（後端）2026-09-28，`d9b0a7a`；前端待前端計畫】開放註冊，註冊後即可使用所有功能 | `Application/Auth/RegisterCommand.cs`；`features/auth/login.component.ts` | 任何人都能取得帳號，進而使用 SSRF（R4）、上傳（M3）、佔用儲存空間；與 Q12 的邀請制方向不符 | 已實作（ADR-0013）：註冊必須帶綁定 email 的一次性邀請碼，兌換邀請與建立帳號在同一個 transaction；邀請只能由 `maintenance invite create\|revoke\|list` 發出。**未處理**：前端仍有註冊模式、未帶邀請碼（合併後前端註冊會收到 400），需與前端計畫一起部署 |
 | I1 | 認證端點沒有速率限制 | `Api/Endpoints/AuthEndpoints.cs`；全 repo 沒有使用 `AddRateLimiter` | 暴力破解密碼；PBKDF2 210k 次迭代造成 CPU 型 DoS，而且只有一個實例 | 對 `/auth/*` 與 `/public/*` 加上速率限制；分區鍵要考慮 P11（ForwardedHeaders 的信任設定） |
 | R1 | 批次補完可能永遠卡在同一批品項 | `MongoItemRepository.ListEnrichmentCandidatesAsync`；`Application/Ingestion/EnrichJobRunner.cs` → `ExternalIdFor` | 查無對應或 provider 不符的品項每次都會被選中，補完永遠推進不了（取決於資料組成） | 候選清單依 provider 可定址性過濾；查無對應時寫入「已嘗試」標記，或以時間戳做退避 |
 | W1 | 多分頁（與多裝置）會互相登出（Q26 升為高） | `core/auth.service.ts`（沒有監聽 `storage` 事件，`logout` 會 `removeItem`）；`Domain/Entities/User.cs`（單一 refresh token） | 使用者日常多開分頁時，每 30 分鐘左右就可能被登出，一個分頁還會清掉其他分頁的 session | 前端監聽 `storage` 事件同步 session，並跨分頁協調換發（例如 BroadcastChannel 或 Web Locks）；logout 前確認儲存的是否仍是自己的 token；後端配合 I5 |
