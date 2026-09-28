@@ -1,9 +1,10 @@
 import { TestBed } from '@angular/core/testing';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { Router, provideRouter } from '@angular/router';
 import { AuthService } from './auth.service';
-import { AuthResponse } from './models';
+import { SUPPRESS_ERROR_TOAST } from './error.interceptor';
+import { AuthResponse, RegisterRequest } from './models';
 
 const response: AuthResponse = {
   accessToken: 'access-1',
@@ -47,6 +48,28 @@ describe('AuthService', () => {
     expect(service.isAuthenticated()).toBe(true);
     expect(service.accessToken()).toBe('access-1');
     expect(service.user()?.displayName).toBe('Adam');
+  });
+
+  it('registers with the invitation code and leaves 403 to the caller', async () => {
+    const request: RegisterRequest = {
+      email: 'a@b.c',
+      password: 'P@ssw0rd!',
+      displayName: 'Adam',
+      invitationCode: 'abcde-fghjk-mnpqr-stvwx',
+    };
+
+    const promise = service.register(request);
+    const call = http.expectOne('/api/auth/register');
+
+    // 碼原樣送出：正規化是後端的責任
+    expect(call.request.body).toEqual(request);
+    const isSuppressed = call.request.context.get(SUPPRESS_ERROR_TOAST);
+    expect(isSuppressed(new HttpErrorResponse({ status: 403 }))).toBeTrue();
+    expect(isSuppressed(new HttpErrorResponse({ status: 400 }))).toBeFalse();
+
+    call.flush(response);
+    await promise;
+    expect(service.isAuthenticated()).toBeTrue();
   });
 
   it('restores the session from storage on construction', async () => {

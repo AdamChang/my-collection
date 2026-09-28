@@ -11,6 +11,14 @@ export interface AuthResponse {
   user: UserDto;
 }
 
+/** 對應後端 `RegisterCommand`。invitationCode 原樣送出，大小寫、連字號與易混淆字元由後端正規化。 */
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  displayName: string;
+  invitationCode: string;
+}
+
 export type FieldType = 'Text' | 'Number' | 'Date' | 'Select' | 'Bool' | 'Url';
 
 export type DisplayMode = 'List' | 'Hero' | 'Stats';
