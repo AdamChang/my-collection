@@ -10,7 +10,7 @@
 
 - 設計文件：`docs/superpowers/specs/2026-09-28-invitation-only-registration-design.md`
 - ADR：`docs/adr/0013-invitation-only-issued-by-maintenance-command.md`
-- 前端計畫：尚未撰寫（見「後續」）
+- 前端計畫：`docs/superpowers/plans/2026-09-28-invitation-only-registration-frontend.md`
 
 ## 執行前必讀
 
