@@ -21,7 +21,8 @@
 
 | Path | 元件（全部 `loadComponent` 懶載入） | Guard | 備註 |
 |---|---|---|---|
-| `/login` | `LoginComponent` | — | 登入與註冊切換；成功後 `navigateByUrl(returnUrl ?? '/')` |
+| `/login` | `LoginComponent` | — | 只有登入，另有指向 `/register` 的連結；成功後 `navigateByUrl(returnUrl ?? '/')` |
+| `/register` | `RegisterComponent` | — | 邀請制（ADR-0013）；`?code=` 帶入欄位初值；成功後固定導向 `/`，不讀 `returnUrl`；403 在頁內顯示通用訊息 |
 | `/p/:slug` | `PublicShareComponent` | — | `data.publicShell = true`，`App` 會隱藏導覽列 |
 | `/` | `ShowcaseComponent` | `authGuard` | `?view=` 以 `withComponentInputBinding()` 綁到 `input()` |
 | `/catalog` | `CatalogComponent` | `authGuard` | 篩選條件的真實來源是 URL（ADR-0010） |
@@ -38,6 +39,8 @@
 ### HTTP 攔截器鏈
 
 依序為 `loadingInterceptor` → `authInterceptor` → `errorInterceptor`。loading 放最外層，所以 401 → 換發 → 重送會算在同一次計數內。
+
+`errorInterceptor` 顯示 toast 前會先問請求上的 `SUPPRESS_ERROR_TOAST`：predicate 回 `true` 就不顯示，但錯誤照樣往外拋。目前只有 `AuthService.register` 用它把 403 交給註冊頁在頁內說明。
 證據：`app.config.ts` 註解
 
 ```mermaid

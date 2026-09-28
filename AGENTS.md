@@ -76,7 +76,7 @@ docker compose up --build                          # 需要 .env（見 .env.exam
 
 **前端**
 - API 呼叫只放在 `core/api/*.service.ts`，URL 以 `API_BASE` 組成；型別維護在 `core/models.ts`，與後端 record 手動同步。
-- 錯誤由 `errorInterceptor` 顯示 toast；元件的 error 回呼使用 `IGNORE_HANDLED_BY_INTERCEPTOR`。
+- 錯誤由 `errorInterceptor` 顯示 toast；元件的 error 回呼使用 `IGNORE_HANDLED_BY_INTERCEPTOR`。頁面要自行說明某個狀態碼時，由發請求的 service 在 `HttpContext` 設定 `SUPPRESS_ERROR_TOAST`（predicate，只接手需要的狀態碼），不要在元件裡另外顯示卻沒有關掉 toast。目前只有註冊的 403 這樣做。
 - 私有圖片（`/media/...`）必須透過 `AuthenticatedMediaDirective` 載入，不可用 `<img src>` 或 CSS `url()` 直接引用。
 - 篩選與頁籤狀態以 URL 為真實來源（ADR-0010、ADR-0009）；互斥的寫入動作用 `busy` computed 鎖住。
 

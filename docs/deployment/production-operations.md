@@ -169,6 +169,31 @@ Budget（`infra/terraform/bootstrap/budget.tf`）：
 
 **收到備份失敗告警時**：檢查 execution 與 Cloud Logging，過程中不要複製環境變數、設定檔、Mongo URI 或憑證。修正根因後手動執行一次備份，確認產生新的非空 archive 再結案。若在 Cloud Logging 中發現遮蔽修正之前的失敗紀錄含有完整 URI，依 runbook〈Credential exposure in tool output〉輪替 Atlas 密碼。
 
+## 發邀請
+
+註冊採邀請制（ADR-0013），邀請只能在維運者本機用 `maintenance invite` 發出，Web 與 API 都沒有入口。
+
+連線資訊只放在**當前 PowerShell session 的環境變數**，不要寫進 user secrets：user secrets 是本機開發共用的，寫進去之後下一次 `dotnet run` 就會連到正式環境。環境變數會覆蓋 user secrets，關掉視窗就消失。
+
+```powershell
+$env:Mongo__ConnectionString = gcloud secrets versions access latest --secret=mongo-connection-string --project=mycollection-504914
+$env:Mongo__Database = 'mycollection'
+# 註冊連結的 origin，與 Terraform 的 web_public_url（Cloud Run 的 Cors__AllowedOrigins__0）相同
+$env:Cors__AllowedOrigins__0 = 'https://mycollection-web-cswrakuenq-de.a.run.app'
+
+dotnet run --project src/MyCollection.Api -- maintenance invite create --email <對方的 email> [--days <n>]
+dotnet run --project src/MyCollection.Api -- maintenance invite list
+dotnet run --project src/MyCollection.Api -- maintenance invite revoke --email <email>
+
+Remove-Item Env:Mongo__ConnectionString, Env:Mongo__Database, Env:Cors__AllowedOrigins__0
+```
+
+- 不要 `echo` 或把 `$env:Mongo__ConnectionString` 貼進任何工具輸出；外洩時依 runbook〈Credential exposure in tool output〉輪替。
+- `create` 輸出碼與連結，把**連結**交給對方；對方註冊時的 email 必須與 `--email` 相同。對同一個 email 再發一次，會自動撤銷舊的未使用邀請。
+- 碼存明文，`list` 可以重看，不必因為碼遺失而撤銷重發。
+- exit code：`0` 成功；`1` 輸入驗證失敗或業務錯誤（例如 email 已註冊），訊息在 stderr；`2` 參數無法解析，會印出用法。
+- 指令啟動時會執行 `EnsureIndexesAsync`（冪等），不會改動資料。
+
 ## 驗收實證（2026-08-27）
 
 | 項目 | 結果 |
