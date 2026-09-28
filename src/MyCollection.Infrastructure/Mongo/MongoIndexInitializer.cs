@@ -96,5 +96,24 @@ public static class MongoIndexInitializer
                 Builders<SyncJob>.IndexKeys.Ascending(x => x.OwnerId).Descending(x => x.StartedAt),
                 new CreateIndexOptions { Name = "ix_syncJobs_owner_startedAt" }),
             cancellationToken: ct);
+
+        await context.Invitations.Indexes.CreateManyAsync(
+            [
+                new CreateIndexModel<Invitation>(
+                    Builders<Invitation>.IndexKeys.Ascending(x => x.Code),
+                    new CreateIndexOptions { Name = "ux_invitations_code", Unique = true }),
+
+                // 「同一 email 同時只有一份有效邀請」的資料庫端保證：
+                // 撤銷舊邀請與插入新邀請是兩個動作，兩個維運指令同時執行時，由這個索引擋下第二個
+                new CreateIndexModel<Invitation>(
+                    Builders<Invitation>.IndexKeys.Ascending(x => x.Email),
+                    new CreateIndexOptions<Invitation>
+                    {
+                        Name = "ux_invitations_email_pending",
+                        Unique = true,
+                        PartialFilterExpression = Builders<Invitation>.Filter.Eq(x => x.Status, InvitationStatus.Pending)
+                    })
+            ],
+            cancellationToken: ct);
     }
 }
