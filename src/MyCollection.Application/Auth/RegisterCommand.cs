@@ -6,7 +6,8 @@ using MyCollection.Domain.Entities;
 
 namespace MyCollection.Application.Auth;
 
-public record RegisterCommand(string Email, string Password, string DisplayName) : IRequest<AuthResponse>;
+public record RegisterCommand(string Email, string Password, string DisplayName, string InvitationCode)
+    : IRequest<AuthResponse>;
 
 public sealed class RegisterCommandValidator : AbstractValidator<RegisterCommand>
 {
@@ -15,11 +16,12 @@ public sealed class RegisterCommandValidator : AbstractValidator<RegisterCommand
         RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(256);
         RuleFor(x => x.Password).NotEmpty().MinimumLength(8).MaximumLength(128);
         RuleFor(x => x.DisplayName).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.InvitationCode).NotEmpty().MaximumLength(64);
     }
 }
 
 public sealed class RegisterCommandHandler(
-    IUserRepository users,
+    IInvitationRedeemer invitations,
     IPasswordHasher passwordHasher,
     ITokenService tokenService,
     TimeProvider timeProvider) : IRequestHandler<RegisterCommand, AuthResponse>
@@ -40,8 +42,10 @@ public sealed class RegisterCommandHandler(
             CreatedAt = now
         };
 
-        // email 重複時 Repository 擲 ConflictException → 409
-        await users.InsertAsync(user, cancellationToken);
+        // 邀請無效 → ForbiddenException（403，訊息不分原因）；email 重複 → ConflictException（409）。
+        // 兩者都會讓整筆 transaction 回滾（ADR-0013 §二）
+        await invitations.RedeemAsync(
+            Auth.InvitationCode.Normalise(request.InvitationCode), user, now, cancellationToken);
 
         return new AuthResponse(
             tokenService.CreateAccessToken(user),
