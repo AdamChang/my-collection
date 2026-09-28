@@ -52,6 +52,7 @@ public static class DependencyInjection
         services.AddSingleton<IAttributeValidator, AttributeValidator>();
         services.AddSingleton<IProtectedFieldKeys, ProviderFieldKeyCatalog>();
         services.AddScoped<ICategoryFieldRenamer, MongoCategoryFieldRenamer>();
+        services.AddScoped<IInvitationRedeemer, MongoInvitationRedeemer>();
         var storage = configuration.GetSection(StorageOptions.SectionName).Get<StorageOptions>() ?? new StorageOptions();
         switch (storage.Provider.ToUpperInvariant())
         {
