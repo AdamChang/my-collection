@@ -867,3 +867,14 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 | `16-module-web.md` 路由表與 interceptor 段落、`90-tech-debt.md` 第 40、56 行、`AGENTS.md` 第 79 行 | ✅ | `grep` | — |
 | 測試碼的競態 | ✅ | `failWith` 在 `flush` 前已用 `firstValueFrom(...).then(ok, err)` 訂閱並掛好拒絕處理；元件測試直接 `await submit()`，不依賴表單事件時序 | — |
 | 空轉風險（vacuous pass） | ✅ | 「清掉訊息」「其他錯誤不顯示」兩條在錯誤實作下會失敗；`errorInterceptor` 第一條是刻意的特性測試，已在 Task 1 說明 | — |
+
+## 執行紀錄（2026-09-28）
+
+分支 `feat/invitation-registration`，Task 0～5 共 6 顆 commit（`b58e43c`～`e89154d`）。最終結果：前端 292 SUCCESS，`ng build` 0 warnings，後端 670 passed。各 Task 的測試數字都和預估相符。已提交的程式碼才是權威版本，上面的程式片段只是歷史紀錄。與計畫不同的地方有：
+
+- **Task 1**：計畫片段 `new HttpContextToken<(error) => boolean>(() => false)` 編譯失敗（TS2322）。原因是 `HttpContextToken` 的建構參數是「產生預設值的 factory」（`defaultValue: () => T`），而這裡的預設值本身就是一個 predicate，所以要寫兩層箭頭 `() => () => false`，並加上註解說明。事實查核時確認了這個型別存在，卻沒有核對建構參數的語意，這是查核的盲點：查核 API 時要看簽章，不能只確認名稱存在。
+- **Task 4**：Step 2 除了預期的 TS2307（找不到 `./register.component`），還連帶出現 7 個 TS18046（`componentInstance` 是 `unknown`），兩者同一個根因。另外補做兩個變異測試：「重新送出時不清除訊息」和「任何錯誤都顯示頁內訊息」，各自讓 1 條測試失敗，確認這兩條測試不是空轉。
+- **Task 5**：
+  - exit code 的描述改成「`1` 輸入驗證失敗或業務錯誤」。原因是 `InviteMaintenance` 把 `ValidationException` 也歸在 1，計畫原本只寫了業務錯誤。
+  - origin 的註解補上「與 Terraform 的 `web_public_url` 相同」。`web_public_url` 的實際值放在 tfvars，不在版控裡；文件用的是 `production-operations.md`〈環境座標〉記載的 Web URL。
+  - `90-tech-debt.md` I2 的前端 SHA 填入 `bade0e6`。
