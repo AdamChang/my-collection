@@ -8,14 +8,10 @@ using MyCollection.Api.Endpoints;
 using MyCollection.Application;
 using MyCollection.Application.Common;
 using MyCollection.Infrastructure;
-using MyCollection.Infrastructure.Imaging;
 using MyCollection.Infrastructure.Mongo;
 using MyCollection.Infrastructure.Security;
 
-// 一次性維運指令（M2）：驗收後連同 ImageMetadataMigration 一起移除。
-// 維運參數不交給設定系統，避免 "--apply" 被當成缺值的設定鍵。
-var isMaintenance = args is ["maintenance", ..];
-var builder = WebApplication.CreateBuilder(isMaintenance ? [] : args);
+var builder = WebApplication.CreateBuilder(args);
 
 // 必須早於任何 BSON 序列化：BsonClassMap 一旦建立就永久快取，
 // 若在慣例註冊前先序列化過，整個行程都會固定用 PascalCase 欄位名，
@@ -100,22 +96,6 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(optio
 });
 
 var app = builder.Build();
-
-if (isMaintenance)
-{
-    if (args is not ["maintenance", "strip-image-metadata", ..])
-    {
-        Console.Error.WriteLine("Usage: maintenance strip-image-metadata [--apply]");
-        Environment.ExitCode = 2;
-        return;
-    }
-
-    var report = await app.Services.GetRequiredService<ImageMetadataMigration>()
-        .RunAsync(apply: args.Contains("--apply"), CancellationToken.None);
-    Console.WriteLine(report);
-    Environment.ExitCode = report.HasProblems ? 1 : 0;
-    return;
-}
 
 app.UseForwardedHeaders();
 app.UseExceptionHandler();
