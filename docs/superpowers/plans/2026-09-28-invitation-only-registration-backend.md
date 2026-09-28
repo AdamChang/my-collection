@@ -1544,3 +1544,12 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 - 正式環境的第一份邀請（部署之後由維運者執行）。
 - I1 速率限制。
 - `docs/deployment/production-operations.md` 補上「如何發邀請」的維運步驟，可以和前端計畫一起做。
+
+## 執行紀錄（2026-09-28）
+
+分支 `feat/invitation-registration`，Task 0～8 共 9 顆 commit，最終 670 passed、build 0 warnings，各 Task 的測試數字都與預估相符。已提交的程式碼才是權威版本，上面的程式片段只是歷史紀錄。與計畫不同的地方有：
+
+- **Task 6**：`Handler_redeems_normalised_code_with_hashed_user` 保留了原本測試對 `AccessToken`、`RefreshToken`、密碼不含明文的斷言，比計畫的片段多幾條。原因是這些斷言原本就在涵蓋範圍內，改寫測試時不該讓涵蓋範圍縮小。
+- **Task 7**：`--days` 改成只呼叫一次 `int.TryParse`，結果直接寫進 `days`，不再先 TryParse 再 Parse。行為相同，但少一次重複解析。
+- **Task 8**：I2 標為「已解決（後端）」而不是「已解決」。原因是前端仍有註冊模式，要等前端計畫完成，I2 才算完全關閉。
+- **變異測試**：Task 5 對 redeemer 做了兩個變異。「拿掉 email 條件」被 `EmailMismatch` 擋下。「插入 User 不帶 session」存活，因為插入是 transaction 的最後一步，後面沒有會失敗的步驟，在目前的程式碼下行為等價，只有 commit 階段本身失敗時才會出現差異，而這個情境在 Testcontainers 上無法穩定重現。如果之後在插入 User 後面加入其他寫入，必須補一個會在插入之後失敗的測試。
