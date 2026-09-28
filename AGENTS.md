@@ -81,6 +81,7 @@ docker compose up --build                          # 需要 .env（見 .env.exam
 - 篩選與頁籤狀態以 URL 為真實來源（ADR-0010、ADR-0009）；互斥的寫入動作用 `busy` computed 鎖住。
 
 **一般**
+- 與使用者對話的所有輸出（回覆、進度說明、摘要、提問）一律以繁體中文（zh-TW）為主；技術名詞、識別字、指令、路徑與 log 原文保留英文。雲端（Claude Code on the web）session 同樣適用。
 - 註解、文件、commit message 使用繁體中文；識別字維持英文。註解要寫「為什麼」。
 - 機密不進版控：本機用 user secrets 或 `.env`，正式環境用 Secret Manager。Terraform 不放個人值。
 
