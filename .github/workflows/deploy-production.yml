@@ -35,9 +35,6 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Test backend
-        env:
-          # ImageSharp 的 Release 編譯會檢查授權；MSBuild 會把環境變數當成 property 讀取
-          SixLaborsLicenseKey: ${{ secrets.SIXLABORS_LICENSE_KEY }}
         run: dotnet test MyCollection.slnx --configuration Release
 
       - uses: actions/setup-node@v4
@@ -68,9 +65,8 @@ jobs:
         env:
           API_IMAGE: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/api:${{ github.sha }}
           WEB_IMAGE: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/web:${{ github.sha }}
-          SIXLABORS_LICENSE_KEY: ${{ secrets.SIXLABORS_LICENSE_KEY }}
         run: |
-          docker build --file src/MyCollection.Api/Dockerfile --secret id=sixlabors_license,env=SIXLABORS_LICENSE_KEY --tag "$API_IMAGE" .
+          docker build --file src/MyCollection.Api/Dockerfile --tag "$API_IMAGE" .
           docker build --file web/Dockerfile --tag "$WEB_IMAGE" .
           docker push "$API_IMAGE"
           docker push "$WEB_IMAGE"

@@ -77,7 +77,7 @@ GitHub 以 Workload Identity Federation 取得憑證，**無 JSON key**：
 
 canary 判定失敗的條件是新 revision 出現 `severity>=ERROR` 或 `httpRequest.status>=500`。
 
-`Deploy production` 需要 `production` environment 的 GitHub secret `SIXLABORS_LICENSE_KEY`：ImageSharp 3.2 起，Release 編譯需要 Six Labors license key，`dotnet test` 與 API image 建置（以 BuildKit secret mount 傳入，不會進入 image）都會用到。缺少這個 secret 時，部署會在 Test backend 步驟失敗。key 如果有效期限到期，也會在同一步驟失敗。
+ImageSharp 3.2 起，Release 編譯需要 Six Labors 授權檔。repo 根目錄的 `sixlabors.lic` 是 assembly-scoped Community license，只涵蓋申請時登記的 assembly 名稱，並由 `Directory.Build.props` 的 `SixLaborsLicenseFile` 指定路徑。**有效期限到 2028-01-31**，到期後 `Deploy production` 會在 Test backend 步驟失敗，需要重新申請並替換這個檔案。改名或新增直接引用 ImageSharp 的專案時，也要重新申請。
 
 ### 授權分支綁在兩處
 

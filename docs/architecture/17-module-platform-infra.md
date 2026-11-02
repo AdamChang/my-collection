@@ -163,7 +163,7 @@ sequenceDiagram
 證據：`.github/scripts/rollout-cloud-run.sh`、`.github/scripts/smoke-api.sh`、`.github/workflows/*.yml`
 
 - `deploy-production.yml` **依序部署 API 與 Web**（API 觀察 15 分鐘，之後才開始 Web）。`deploy-web-production.yml` 只部署 Web（觀察 10 分鐘），而且**不執行前端測試**。兩個 workflow 共用同一個 concurrency group，`cancel-in-progress: false`。
-- 部署 identity 是 WIF 換來的短期憑證，repo 內沒有長期金鑰。smoke 測試帳號的密碼來自 `secrets.PRODUCTION_SMOKE_PASSWORD`；ImageSharp 的 Release 編譯授權來自 `secrets.SIXLABORS_LICENSE_KEY`。
+- 部署 identity 是 WIF 換來的短期憑證，repo 內沒有長期金鑰。smoke 測試帳號的密碼來自 `secrets.PRODUCTION_SMOKE_PASSWORD`。
 - Terraform 不負責流量：`image` 與 `traffic` 都列在 `ignore_changes`。`variables.tf` 中的 image digest 是刻意留下的失效佔位值。
   證據：`runtime/README.md`；`docs/deployment/production-operations.md`「terraform apply 的注意事項」
 
