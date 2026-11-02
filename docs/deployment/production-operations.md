@@ -61,7 +61,20 @@ health endpoint 拆兩支：`/health/live`（不查外部依賴）與 `/health/s
 
 #### 輪替 `api-config` 的一個欄位
 
-三種金鑰共用同一個 version，所以輪替任何一種都要「讀出 JSON → 改一個欄位 → 新增 version」。值不落地成檔案、不進 shell history，需要 `jq`，請在 Cloud Shell 執行。以 IGDB secret 為例：
+三種金鑰共用同一個 version，所以輪替任何一種都要「讀出 JSON → 改一個欄位 → 新增 version」。值不落地成檔案、不進 shell history。以 IGDB secret 為例。
+
+本機（PowerShell，建議 pwsh 7）：先執行 [runtime README](../../infra/terraform/runtime/README.md)〈建立 api-config〉開頭的 `$P`、`$OutputEncoding` 與 `Get-SecretValue` 定義，再執行：
+
+```powershell
+$cfg = Get-SecretValue 'api-config' | ConvertFrom-Json
+# 輸入新值，不回顯；history 只記錄指令文字
+$cfg.Igdb.ClientSecret = Read-Host -AsSecureString '新的 IGDB client secret' | ConvertFrom-SecureString -AsPlainText
+$cfg | ConvertTo-Json -Compress -Depth 5 |
+  gcloud secrets versions add api-config --project $P --data-file=-
+Remove-Variable cfg
+```
+
+Cloud Shell（bash）：
 
 ```bash
 P=mycollection-504914
