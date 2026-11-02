@@ -123,7 +123,7 @@ cd web && npm install && npm start           # http://localhost:4200
 
 前端固定呼叫 `/api/...`，開發時由 `web/proxy.conf.json` 轉發到 `localhost:5080` 並剝掉 `/api` 前綴，部署時由 nginx 做同一件事。**所以後端路由本身沒有 `/api` 前綴**（是 `/items` 而非 `/api/items`）。
 
-開發用金鑰在 `appsettings.Development.json`，明確標示為 dev-only。`appsettings.json` 的金鑰欄位一律留空，正式環境用 `Jwt__Key`、`SecretProtection__Key` 環境變數覆寫。
+開發用金鑰在 `appsettings.Development.json`，明確標示為 dev-only。`appsettings.json` 的金鑰欄位一律留空，正式環境由 Secret Manager `api-config` 的 JSON 掛載成檔案，以 `SECRETS_CONFIG_FILE` 指向（ADR-0013）；docker compose 仍用 `Jwt__Key`、`SecretProtection__Key` 環境變數覆寫。
 
 API 文件在 <http://localhost:5080/openapi/v1.json>（僅 Development）。
 

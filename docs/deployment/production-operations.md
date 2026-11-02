@@ -48,7 +48,40 @@ health endpoint 拆兩支：`/health/live`（不查外部依賴）與 `/health/s
 
 ### Secret Manager
 
-只列名稱，內容不在本文件範圍：`mongo-connection-string`、`jwt-signing-key`、`secret-protection-key`、`igdb-client-secret`。
+只列名稱，內容不在本文件範圍：
+
+| Secret | 內容 | 讀取者 |
+|---|---|---|
+| `mongo-connection-string` | Atlas 連線字串 | API、備份 Job |
+| `api-config` | JSON：`Jwt.Key`、`SecretProtection.Key`、`Igdb.ClientId`、`Igdb.ClientSecret` | API（volume 掛載 `/secrets/api/config.json`） |
+
+`jwt-signing-key`、`secret-protection-key`、`igdb-client-secret` 已合併進 `api-config`（[ADR-0013](../adr/0013-api-secrets-merged-into-single-config-secret.md)），目前只保留給 canary 回滾使用，下一個 PR 移除後就會刪除。
+
+**每個 secret 只保留 1 個非 DESTROYED 的 version。** 免費額度是整個 billing account 共用 6 個 active version，舊 version 留著（包括 DISABLED）也會佔用額度。
+
+#### 輪替 `api-config` 的一個欄位
+
+三種金鑰共用同一個 version，所以輪替任何一種都要「讀出 JSON → 改一個欄位 → 新增 version」。值不落地成檔案、不進 shell history，需要 `jq`，請在 Cloud Shell 執行。以 IGDB secret 為例：
+
+```bash
+P=mycollection-504914
+read -rs NEW_VALUE   # 輸入新值，不回顯、不進 history
+gcloud secrets versions access latest --secret=api-config --project "$P" |
+  jq -c --arg v "$NEW_VALUE" '.Igdb.ClientSecret = $v' |
+  gcloud secrets versions add api-config --project "$P" --data-file=-
+unset NEW_VALUE
+```
+
+1. 依上面的方式新增 version。改的是 `Jwt.Key` 會讓所有人重新登入；**`SecretProtection.Key` 不可單獨輪替**，換掉會讓所有已綁定的外部帳號憑證無法解密。
+2. 程式只在啟動時讀取檔案（`reloadOnChange: false`），所以要部署新 revision（走 workflow），並確認登入正常、`GET /ingest/providers` 列出 `igdb`。
+3. 確認無誤後銷毀舊版：
+
+```bash
+gcloud secrets versions list api-config --project "$P"
+gcloud secrets versions destroy <舊版號> --secret=api-config --project "$P"
+```
+
+所有 revision 都引用 `latest`，所以 canary 回滾到舊 revision 時讀到的同樣是新值。舊 version 只是在確認之前保留，作為改錯欄位時手動還原的來源。
 
 ### 身分
 

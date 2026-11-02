@@ -13,6 +13,9 @@ using MyCollection.Infrastructure.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// 必須早於 AddInfrastructure 與 Jwt 讀取：兩者都在註冊階段就讀取機密。
+builder.Configuration.AddSecretsFile(builder.Configuration[SecretsFileConfiguration.PathKey]);
+
 // 必須早於任何 BSON 序列化：BsonClassMap 一旦建立就永久快取，
 // 若在慣例註冊前先序列化過，整個行程都會固定用 PascalCase 欄位名，
 // 而 Repository 產生的 filter 是 camelCase —— 查不到資料，授權模型也跟著失效。
