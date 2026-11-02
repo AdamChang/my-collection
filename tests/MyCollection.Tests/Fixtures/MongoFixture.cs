@@ -23,7 +23,20 @@ public sealed class MongoFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        await _container.StartAsync();
+        try
+        {
+            await _container.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            // 啟動失敗時 xUnit 仍會呼叫 DisposeAsync 刪除容器，事後無法再看 docker logs；
+            // 只能在這裡把 mongod 留下的輸出附在例外訊息上，CI 的測試結果才看得到原因。
+            var (stdout, stderr) = await _container.GetLogsAsync(timestampsEnabled: false);
+            var exitCode = await _container.GetExitCodeAsync();
+            throw new InvalidOperationException(
+                $"Mongo 測試容器啟動失敗（exit code {exitCode}）。\n--- stdout ---\n{Tail(stdout)}\n--- stderr ---\n{Tail(stderr)}",
+                ex);
+        }
 
         Context = new MongoContext(Options.Create(new MongoOptions
         {
@@ -46,6 +59,9 @@ public sealed class MongoFixture : IAsyncLifetime
     }
 
     public Task DisposeAsync() => _container.DisposeAsync().AsTask();
+
+    // mongod 的結構化 log 很長，結束原因在最後幾行；同一則訊息會出現在每個失敗的測試上，所以只留尾端。
+    private static string Tail(string log) => log.Length <= 4000 ? log : log[^4000..];
 }
 
 [CollectionDefinition(MongoCollection.Name)]
