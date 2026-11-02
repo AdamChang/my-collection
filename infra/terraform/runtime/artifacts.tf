@@ -18,11 +18,11 @@ resource "google_artifact_registry_repository" "app" {
   }
 
   cleanup_policies {
-    id     = "keep-20-most-recent"
+    id     = "keep-5-most-recent"
     action = "KEEP"
 
     most_recent_versions {
-      keep_count = 20
+      keep_count = 5
     }
   }
 
