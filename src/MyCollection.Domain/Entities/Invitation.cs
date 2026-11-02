@@ -13,7 +13,7 @@ public sealed class Invitation
     /// <summary>已正規化（Trim、小寫）。</summary>
     public required string Email { get; set; }
 
-    /// <summary>正規化後的邀請碼，明文存放（ADR-0013 §三）。</summary>
+    /// <summary>正規化後的邀請碼，明文存放（ADR-0014 §三）。</summary>
     public required string Code { get; set; }
 
     public InvitationStatus Status { get; set; }

@@ -21,7 +21,7 @@ import { AuthService } from '../../core/auth.service';
           </button>
         </form>
 
-        <!-- 註冊採邀請制（ADR-0013），被邀請者可能只拿到碼、沒拿到連結，所以保留入口 -->
+        <!-- 註冊採邀請制（ADR-0014），被邀請者可能只拿到碼、沒拿到連結，所以保留入口 -->
         <a class="login__link" routerLink="/register">有邀請碼？前往註冊</a>
       </section>
     </main>

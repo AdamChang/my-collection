@@ -53,7 +53,7 @@ export class RegisterComponent {
   private readonly router = inject(Router);
 
   readonly busy = signal(false);
-  /** 後端對所有無效原因回同一個 403（ADR-0013），這裡也只給通用說明。 */
+  /** 後端對所有無效原因回同一個 403（ADR-0014），這裡也只給通用說明。 */
   readonly rejected = signal(false);
 
   /** 維運指令產生的連結會帶 ?code=。只當初值，之後以欄位為準（見設計文件決策二）。 */

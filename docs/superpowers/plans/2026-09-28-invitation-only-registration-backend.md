@@ -2,14 +2,14 @@
 
 > For agentic workers: REQUIRED SUB-SKILL — 執行時使用 superpowers:test-driven-development + superpowers:subagent-driven-development。每個 Task 嚴格照 Step 1→6 執行，Step 2 不可省。
 
-**Goal**：`/auth/register` 必須帶有效的邀請碼才能成功；邀請只能用 `maintenance invite create|revoke|list` 發出（ADR-0013、tech debt I2）。
+**Goal**：`/auth/register` 必須帶有效的邀請碼才能成功；邀請只能用 `maintenance invite create|revoke|list` 發出（ADR-0014、tech debt I2）。
 
 **Architecture**：新增 `Invitation` entity 和 `invitations` collection。維運指令經 MediatR 呼叫 `Create/Revoke/ListInvitation` handler，再交給 `IInvitationRepository`。註冊時由 `IInvitationRedeemer`（Mongo 實作）在同一個 transaction 裡消耗邀請並插入 User，沿用 `MongoCategoryFieldRenamer` 的模式。
 
 **Tech Stack**：.NET 10、MediatR、FluentValidation、MongoDB.Driver、xUnit + FluentAssertions + Moq + Testcontainers（replica set）。
 
 - 設計文件：`docs/superpowers/specs/2026-09-28-invitation-only-registration-design.md`
-- ADR：`docs/adr/0013-invitation-only-issued-by-maintenance-command.md`
+- ADR：`docs/adr/0014-invitation-only-issued-by-maintenance-command.md`
 - 前端計畫：`docs/superpowers/plans/2026-09-28-invitation-only-registration-frontend.md`
 
 ## 執行前必讀
@@ -78,7 +78,7 @@
 | `tests/MyCollection.Tests/Fixtures/AuthenticatedClient.cs` | 先發邀請再註冊；新增 `CreateInvitationAsync` |
 | `tests/MyCollection.Tests/Unit/RegisterCommandTests.cs` | 改為 mock `IInvitationRedeemer` |
 | `tests/MyCollection.Tests/Integration/AuthEndpointsTests.cs` | 註冊一律帶邀請碼；新增 400／403 案例 |
-| `docs/architecture/90-tech-debt.md`、`docs/architecture/01-overview.md`、`AGENTS.md` | 標記 I2 已解決、加入 ADR-0013 索引、高風險區域移除 I2 |
+| `docs/architecture/90-tech-debt.md`、`docs/architecture/01-overview.md`、`AGENTS.md` | 標記 I2 已解決、加入 ADR-0014 索引、高風險區域移除 I2 |
 
 ### Task 相依順序
 
@@ -109,14 +109,14 @@ Checkpoint C：Task 8 之後（完成）
 **Files:** 無程式碼
 
 - [ ] `git switch -c feat/invitation-registration`
-- [ ] `git add CONTEXT.md docs/adr/0013-invitation-only-issued-by-maintenance-command.md docs/superpowers/specs/2026-09-28-invitation-only-registration-design.md docs/superpowers/plans/2026-09-28-invitation-only-registration-backend.md`
+- [ ] `git add CONTEXT.md docs/adr/0014-invitation-only-issued-by-maintenance-command.md docs/superpowers/specs/2026-09-28-invitation-only-registration-design.md docs/superpowers/plans/2026-09-28-invitation-only-registration-backend.md`
 - [ ] Commit：
 
 ```
-docs(auth): 邀請制註冊的領域詞彙、ADR-0013 與後端設計、計畫
+docs(auth): 邀請制註冊的領域詞彙、ADR-0014 與後端設計、計畫
 
 - CONTEXT.md 新增「帳號」：邀請、邀請碼
-- ADR-0013：只由維運指令發出、綁定 email、兌換與建帳號同一 transaction、邀請碼存明文
+- ADR-0014：只由維運指令發出、綁定 email、兌換與建帳號同一 transaction、邀請碼存明文
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ```
@@ -193,7 +193,7 @@ namespace MyCollection.Application.Auth;
 
 /// <summary>
 /// 邀請碼：Crockford base32、20 字元（100 bit）。
-/// I1（認證端點沒有速率限制）解決之前，碼的強度是防暴力猜測的唯一防線，不可縮短（ADR-0013 §三）。
+/// I1（認證端點沒有速率限制）解決之前，碼的強度是防暴力猜測的唯一防線，不可縮短（ADR-0014 §三）。
 /// </summary>
 public static class InvitationCode
 {
@@ -360,7 +360,7 @@ public sealed class Invitation
     /// <summary>已正規化（Trim、小寫）。</summary>
     public required string Email { get; set; }
 
-    /// <summary>正規化後的邀請碼，明文存放（ADR-0013 §三）。</summary>
+    /// <summary>正規化後的邀請碼，明文存放（ADR-0014 §三）。</summary>
     public required string Code { get; set; }
 
     public InvitationStatus Status { get; set; }
@@ -968,7 +968,7 @@ using MyCollection.Domain.Entities;
 namespace MyCollection.Application.Auth;
 
 /// <summary>
-/// 消耗邀請並建立帳號，兩者同時成功或同時失敗（ADR-0013 §二）。
+/// 消耗邀請並建立帳號，兩者同時成功或同時失敗（ADR-0014 §二）。
 /// 邀請無效（不存在、過期、已使用、已撤銷、email 不符）一律擲出同一訊息的
 /// <see cref="Domain.Exceptions.ForbiddenException"/>；email 已被註冊擲出 <see cref="Domain.Exceptions.ConflictException"/>。
 /// </summary>
@@ -1239,7 +1239,7 @@ public static class AuthenticatedClient
 -        // email 重複時 Repository 擲 ConflictException → 409
 -        await users.InsertAsync(user, cancellationToken);
 +        // 邀請無效 → ForbiddenException（403，訊息不分原因）；email 重複 → ConflictException（409）。
-+        // 兩者都會讓整筆 transaction 回滾（ADR-0013 §二）
++        // 兩者都會讓整筆 transaction 回滾（ADR-0014 §二）
 +        await invitations.RedeemAsync(
 +            Auth.InvitationCode.Normalise(request.InvitationCode), user, now, cancellationToken);
 ```
@@ -1378,7 +1378,7 @@ using MyCollection.Domain.Exceptions;
 namespace MyCollection.Api.Maintenance;
 
 /// <summary>
-/// 邀請只能由維運指令發出，系統內沒有管理者角色（ADR-0013 §一）。
+/// 邀請只能由維運指令發出，系統內沒有管理者角色（ADR-0014 §一）。
 /// 這裡是 CLI 的最外層，等同 HTTP 的 GlobalExceptionHandler，所以在這裡把預期中的例外轉成 exit code。
 /// </summary>
 public static class InviteMaintenance
@@ -1456,7 +1456,7 @@ public static class InviteMaintenance
 
 ```diff
 -var builder = WebApplication.CreateBuilder(args);
-+// 維運指令（ADR-0013：邀請只能由這裡發出）。
++// 維運指令（ADR-0014：邀請只能由這裡發出）。
 +// 維運參數不交給設定系統，避免 "--email" 被當成設定鍵。
 +var isMaintenance = args is ["maintenance", ..];
 +var builder = WebApplication.CreateBuilder(isMaintenance ? [] : args);
@@ -1508,13 +1508,13 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
 **Files:** Modify: `docs/architecture/90-tech-debt.md`、`docs/architecture/01-overview.md`、`AGENTS.md`
 
-- [ ] `90-tech-debt.md`：I2 那一列前面加上「【已解決 2026-09-28，`<Task 6 SHA>`】」，建議方向欄寫實作摘要，並指向 ADR-0013。「建議處理順序」第 2 點把 I2 加上刪除線。
-- [ ] `01-overview.md`：在 ADR 索引表加入 0013 一列，並把「共 12 份」改成「共 13 份」。
-- [ ] `AGENTS.md`：「高風險區域」的 `I1／I2／R4` 改成 `I1／R4`，並把「註冊開放」改寫為「註冊已改為邀請制（ADR-0013），邀請只能由 `maintenance invite` 發出」。「架構速覽」的第一段「未來改為邀請制」改成「採邀請制」。
+- [ ] `90-tech-debt.md`：I2 那一列前面加上「【已解決 2026-09-28，`<Task 6 SHA>`】」，建議方向欄寫實作摘要，並指向 ADR-0014。「建議處理順序」第 2 點把 I2 加上刪除線。
+- [ ] `01-overview.md`：在 ADR 索引表加入 0014 一列（執行時是 0013；與 master 的 ADR-0013（API 機密合併）撞號，合併時改號為 0014）。
+- [ ] `AGENTS.md`：「高風險區域」的 `I1／I2／R4` 改成 `I1／R4`，並把「註冊開放」改寫為「註冊已改為邀請制（ADR-0014），邀請只能由 `maintenance invite` 發出」。「架構速覽」的第一段「未來改為邀請制」改成「採邀請制」。
 - [ ] `git add` 上述三個檔案，然後 commit：
 
 ```
-docs(architecture): 標記 I2 已解決，ADR 索引加入 ADR-0013，AGENTS.md 高風險區域移除 I2
+docs(architecture): 標記 I2 已解決，ADR 索引加入 ADR-0014，AGENTS.md 高風險區域移除 I2
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ```

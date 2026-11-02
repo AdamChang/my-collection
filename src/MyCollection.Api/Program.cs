@@ -12,7 +12,7 @@ using MyCollection.Infrastructure;
 using MyCollection.Infrastructure.Mongo;
 using MyCollection.Infrastructure.Security;
 
-// 維運指令（ADR-0013：邀請只能由這裡發出）。
+// 維運指令（ADR-0014：邀請只能由這裡發出）。
 // 維運參數不交給設定系統，避免 "--email" 被當成設定鍵。
 var isMaintenance = args is ["maintenance", ..];
 var builder = WebApplication.CreateBuilder(isMaintenance ? [] : args);

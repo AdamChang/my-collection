@@ -43,7 +43,7 @@ public sealed class RegisterCommandHandler(
         };
 
         // 邀請無效 → ForbiddenException（403，訊息不分原因）；email 重複 → ConflictException（409）。
-        // 兩者都會讓整筆 transaction 回滾（ADR-0013 §二）
+        // 兩者都會讓整筆 transaction 回滾（ADR-0014 §二）
         await invitations.RedeemAsync(
             Auth.InvitationCode.Normalise(request.InvitationCode), user, now, cancellationToken);
 

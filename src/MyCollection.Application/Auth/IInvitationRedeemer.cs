@@ -3,7 +3,7 @@ using MyCollection.Domain.Entities;
 namespace MyCollection.Application.Auth;
 
 /// <summary>
-/// 消耗邀請並建立帳號，兩者同時成功或同時失敗（ADR-0013 §二）。
+/// 消耗邀請並建立帳號，兩者同時成功或同時失敗（ADR-0014 §二）。
 /// 邀請無效（不存在、過期、已使用、已撤銷、email 不符）一律擲出同一訊息的
 /// <see cref="Domain.Exceptions.ForbiddenException"/>；email 已被註冊擲出 <see cref="Domain.Exceptions.ConflictException"/>。
 /// </summary>

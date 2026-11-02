@@ -2,7 +2,7 @@
 
 - 日期：2026-09-28
 - 範圍：前端（`web/`）與相關文件。後端已完成，見 [後端設計](2026-09-28-invitation-only-registration-design.md) 與 `plans/2026-09-28-invitation-only-registration-backend.md`。
-- 決策來源：[ADR-0013](../../adr/0013-invitation-only-issued-by-maintenance-command.md)、tech debt I2、後端計畫「後續」一節
+- 決策來源：[ADR-0014](../../adr/0014-invitation-only-issued-by-maintenance-command.md)、tech debt I2、後端計畫「後續」一節
 
 ## 目標
 
@@ -42,7 +42,7 @@
 
 - 被否決：用 `withComponentInputBinding()` 綁成 `input()`。`input()` 是唯讀的，欄位又必須可編輯，還得再包一層 `linkedSignal`；而 `LoginComponent` 讀 `returnUrl` 本來就用 snapshot，沿用同一個寫法比較一致。
 - 不套用 ADR-0010「URL 是真實來源」：那條規則針對可分享、可回上一頁的篩選狀態。邀請碼是一次性輸入，不需要雙向同步回 URL。
-- 不在讀取後把 `?code=` 從網址列移除。碼會留在瀏覽器歷程紀錄裡，但它綁定 email、只能用一次、預設 7 天過期，註冊成功後就失效；移除它的好處不足以抵銷「重新整理後碼不見」的困擾。**結論翻轉的條件**：邀請的有效期限拉長到數週以上，或 ADR-0013 改成不綁 email。
+- 不在讀取後把 `?code=` 從網址列移除。碼會留在瀏覽器歷程紀錄裡，但它綁定 email、只能用一次、預設 7 天過期，註冊成功後就失效；移除它的好處不足以抵銷「重新整理後碼不見」的困擾。**結論翻轉的條件**：邀請的有效期限拉長到數週以上，或 ADR-0014 改成不綁 email。
 
 ### 三、403 在頁內顯示繁中訊息，toast 由 `HttpContextToken` 按狀態碼關閉
 

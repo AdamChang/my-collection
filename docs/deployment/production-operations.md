@@ -219,7 +219,7 @@ Budget（`infra/terraform/bootstrap/budget.tf`）：
 
 ## 發邀請
 
-註冊採邀請制（ADR-0013），邀請只能在維運者本機用 `maintenance invite` 發出，Web 與 API 都沒有入口。
+註冊採邀請制（ADR-0014），邀請只能在維運者本機用 `maintenance invite` 發出，Web 與 API 都沒有入口。
 
 連線資訊只放在**當前 PowerShell session 的環境變數**，不要寫進 user secrets：user secrets 是本機開發共用的，寫進去之後下一次 `dotnet run` 就會連到正式環境。環境變數會覆蓋 user secrets，關掉視窗就消失。
 

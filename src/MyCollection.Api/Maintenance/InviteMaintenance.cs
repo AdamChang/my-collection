@@ -6,7 +6,7 @@ using MyCollection.Domain.Exceptions;
 namespace MyCollection.Api.Maintenance;
 
 /// <summary>
-/// 邀請只能由維運指令發出，系統內沒有管理者角色（ADR-0013 §一）。
+/// 邀請只能由維運指令發出，系統內沒有管理者角色（ADR-0014 §一）。
 /// 這裡是 CLI 的最外層，等同 HTTP 的 GlobalExceptionHandler，所以在這裡把預期中的例外轉成 exit code。
 /// </summary>
 public static class InviteMaintenance

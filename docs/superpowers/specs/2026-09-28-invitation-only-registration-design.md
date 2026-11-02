@@ -2,7 +2,7 @@
 
 - 日期：2026-09-28
 - 範圍：後端（`src/`、`tests/`）。前端另寫一份規格與計畫，見文末。
-- 決策來源：[ADR-0013](../../adr/0013-invitation-only-issued-by-maintenance-command.md)、`CONTEXT.md`「帳號」一節、tech debt I2、Q12
+- 決策來源：[ADR-0014](../../adr/0014-invitation-only-issued-by-maintenance-command.md)、`CONTEXT.md`「帳號」一節、tech debt I2、Q12
 
 ## 目標
 
@@ -93,7 +93,7 @@ POST /auth/register ─► RegisterCommandHandler ─► IInvitationRedeemer ─
 ## 被否決的替代方案
 
 - **白名單 email**（I2 的另一個建議方向）：要事先登記 email，其實就是一份不需要碼、不會過期的邀請。沒有碼的話，只要知道 email 就能註冊，而系統不驗證 email 的所有權。
-- **跨請求的兩步寫入，不用 transaction**：見 ADR-0013 §二。
+- **跨請求的兩步寫入，不用 transaction**：見 ADR-0014 §二。
 - **存「已過期」狀態**：見上文 Domain 段落。
 - **新增 `InvitationException` 型別**：`ForbiddenException` 已經對應到 403，`LoginCommandHandler` 也用它來回避帳號列舉，語意相同，所以不新增型別，也不用改 `GlobalExceptionHandler`。
 

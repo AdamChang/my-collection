@@ -10,7 +10,7 @@
 
 - 設計文件：`docs/superpowers/specs/2026-09-28-invitation-only-registration-frontend-design.md`
 - 後端設計與計畫：`docs/superpowers/specs/2026-09-28-invitation-only-registration-design.md`、`docs/superpowers/plans/2026-09-28-invitation-only-registration-backend.md`
-- ADR：`docs/adr/0013-invitation-only-issued-by-maintenance-command.md`
+- ADR：`docs/adr/0014-invitation-only-issued-by-maintenance-command.md`
 
 ## 執行前必讀
 
@@ -322,7 +322,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 -        <button type="button" class="login__toggle" (click)="toggle()">
 -          {{ mode() === 'login' ? '還沒有帳號？註冊' : '已經有帳號？登入' }}
 -        </button>
-+        <!-- 註冊採邀請制（ADR-0013），被邀請者可能只拿到碼、沒拿到連結，所以保留入口 -->
++        <!-- 註冊採邀請制（ADR-0014），被邀請者可能只拿到碼、沒拿到連結，所以保留入口 -->
 +        <a class="login__link" routerLink="/register">有邀請碼？前往註冊</a>
 @@
 -    .login__toggle { display: inline-flex; align-items: center; justify-self: start;
@@ -692,7 +692,7 @@ export class RegisterComponent {
   private readonly router = inject(Router);
 
   readonly busy = signal(false);
-  /** 後端對所有無效原因回同一個 403（ADR-0013），這裡也只給通用說明。 */
+  /** 後端對所有無效原因回同一個 403（ADR-0014），這裡也只給通用說明。 */
   readonly rejected = signal(false);
 
   /** 維運指令產生的連結會帶 ?code=。只當初值，之後以欄位為準（見設計文件決策二）。 */
@@ -772,14 +772,14 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 +- 錯誤由 `errorInterceptor` 顯示 toast；元件的 error 回呼使用 `IGNORE_HANDLED_BY_INTERCEPTOR`。頁面要自行說明某個狀態碼時，由發請求的 service 在 `HttpContext` 設定 `SUPPRESS_ERROR_TOAST`（predicate，只接手需要的狀態碼），不要在元件裡另外顯示卻沒有關掉 toast。目前只有註冊的 403 這樣做。
 ```
 
-- [ ] `16-module-web.md` 路由表：`/login` 的備註改成「只有登入；有指向 `/register` 的連結。成功後 `navigateByUrl(returnUrl ?? '/')`」；在其下新增一列 `| /register | RegisterComponent | — | 邀請制（ADR-0013）；?code= 帶入欄位初值；成功後固定導向 /，不讀 returnUrl；403 頁內顯示通用訊息 |`。interceptor 段落（「依序為 `loadingInterceptor` → …」那段）之後補一句：`errorInterceptor` 會先問請求上的 `SUPPRESS_ERROR_TOAST`，predicate 回 `true` 就不顯示 toast，但錯誤照樣往外拋。
+- [ ] `16-module-web.md` 路由表：`/login` 的備註改成「只有登入；有指向 `/register` 的連結。成功後 `navigateByUrl(returnUrl ?? '/')`」；在其下新增一列 `| /register | RegisterComponent | — | 邀請制（ADR-0014）；?code= 帶入欄位初值；成功後固定導向 /，不讀 returnUrl；403 頁內顯示通用訊息 |`。interceptor 段落（「依序為 `loadingInterceptor` → …」那段）之後補一句：`errorInterceptor` 會先問請求上的 `SUPPRESS_ERROR_TOAST`，predicate 回 `true` 就不顯示 toast，但錯誤照樣往外拋。
 - [ ] `90-tech-debt.md` I2 列：「【已解決（後端）2026-09-28，`d9b0a7a`；前端待前端計畫】」改成「【已解決 2026-09-28，後端 `d9b0a7a`、前端 `<Task 4 SHA>`】」；建議方向欄刪掉「**未處理**：…」那句，改成「前端新增 `/register`，登入頁移除註冊模式」。第 40 行「（後端已解決）」改成「（已解決）」。
 - [ ] `production-operations.md`：在「## 例行維運」之後新增一節：
 
 ````markdown
 ## 發邀請
 
-註冊採邀請制（ADR-0013），邀請只能在維運者本機用 `maintenance invite` 發出，Web 與 API 都沒有入口。
+註冊採邀請制（ADR-0014），邀請只能在維運者本機用 `maintenance invite` 發出，Web 與 API 都沒有入口。
 
 連線資訊只放在**當前 PowerShell session 的環境變數**，不要寫進 user secrets：user secrets 是本機開發共用的，寫進去之後下一次 `dotnet run` 就會連到正式環境。環境變數會覆蓋 user secrets，關掉視窗就消失。
 

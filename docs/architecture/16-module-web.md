@@ -22,7 +22,7 @@
 | Path | 元件（全部 `loadComponent` 懶載入） | Guard | 備註 |
 |---|---|---|---|
 | `/login` | `LoginComponent` | — | 只有登入，另有指向 `/register` 的連結；成功後 `navigateByUrl(returnUrl ?? '/')` |
-| `/register` | `RegisterComponent` | — | 邀請制（ADR-0013）；`?code=` 帶入欄位初值；成功後固定導向 `/`，不讀 `returnUrl`；403 在頁內顯示通用訊息 |
+| `/register` | `RegisterComponent` | — | 邀請制（ADR-0014）；`?code=` 帶入欄位初值；成功後固定導向 `/`，不讀 `returnUrl`；403 在頁內顯示通用訊息 |
 | `/p/:slug` | `PublicShareComponent` | — | `data.publicShell = true`，`App` 會隱藏導覽列 |
 | `/` | `ShowcaseComponent` | `authGuard` | `?view=` 以 `withComponentInputBinding()` 綁到 `input()` |
 | `/catalog` | `CatalogComponent` | `authGuard` | 篩選條件的真實來源是 URL（ADR-0010） |

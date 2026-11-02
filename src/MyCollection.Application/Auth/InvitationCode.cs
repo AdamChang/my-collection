@@ -5,7 +5,7 @@ namespace MyCollection.Application.Auth;
 
 /// <summary>
 /// 邀請碼：Crockford base32、20 字元（100 bit）。
-/// I1（認證端點沒有速率限制）解決之前，碼的強度是防暴力猜測的唯一防線，不可縮短（ADR-0013 §三）。
+/// I1（認證端點沒有速率限制）解決之前，碼的強度是防暴力猜測的唯一防線，不可縮短（ADR-0014 §三）。
 /// </summary>
 public static class InvitationCode
 {
