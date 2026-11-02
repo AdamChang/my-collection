@@ -91,11 +91,11 @@ flowchart LR
 |---|---|---|---|
 | `Mongo:ConnectionString` | `mongodb://localhost:27017` | Secret Manager `mongo-connection-string`（`<REDACTED>`） | `appsettings.json`、`services.tf` |
 | `Mongo:Database` | `mycollection` | env `mycollection` | 同上 |
-| `Jwt:Key` | 空字串（Development 另有一把開發用 key：`<REDACTED>`） | Secret Manager `jwt-signing-key` | `appsettings*.json`、`services.tf` |
-| `SecretProtection:Key` | 空字串（Development：`<REDACTED>`） | Secret Manager `secret-protection-key` | 同上 |
+| `Jwt:Key` | 空字串（Development 另有一把開發用 key：`<REDACTED>`） | Secret Manager `api-config`（JSON，volume 掛載，`SECRETS_CONFIG_FILE` 指向；ADR-0013） | `appsettings*.json`、`services.tf`、`SecretsFileConfiguration.cs` |
+| `SecretProtection:Key` | 空字串（Development：`<REDACTED>`） | Secret Manager `api-config` | 同上 |
 | `Storage:*` | `Local`、`data/media` | `Gcs` + bucket 名稱 | 同上 |
 | `Tasks:*` | `InProcess` | `CloudTasks` + ProjectId、HandlerUrl（`{api_public_url}/internal/tasks/ingestion`）、Audience、SA email | 同上 |
-| `Igdb:*` | 空字串 | ClientId 走一般 env（`<REDACTED>`，Terraform 註解說明這是公開識別碼），Secret 走 Secret Manager；`igdb_enabled` 預設 true | `services.tf`、`variables.tf` |
+| `Igdb:*` | 空字串 | ClientId 與 ClientSecret 都在 Secret Manager `api-config`；JSON 有 `Igdb` 區塊才啟用，Terraform 沒有開關 | `services.tf`、`SecretsFileConfiguration.cs` |
 | `Cors:AllowedOrigins` | 無（不設定就沒有任何 origin 會被允許） | `web_public_url` | `Program.cs`、`services.tf` |
 | 開發環境機密 | — | user secrets（`UserSecretsId`） | `Api/MyCollection.Api.csproj` |
 

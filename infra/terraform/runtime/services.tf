@@ -3,6 +3,13 @@ locals {
   web_service_name = "mycollection-web"
 }
 
+data "google_secret_manager_secret" "api_config" {
+  project   = var.project_id
+  secret_id = "api-config"
+}
+
+# 以下三個舊 secret 與對應的 IAM 是回滾用，PR 2 移除：
+# canary 失敗時流量切回舊 revision，舊 revision 仍以 env 引用這三個 secret。
 data "google_secret_manager_secret" "jwt_signing_key" {
   project   = var.project_id
   secret_id = "jwt-signing-key"
@@ -14,8 +21,6 @@ data "google_secret_manager_secret" "secret_protection_key" {
 }
 
 data "google_secret_manager_secret" "igdb_client_secret" {
-  count = var.igdb_enabled ? 1 : 0
-
   project   = var.project_id
   secret_id = "igdb-client-secret"
 }
@@ -34,6 +39,14 @@ resource "google_secret_manager_secret_iam_member" "api_reads_mongo_uri" {
   member    = "serviceAccount:${google_service_account.api_runtime.email}"
 }
 
+resource "google_secret_manager_secret_iam_member" "api_reads_api_config" {
+  project   = var.project_id
+  secret_id = data.google_secret_manager_secret.api_config.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.api_runtime.email}"
+}
+
+# 回滾用，PR 2 移除。
 resource "google_secret_manager_secret_iam_member" "api_reads_jwt_key" {
   project   = var.project_id
   secret_id = data.google_secret_manager_secret.jwt_signing_key.secret_id
@@ -41,6 +54,7 @@ resource "google_secret_manager_secret_iam_member" "api_reads_jwt_key" {
   member    = "serviceAccount:${google_service_account.api_runtime.email}"
 }
 
+# 回滾用，PR 2 移除。
 resource "google_secret_manager_secret_iam_member" "api_reads_protection_key" {
   project   = var.project_id
   secret_id = data.google_secret_manager_secret.secret_protection_key.secret_id
@@ -48,13 +62,19 @@ resource "google_secret_manager_secret_iam_member" "api_reads_protection_key" {
   member    = "serviceAccount:${google_service_account.api_runtime.email}"
 }
 
+# 回滾用，PR 2 移除。
 resource "google_secret_manager_secret_iam_member" "api_reads_igdb_secret" {
-  count = var.igdb_enabled ? 1 : 0
-
   project   = var.project_id
-  secret_id = data.google_secret_manager_secret.igdb_client_secret[0].secret_id
+  secret_id = data.google_secret_manager_secret.igdb_client_secret.secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.api_runtime.email}"
+}
+
+# 拿掉 count 後位址從 [0] 變成無索引；沒有 moved 會先建後刪，
+# 兩者是同一條 IAM binding，刪除那一步會讓 binding 消失。PR 2 隨資源一起移除。
+moved {
+  from = google_secret_manager_secret_iam_member.api_reads_igdb_secret[0]
+  to   = google_secret_manager_secret_iam_member.api_reads_igdb_secret
 }
 
 resource "google_cloud_run_v2_service" "api" {
@@ -71,6 +91,19 @@ resource "google_cloud_run_v2_service" "api" {
     scaling {
       min_instance_count = 0
       max_instance_count = 1
+    }
+
+    # Jwt、SecretProtection、Igdb 合併在 api-config 一個 JSON（ADR-0013）。
+    # volume 會蓋掉整個掛載目錄，所以必須是專屬目錄。
+    volumes {
+      name = "api-secrets"
+      secret {
+        secret = data.google_secret_manager_secret.api_config.secret_id
+        items {
+          version = "latest"
+          path    = "config.json"
+        }
+      }
     }
 
     containers {
@@ -170,48 +203,13 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       env {
-        name = "Jwt__Key"
-        value_source {
-          secret_key_ref {
-            secret  = data.google_secret_manager_secret.jwt_signing_key.secret_id
-            version = "latest"
-          }
-        }
+        name  = "SECRETS_CONFIG_FILE"
+        value = "/secrets/api/config.json"
       }
 
-      env {
-        name = "SecretProtection__Key"
-        value_source {
-          secret_key_ref {
-            secret  = data.google_secret_manager_secret.secret_protection_key.secret_id
-            version = "latest"
-          }
-        }
-      }
-
-      # 兩個變數必須同進同出：API 只在兩者皆非空時才註冊 IGDB provider，
-      # 少一個就是「設定了卻不會生效」的無聲狀態。
-      dynamic "env" {
-        for_each = var.igdb_enabled ? [1] : []
-
-        content {
-          name  = "Igdb__ClientId"
-          value = var.igdb_client_id
-        }
-      }
-
-      dynamic "env" {
-        for_each = var.igdb_enabled ? [1] : []
-
-        content {
-          name = "Igdb__ClientSecret"
-          value_source {
-            secret_key_ref {
-              secret  = data.google_secret_manager_secret.igdb_client_secret[0].secret_id
-              version = "latest"
-            }
-          }
-        }
+      volume_mounts {
+        name       = "api-secrets"
+        mount_path = "/secrets/api"
       }
 
       startup_probe {
@@ -255,6 +253,7 @@ resource "google_cloud_run_v2_service" "api" {
 
   depends_on = [
     google_secret_manager_secret_iam_member.api_reads_mongo_uri,
+    google_secret_manager_secret_iam_member.api_reads_api_config,
     google_secret_manager_secret_iam_member.api_reads_jwt_key,
     google_secret_manager_secret_iam_member.api_reads_protection_key,
     google_secret_manager_secret_iam_member.api_reads_igdb_secret,

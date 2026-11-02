@@ -113,27 +113,3 @@ variable "service_alert_email" {
   type        = string
   default     = "adamcha0516@gmail.com"
 }
-
-# IGDB 是選配的中繼資料來源，API 沒有憑證就整組不註冊 provider。
-# 正式環境已於 2026-08-27 啟用，所以預設為 true——留在 false 會讓任何不帶
-# -var 的 apply 靜默拆掉線上的 IGDB 設定。前提是 igdb-client-secret 這個
-# Secret Manager secret 存在且至少有一個版本，否則 revision 會啟動失敗；
-# 重建環境時先建 secret，或以 -var="igdb_enabled=false" 先跳過這一段。
-variable "igdb_enabled" {
-  description = "Whether the API service receives IGDB credentials. Requires the igdb-client-secret secret to exist with a version."
-  type        = bool
-  default     = true
-
-  validation {
-    condition     = !var.igdb_enabled || length(var.igdb_client_id) > 0
-    error_message = "igdb_client_id must be set when igdb_enabled is true."
-  }
-}
-
-# Twitch 的 Client ID 是公開識別碼（OAuth 請求會原樣送出），不是機密；
-# 機密的 Client Secret 走 Secret Manager，絕不進 Terraform state 或版控。
-variable "igdb_client_id" {
-  description = "Public Twitch application client ID used for IGDB requests."
-  type        = string
-  default     = "wksiw0stv623a024l8linckyubuv0f"
-}
