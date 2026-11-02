@@ -8,7 +8,10 @@ namespace MyCollection.Tests.Fixtures;
 
 public sealed class MongoFixture : IAsyncLifetime
 {
-    private readonly MongoDbContainer _container = new MongoDbBuilder("mongo:8.0")
+    // 釘住 patch 版本：浮動的 mongo:8.0 在 2026-10 指到 8.0.34 後，GitHub Actions runner 上
+    // Testcontainers 找不到 mongosh，replica set 起不來，整批 Integration 測試失敗（本機無法重現）。
+    // 8.0.30 是最後一次成功部署（2026-09-27）時 mongo:8.0 指向的版本。升級前先在 CI 驗證。
+    private readonly MongoDbContainer _container = new MongoDbBuilder("mongo:8.0.30")
         .WithReplicaSet("rs0")
         .Build();
 
