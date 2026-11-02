@@ -6,5 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- ImageSharp 3.2 起 Release 編譯需要授權檔；預設只從各 csproj 目錄往下找，所以明確指向 repo 根目錄。
+         這是 assembly-scoped community license，Six Labors 明確允許進版控。 -->
+    <SixLaborsLicenseFile>$(MSBuildThisFileDirectory)sixlabors.lic</SixLaborsLicenseFile>
   </PropertyGroup>
 </Project>

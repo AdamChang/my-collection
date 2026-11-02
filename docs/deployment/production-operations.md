@@ -48,7 +48,53 @@ health endpoint 拆兩支：`/health/live`（不查外部依賴）與 `/health/s
 
 ### Secret Manager
 
-只列名稱，內容不在本文件範圍：`mongo-connection-string`、`jwt-signing-key`、`secret-protection-key`、`igdb-client-secret`。
+只列名稱，內容不在本文件範圍：
+
+| Secret | 內容 | 讀取者 |
+|---|---|---|
+| `mongo-connection-string` | Atlas 連線字串 | API、備份 Job |
+| `api-config` | JSON：`Jwt.Key`、`SecretProtection.Key`、`Igdb.ClientId`、`Igdb.ClientSecret` | API（volume 掛載 `/secrets/api/config.json`） |
+
+`jwt-signing-key`、`secret-protection-key`、`igdb-client-secret` 已合併進 `api-config`（[ADR-0013](../adr/0013-api-secrets-merged-into-single-config-secret.md)），並於 2026-11 刪除。切換前的 API revision（`mycollection-api-00013-s5d` 之前）仍以環境變數引用這三個 secret，已經無法啟動，不可再把流量切回去。
+
+**每個 secret 只保留 1 個非 DESTROYED 的 version。** 免費額度是整個 billing account 共用 6 個 active version，舊 version 留著（包括 DISABLED）也會佔用額度。
+
+#### 輪替 `api-config` 的一個欄位
+
+三種金鑰共用同一個 version，所以輪替任何一種都要「讀出 JSON → 改一個欄位 → 新增 version」。值不落地成檔案、不進 shell history。以 IGDB secret 為例。
+
+本機（PowerShell，建議 pwsh 7）：先執行 [runtime README](../../infra/terraform/runtime/README.md)〈建立 api-config〉開頭的 `$P`、`$OutputEncoding` 與 `Get-SecretValue` 定義，再執行：
+
+```powershell
+$cfg = Get-SecretValue 'api-config' | ConvertFrom-Json
+# 輸入新值，不回顯；history 只記錄指令文字
+$cfg.Igdb.ClientSecret = Read-Host -AsSecureString '新的 IGDB client secret' | ConvertFrom-SecureString -AsPlainText
+$cfg | ConvertTo-Json -Compress -Depth 5 |
+  gcloud secrets versions add api-config --project $P --data-file=-
+Remove-Variable cfg
+```
+
+Cloud Shell（bash）：
+
+```bash
+P=mycollection-504914
+read -rs NEW_VALUE   # 輸入新值，不回顯、不進 history
+gcloud secrets versions access latest --secret=api-config --project "$P" |
+  jq -c --arg v "$NEW_VALUE" '.Igdb.ClientSecret = $v' |
+  gcloud secrets versions add api-config --project "$P" --data-file=-
+unset NEW_VALUE
+```
+
+1. 依上面的方式新增 version。改的是 `Jwt.Key` 會讓所有人重新登入；**`SecretProtection.Key` 不可單獨輪替**，換掉會讓所有已綁定的外部帳號憑證無法解密。
+2. 程式只在啟動時讀取檔案（`reloadOnChange: false`），所以要部署新 revision（走 workflow），並確認登入正常、`GET /ingest/providers` 列出 `igdb`。
+3. 確認無誤後銷毀舊版：
+
+```bash
+gcloud secrets versions list api-config --project "$P"
+gcloud secrets versions destroy <舊版號> --secret=api-config --project "$P"
+```
+
+所有 revision 都引用 `latest`，所以 canary 回滾到舊 revision 時讀到的同樣是新值。舊 version 只是在確認之前保留，作為改錯欄位時手動還原的來源。
 
 ### 身分
 
@@ -76,6 +122,8 @@ GitHub 以 Workload Identity Federation 取得憑證，**無 JSON key**：
 流程由 `.github/scripts/rollout-cloud-run.sh` 驅動：部署 0% 流量的 tagged revision → 對 tag URL 執行 `smoke-api.sh` → 切 40% 觀察 15 分鐘 → 通過才升 100%，失敗自動切回前一個 revision。
 
 canary 判定失敗的條件是新 revision 出現 `severity>=ERROR` 或 `httpRequest.status>=500`。
+
+ImageSharp 3.2 起，Release 編譯需要 Six Labors 授權檔。repo 根目錄的 `sixlabors.lic` 是 assembly-scoped Community license，只涵蓋申請時登記的 assembly 名稱，並由 `Directory.Build.props` 的 `SixLaborsLicenseFile` 指定路徑。**有效期限到 2028-01-31**，到期後 `Deploy production` 會在 Test backend 步驟失敗，需要重新申請並替換這個檔案。改名或新增直接引用 ImageSharp 的專案時，也要重新申請。
 
 ### 授權分支綁在兩處
 

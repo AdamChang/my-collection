@@ -8,7 +8,11 @@ namespace MyCollection.Tests.Fixtures;
 
 public sealed class MongoFixture : IAsyncLifetime
 {
-    private readonly MongoDbContainer _container = new MongoDbBuilder("mongo:8.0")
+    // 刻意用 7.0，與正式環境 Atlas 的 8.0 不同：MongoDB 8.0 以上的 TCMalloc 與 Linux 6.19+ 核心不相容，
+    // mongod 啟動時偵測到就直接結束（SERVER-121912，已以 Gone away 關閉，尚無修正）。
+    // GitHub Actions runner 自 ubuntu24/20261025 起是 6.19+ 核心，用 8.x 會讓整批 Integration 測試失敗。
+    // 等 MongoDB 修正後再改回 8.x，並先在 CI 驗證。
+    private readonly MongoDbContainer _container = new MongoDbBuilder("mongo:7.0")
         .WithReplicaSet("rs0")
         .Build();
 
@@ -20,7 +24,20 @@ public sealed class MongoFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        await _container.StartAsync();
+        try
+        {
+            await _container.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            // 啟動失敗時 xUnit 仍會呼叫 DisposeAsync 刪除容器，事後無法再看 docker logs；
+            // 只能在這裡把 mongod 留下的輸出附在例外訊息上，CI 的測試結果才看得到原因。
+            var (stdout, stderr) = await _container.GetLogsAsync(timestampsEnabled: false);
+            var exitCode = await _container.GetExitCodeAsync();
+            throw new InvalidOperationException(
+                $"Mongo 測試容器啟動失敗（exit code {exitCode}）。\n--- stdout ---\n{Tail(stdout)}\n--- stderr ---\n{Tail(stderr)}",
+                ex);
+        }
 
         Context = new MongoContext(Options.Create(new MongoOptions
         {
@@ -44,6 +61,9 @@ public sealed class MongoFixture : IAsyncLifetime
     }
 
     public Task DisposeAsync() => _container.DisposeAsync().AsTask();
+
+    // mongod 的結構化 log 很長，結束原因在最後幾行；同一則訊息會出現在每個失敗的測試上，所以只留尾端。
+    private static string Tail(string log) => log.Length <= 4000 ? log : log[^4000..];
 }
 
 [CollectionDefinition(MongoCollection.Name)]
