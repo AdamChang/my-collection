@@ -4,25 +4,23 @@ import { AuthService } from '../../core/auth.service';
 import { LoginComponent } from './login.component';
 
 describe('LoginComponent', () => {
-  it('renders the authentication terminal and retains mode switching', async () => {
+  it('renders the login form only and links to registration', async () => {
     await TestBed.configureTestingModule({
       imports: [LoginComponent],
       providers: [
         provideRouter([]),
         { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: { get: () => null } } } },
-        { provide: AuthService, useValue: { login: () => Promise.resolve(), register: () => Promise.resolve() } },
+        { provide: AuthService, useValue: { login: () => Promise.resolve() } },
       ],
     }).compileComponents();
 
     const fixture = TestBed.createComponent(LoginComponent);
     fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
 
-    expect(fixture.nativeElement.querySelector('.login__terminal')).toBeTruthy();
-    expect(fixture.nativeElement.querySelector('input[name="displayName"]')).toBeNull();
-
-    fixture.componentInstance.toggle();
-    fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('input[name="displayName"]')).toBeTruthy();
+    expect(element.querySelector('.login__terminal')).toBeTruthy();
+    expect(element.querySelector('input[name="displayName"]')).toBeNull();
+    expect(element.querySelector('a.login__link')?.getAttribute('href')).toBe('/register');
   });
 
   it('keeps login actions at least 44px tall at 390px', async () => {
@@ -31,7 +29,7 @@ describe('LoginComponent', () => {
       providers: [
         provideRouter([]),
         { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: { get: () => null } } } },
-        { provide: AuthService, useValue: { login: () => Promise.resolve(), register: () => Promise.resolve() } },
+        { provide: AuthService, useValue: { login: () => Promise.resolve() } },
       ],
     }).compileComponents();
 
@@ -55,7 +53,7 @@ describe('LoginComponent', () => {
       frameDocument.body.append(fixture.nativeElement.cloneNode(true));
 
       const targets = frameDocument.querySelectorAll<HTMLElement>(
-        'button[type="submit"], .login__toggle',
+        'button[type="submit"], .login__link',
       );
       expect(targets.length).toBe(2);
       targets.forEach((target) => {
