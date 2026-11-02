@@ -4,6 +4,13 @@ This Terraform root owns runtime resources that persist independently of Cloud R
 
 The media bucket uses uniform bucket-level access and enforced public access prevention. Only the API runtime service account receives `roles/storage.objectUser`; browser clients must retrieve media through authorised API endpoints.
 
+GCS backend 和 google provider 只認 Application Default Credentials（ADC），不會沿用 `gcloud auth login` 的登入。本機第一次執行、或 ADC 過期時，`terraform init` 會出現 `could not find default credentials`，請先登入：
+
+```powershell
+gcloud auth application-default login
+gcloud auth application-default set-quota-project mycollection-504914
+```
+
 ```powershell
 terraform init
 terraform fmt -check
