@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: src/MyCollection.Api/Dockerfile
+      secrets:
+        - sixlabors_license
     restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Production
@@ -35,3 +37,8 @@ services:
       API_BASE_URL: http://localhost:5080
     ports:
       - "8080:8080"
+
+secrets:
+  # 只在建置 API image 時使用，不會進入 image
+  sixlabors_license:
+    environment: SIXLABORS_LICENSE_KEY

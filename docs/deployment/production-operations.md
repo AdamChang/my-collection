@@ -77,6 +77,8 @@ GitHub 以 Workload Identity Federation 取得憑證，**無 JSON key**：
 
 canary 判定失敗的條件是新 revision 出現 `severity>=ERROR` 或 `httpRequest.status>=500`。
 
+`Deploy production` 需要 `production` environment 的 GitHub secret `SIXLABORS_LICENSE_KEY`：ImageSharp 3.2 起，Release 編譯需要 Six Labors license key，`dotnet test` 與 API image 建置（以 BuildKit secret mount 傳入，不會進入 image）都會用到。缺少這個 secret 時，部署會在 Test backend 步驟失敗。key 如果有效期限到期，也會在同一步驟失敗。
+
 ### 授權分支綁在兩處
 
 改變部署分支策略時，以下兩處必須**同時**修改，只改一處會讓 dispatch 直接 `skipped`：
