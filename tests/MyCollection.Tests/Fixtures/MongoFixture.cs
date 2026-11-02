@@ -8,10 +8,11 @@ namespace MyCollection.Tests.Fixtures;
 
 public sealed class MongoFixture : IAsyncLifetime
 {
-    // 釘住 patch 版本：浮動的 mongo:8.0 在 2026-10 指到 8.0.34 後，GitHub Actions runner 上
-    // Testcontainers 找不到 mongosh，replica set 起不來，整批 Integration 測試失敗（本機無法重現）。
-    // 8.0.30 是最後一次成功部署（2026-09-27）時 mongo:8.0 指向的版本。升級前先在 CI 驗證。
-    private readonly MongoDbContainer _container = new MongoDbBuilder("mongo:8.0.30")
+    // 刻意用 7.0，與正式環境 Atlas 的 8.0 不同：MongoDB 8.0 以上的 TCMalloc 與 Linux 6.19+ 核心不相容，
+    // mongod 啟動時偵測到就直接結束（SERVER-121912，已以 Gone away 關閉，尚無修正）。
+    // GitHub Actions runner 自 ubuntu24/20261025 起是 6.19+ 核心，用 8.x 會讓整批 Integration 測試失敗。
+    // 等 MongoDB 修正後再改回 8.x，並先在 CI 驗證。
+    private readonly MongoDbContainer _container = new MongoDbBuilder("mongo:7.0")
         .WithReplicaSet("rs0")
         .Build();
 
