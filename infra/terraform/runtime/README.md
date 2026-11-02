@@ -27,6 +27,8 @@ terraform apply runtime.tfplan
 
 ### 建立 api-config
 
+> 這是 2026-11 從舊的三個 secret 合併時的紀錄，那三個 secret 已刪除，以下指令無法再執行。重建時改用 [production-operations.md](../../../docs/deployment/production-operations.md) 的輪替流程，逐欄位寫入新值；保留這段是為了說明「值必須原樣保留」的處理方式。
+
 值不落地成檔案、不進 shell history：三個值由 `gcloud` 直接讀出，只存在於變數和 pipe 裡，組成 JSON 後直接寫入。值必須原樣保留（包含結尾換行），所以不能用一般的文字擷取。ClientId 是公開識別碼。
 
 本機（PowerShell，建議 pwsh 7）用內建的 `ConvertTo-Json`，不需要 `jq`：
@@ -78,21 +80,19 @@ gcloud secrets versions access latest --secret=api-config --project "$P" | jq -c
 
 bash 版最後一行必須輸出 `["Jwt:Key","SecretProtection:Key","Igdb:ClientId","Igdb:ClientSecret"]`。
 
-### 切換順序
+### 切換紀錄
 
-`image` 在 `ignore_changes` 裡，所以 apply 會沿用線上的 image。舊 image 不認得 `SECRETS_CONFIG_FILE`，而新 template 不再提供 `Jwt__Key` 等環境變數，順序錯了 revision 就起不來：
+2026-11-02 完成切換（首個讀取 `api-config` 的 revision 是 `mycollection-api-00013-s5d`），之後移除了舊的三個 secret 與 IAM binding。更早的 revision 以環境變數引用已刪除的 secret，無法再啟動，不能作為回滾目標。
 
-1. 建立 `api-config`（上一節）。
-2. 以 `Deploy production` workflow 部署含 `SecretsFileConfiguration` 的新 image。此時 template 還是舊的，新程式讀不到 `SECRETS_CONFIG_FILE` 就照舊用環境變數。
-3. `terraform plan` 確認 `api_reads_igdb_secret` 是 moved 而不是 destroy／create，再 `terraform apply`。
-4. 新 revision **不會取得流量**：`traffic` 在 `ignore_changes` 裡，由 canary 腳本負責。請以 `status.traffic` 確認，而不是看 `spec.template`；確認後再明確切換流量，或讓下一次部署繼承這份 template：
+當時的順序與理由，日後改 template 引用的 secret 時仍適用：
+
+- `image` 在 `ignore_changes` 裡，apply 會沿用線上的 image。新 template 依賴新程式時，必須先用 `Deploy production` 部署新 image，再 apply。
+- apply 產生的新 revision **不會取得流量**：`traffic` 在 `ignore_changes` 裡，由 canary 腳本負責。請以 `status.traffic` 確認，而不是看 `spec.template`，再明確切換流量：
 
 ```powershell
 gcloud run services update-traffic mycollection-api --project mycollection-504914 --region asia-east1 --to-revisions <revision>=100
 ```
 
-以 `GET /ingest/providers` 驗證：回應必須列出 `igdb`，而且登入正常。
-
-舊的三個 secret 與 IAM binding 在這一版保留給 canary 回滾使用，下一個 PR 才移除。輪替流程見 [production-operations.md](../../../docs/deployment/production-operations.md)。
+輪替流程見 [production-operations.md](../../../docs/deployment/production-operations.md)。
 
 The bucket has `prevent_destroy = true`. Removing it requires an explicit code change and a separately reviewed migration or retirement plan.

@@ -55,7 +55,7 @@ health endpoint 拆兩支：`/health/live`（不查外部依賴）與 `/health/s
 | `mongo-connection-string` | Atlas 連線字串 | API、備份 Job |
 | `api-config` | JSON：`Jwt.Key`、`SecretProtection.Key`、`Igdb.ClientId`、`Igdb.ClientSecret` | API（volume 掛載 `/secrets/api/config.json`） |
 
-`jwt-signing-key`、`secret-protection-key`、`igdb-client-secret` 已合併進 `api-config`（[ADR-0013](../adr/0013-api-secrets-merged-into-single-config-secret.md)），目前只保留給 canary 回滾使用，下一個 PR 移除後就會刪除。
+`jwt-signing-key`、`secret-protection-key`、`igdb-client-secret` 已合併進 `api-config`（[ADR-0013](../adr/0013-api-secrets-merged-into-single-config-secret.md)），並於 2026-11 刪除。切換前的 API revision（`mycollection-api-00013-s5d` 之前）仍以環境變數引用這三個 secret，已經無法啟動，不可再把流量切回去。
 
 **每個 secret 只保留 1 個非 DESTROYED 的 version。** 免費額度是整個 billing account 共用 6 個 active version，舊 version 留著（包括 DISABLED）也會佔用額度。
 
