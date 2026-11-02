@@ -20,7 +20,39 @@ terraform apply runtime.tfplan
 
 ### 建立 api-config
 
-值不落地成檔案、不進 shell history：三個值由 `gcloud` 直接讀出，在 pipe 裡以 `jq` 組成 JSON 再寫入。`--rawfile` 搭配 process substitution 會原樣保留值（包含結尾換行），不經過磁碟。本機沒有 `jq`，請在 Cloud Shell 執行。ClientId 是公開識別碼。
+值不落地成檔案、不進 shell history：三個值由 `gcloud` 直接讀出，只存在於變數和 pipe 裡，組成 JSON 後直接寫入。值必須原樣保留（包含結尾換行），所以不能用一般的文字擷取。ClientId 是公開識別碼。
+
+本機（PowerShell，建議 pwsh 7）用內建的 `ConvertTo-Json`，不需要 `jq`：
+
+```powershell
+$P = 'mycollection-504914'
+$OutputEncoding = [Text.UTF8Encoding]::new($false)
+
+# 取回 base64 再自行解碼：直接擷取 gcloud 的文字輸出會被 PowerShell 去掉結尾換行，值就不是原樣了
+function Get-SecretValue([string]$Name) {
+  $b64 = (gcloud secrets versions access latest --secret=$Name --project $P --format='get(payload.data)').Trim()
+  $b64 = $b64.Replace('-', '+').Replace('_', '/')
+  $b64 = $b64.PadRight($b64.Length + (4 - $b64.Length % 4) % 4, '=')
+  [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64))
+}
+
+gcloud secrets create api-config --project $P --replication-policy automatic
+
+[ordered]@{
+  Jwt              = @{ Key = Get-SecretValue 'jwt-signing-key' }
+  SecretProtection = @{ Key = Get-SecretValue 'secret-protection-key' }
+  Igdb             = [ordered]@{ ClientId = 'wksiw0stv623a024l8linckyubuv0f'; ClientSecret = Get-SecretValue 'igdb-client-secret' }
+} | ConvertTo-Json -Compress |
+  gcloud secrets versions add api-config --project $P --data-file=-
+
+# 只列出鍵，不印出值
+$cfg = Get-SecretValue 'api-config' | ConvertFrom-Json
+$cfg.PSObject.Properties | ForEach-Object { $s = $_.Name; $_.Value.PSObject.Properties.Name | ForEach-Object { "${s}:$_" } }
+```
+
+最後一段必須輸出 `Jwt:Key`、`SecretProtection:Key`、`Igdb:ClientId`、`Igdb:ClientSecret` 四行。pipe 傳給 `gcloud` 時 PowerShell 會在 JSON 後面多加一個換行，不影響解析。
+
+Cloud Shell（bash）則用 `jq`，`--rawfile` 搭配 process substitution 會原樣保留值，不經過磁碟：
 
 ```bash
 P=mycollection-504914
@@ -37,7 +69,7 @@ jq -cn \
 gcloud secrets versions access latest --secret=api-config --project "$P" | jq -c '[paths(scalars) | join(":")]'
 ```
 
-最後一行必須輸出 `["Jwt:Key","SecretProtection:Key","Igdb:ClientId","Igdb:ClientSecret"]`。
+bash 版最後一行必須輸出 `["Jwt:Key","SecretProtection:Key","Igdb:ClientId","Igdb:ClientSecret"]`。
 
 ### 切換順序
 
