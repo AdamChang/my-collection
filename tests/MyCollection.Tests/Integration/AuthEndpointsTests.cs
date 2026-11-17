@@ -26,13 +26,17 @@ public class AuthEndpointsTests(MongoFixture mongo) : IAsyncLifetime
         await _factory.DisposeAsync();
     }
 
-    private static object RegisterPayload(string email = "adam@example.com") =>
-        new { email, password = "P@ssw0rd!", displayName = "Adam" };
+    private async Task<HttpResponseMessage> RegisterAsync(string email = "adam@example.com", string? code = null)
+    {
+        code ??= await AuthenticatedClient.CreateInvitationAsync(_factory, email);
+        return await _client.PostAsJsonAsync(
+            "/auth/register", new { email, password = "P@ssw0rd!", displayName = "Adam", invitationCode = code });
+    }
 
     [Fact]
     public async Task Register_returns_tokens_and_user()
     {
-        var response = await _client.PostAsJsonAsync("/auth/register", RegisterPayload());
+        var response = await RegisterAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var auth = await response.Content.ReadFromJsonAsync<AuthResponse>();
@@ -53,19 +57,47 @@ public class AuthEndpointsTests(MongoFixture mongo) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Register_with_duplicate_email_returns_409()
+    public async Task Register_reusing_a_used_invitation_returns_403()
     {
-        await _client.PostAsJsonAsync("/auth/register", RegisterPayload());
+        var code = await AuthenticatedClient.CreateInvitationAsync(_factory, "adam@example.com");
+        await RegisterAsync(code: code);
 
-        var response = await _client.PostAsJsonAsync("/auth/register", RegisterPayload());
+        var response = await RegisterAsync(code: code);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Register_without_invitation_code_returns_400()
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/auth/register", new { email = "adam@example.com", password = "P@ssw0rd!", displayName = "Adam" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Register_with_unknown_invitation_code_returns_403()
+    {
+        var response = await RegisterAsync(code: "ABCDE-FGHJK-MNPQR-STVWX");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Register_with_invitation_for_another_email_returns_403()
+    {
+        var code = await AuthenticatedClient.CreateInvitationAsync(_factory, "friend@example.com");
+
+        var response = await RegisterAsync(email: "stranger@example.com", code: code);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     [Fact]
     public async Task Login_with_wrong_password_returns_403()
     {
-        await _client.PostAsJsonAsync("/auth/register", RegisterPayload());
+        await RegisterAsync();
 
         var response = await _client.PostAsJsonAsync(
             "/auth/login", new { email = "adam@example.com", password = "wrong-password" });
@@ -76,7 +108,7 @@ public class AuthEndpointsTests(MongoFixture mongo) : IAsyncLifetime
     [Fact]
     public async Task Access_token_authorises_protected_endpoint()
     {
-        var registered = await (await _client.PostAsJsonAsync("/auth/register", RegisterPayload()))
+        var registered = await (await RegisterAsync())
             .Content.ReadFromJsonAsync<AuthResponse>();
 
         _client.DefaultRequestHeaders.Authorization =
@@ -99,7 +131,7 @@ public class AuthEndpointsTests(MongoFixture mongo) : IAsyncLifetime
     [Fact]
     public async Task Refresh_rotates_token_and_old_token_stops_working()
     {
-        var registered = await (await _client.PostAsJsonAsync("/auth/register", RegisterPayload()))
+        var registered = await (await RegisterAsync())
             .Content.ReadFromJsonAsync<AuthResponse>();
 
         var refreshed = await _client.PostAsJsonAsync(

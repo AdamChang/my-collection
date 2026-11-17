@@ -32,4 +32,6 @@ public sealed class MongoContext
         Database.GetCollection<ExternalAccount>("externalAccounts");
 
     public IMongoCollection<SyncJob> SyncJobs => Database.GetCollection<SyncJob>("syncJobs");
+
+    public IMongoCollection<Invitation> Invitations => Database.GetCollection<Invitation>("invitations");
 }

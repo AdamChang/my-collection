@@ -1,9 +1,10 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpContext } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { API_BASE } from './api-base';
-import { AuthResponse, UserDto } from './models';
+import { SUPPRESS_ERROR_TOAST } from './error.interceptor';
+import { AuthResponse, RegisterRequest, UserDto } from './models';
 
 const STORAGE_KEY = 'mycollection.session';
 
@@ -28,9 +29,15 @@ export class AuthService {
   readonly user = computed(() => this.session()?.user ?? null);
   readonly isAuthenticated = computed(() => this.session() !== null);
 
-  async register(email: string, password: string, displayName: string): Promise<void> {
+  /**
+   * 403 代表邀請無效（後端不區分原因）。這裡關掉它的 toast，由呼叫端在頁內說明；
+   * 其他錯誤仍由 errorInterceptor 顯示。
+   */
+  async register(request: RegisterRequest): Promise<void> {
     const response = await firstValueFrom(
-      this.http.post<AuthResponse>(`${API_BASE}/auth/register`, { email, password, displayName }),
+      this.http.post<AuthResponse>(`${API_BASE}/auth/register`, request, {
+        context: new HttpContext().set(SUPPRESS_ERROR_TOAST, (error) => error.status === 403),
+      }),
     );
     this.store(response);
   }
